@@ -56,6 +56,8 @@ export default async function OrdersPage({
     title: order.title,
     status: order.status,
     deadline: order.deadline ? order.deadline.toISOString() : null,
+    createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
     clientName: order.client.companyName,
     items: order.items.map((item) => {
       const version = item.versions[0];

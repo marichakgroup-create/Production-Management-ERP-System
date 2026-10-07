@@ -41,6 +41,8 @@ export type OrdersTableRow = {
   title: string | null;
   status: string;
   deadline: string | null;
+  createdAt: string;
+  updatedAt: string;
   clientName: string;
   items: Array<{
     id: string;
@@ -50,7 +52,7 @@ export type OrdersTableRow = {
   }>;
 };
 
-type SortKey = "number" | "client" | "amount" | "status" | "deadline";
+type SortKey = "number" | "client" | "amount" | "status" | "deadline" | "created" | "updated";
 
 function deadlineState(deadline: string | null) {
   if (!deadline) return "none" as const;
@@ -97,6 +99,8 @@ export function OrdersTable({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { sort, toggle } = useTableSort<SortKey>({ key: "number", direction: "desc" });
 
+  const colCount = (showAmounts ? 7 : 6) + 2;
+
   const sorted = useMemo(
     () =>
       sortRows(orders, sort, {
@@ -105,6 +109,8 @@ export function OrdersTable({
         amount: (row) => orderAmount(row),
         status: (row) => row.status,
         deadline: (row) => row.deadline,
+        created: (row) => row.createdAt,
+        updated: (row) => row.updatedAt,
       }),
     [orders, sort],
   );
@@ -164,6 +170,12 @@ export function OrdersTable({
           <SortableTH columnKey="status" sort={sort} onSort={toggle}>
             Стан
           </SortableTH>
+          <SortableTH columnKey="updated" sort={sort} onSort={toggle}>
+            Змінено
+          </SortableTH>
+          <SortableTH columnKey="created" sort={sort} onSort={toggle}>
+            Створено
+          </SortableTH>
           <TH align="right" stickyRight width="120px">
             Дії
           </TH>
@@ -171,7 +183,7 @@ export function OrdersTable({
         <TBody>
           {sorted.length === 0 ? (
             <TableEmpty
-              colSpan={showAmounts ? 7 : 6}
+              colSpan={colCount}
               icon={<IconGarment size={24} />}
               title={empty.title}
               description={empty.description}
@@ -259,6 +271,12 @@ export function OrdersTable({
                         </span>
                       </div>
                     </TD>
+                    <TD nowrap className="tabular type-caption text-[var(--color-text-secondary)]">
+                      {formatDateUk(order.updatedAt)}
+                    </TD>
+                    <TD nowrap className="tabular type-caption text-[var(--color-text-secondary)]">
+                      {formatDateUk(order.createdAt)}
+                    </TD>
                     <TD align="right" stickyRight nowrap>
                       <div className="inline-flex items-center gap-0.5">
                         <Link
@@ -280,7 +298,7 @@ export function OrdersTable({
 
                   {isOpen ? (
                     <tr className="border-b border-[var(--color-divider)] bg-[var(--color-surface-subtle)]">
-                      <td colSpan={7} className="px-3 py-3">
+                      <td colSpan={colCount} className="px-3 py-3">
                         <div className="ml-12 overflow-hidden rounded-[8px] border border-[var(--color-border)] bg-[var(--color-surface)]">
                           <div className="flex items-center gap-2 border-b border-[var(--color-divider)] px-3 py-2">
                             <IconOrders size={14} className="text-[var(--color-text-tertiary)]" />
