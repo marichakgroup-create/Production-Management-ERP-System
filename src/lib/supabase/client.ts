@@ -26,6 +26,10 @@ export function getSupabaseAdmin(): SupabaseClient {
 }
 
 export function publicUploadUrl(storageKey: string) {
+  // Local /uploads/... keys are served from public/ — no Supabase needed.
+  if (storageKey.startsWith("/uploads/") || storageKey.startsWith("uploads/")) {
+    return storageKey.startsWith("/") ? storageKey : `/${storageKey}`;
+  }
   const supabase = getSupabaseAdmin();
   return supabase.storage.from(UPLOADS_BUCKET).getPublicUrl(storageKey).data.publicUrl;
 }

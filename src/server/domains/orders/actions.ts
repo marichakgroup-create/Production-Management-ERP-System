@@ -22,19 +22,23 @@ import {
   addOrderItemFromProduct,
   addOrderItemMaterial,
   addOrderItemOperation,
+  activateProposal,
   approveVersion,
   approveProposal,
   cancelOrders,
   createOrderWithProducts,
+  duplicateOrder,
   getOrder,
   handOverToProduction,
   removeOrderFile,
+  updateOrderFileMeta,
   removeOrderItem,
   removeOrderItemDecoration,
   removeOrderItemMaterial,
   removeOrderItemOperation,
   saveCalculationVersion,
   saveProposal,
+  startNewProposal,
   setOrderItemMaterialActualPrice,
   setOrderItemMaterialConsumption,
   copyOrderItemSizeSpec,
@@ -982,14 +986,74 @@ export async function saveProposalAction(formData: FormData) {
       lines,
     });
     revalidatePath(`/orders/${orderId}`);
+    revalidatePath("/overview");
     return { ok: true as const, proposalRevision: result.proposalRevision };
   } catch (error) {
     const message = error instanceof Error ? error.message : "ERROR";
     if (message === "ORDER_LOCKED") {
       return { ok: false as const, error: "ORDER_LOCKED" as const };
     }
+    if (message === "USE_NEW_PROPOSAL") {
+      return { ok: false as const, error: "USE_NEW_PROPOSAL" as const };
+    }
     return { ok: false as const, error: message };
   }
+}
+
+export async function startNewProposalAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("saveVersions");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+
+  try {
+    await startNewProposal(orderId, session.user.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "NOT_APPROVED") {
+      return { ok: false as const, error: "NOT_APPROVED" as const };
+    }
+    if (message === "ORDER_NOT_FOUND") {
+      return { ok: false as const, error: "NOT_FOUND" as const };
+    }
+    return { ok: false as const, error: "FAILED" as const };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/overview");
+  return { ok: true as const };
+}
+
+export async function activateProposalAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("saveVersions");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  const proposalRevision = Number(formData.get("proposalRevision") ?? "");
+  if (!orderId || !Number.isFinite(proposalRevision)) {
+    return { ok: false as const, error: "VALIDATION" as const };
+  }
+
+  try {
+    await activateProposal(orderId, proposalRevision, session.user.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "ORDER_LOCKED") {
+      return { ok: false as const, error: "ORDER_LOCKED" as const };
+    }
+    if (message === "PROPOSAL_NOT_FOUND") {
+      return { ok: false as const, error: "NOT_FOUND" as const };
+    }
+    if (message === "SNAPSHOT_INCOMPLETE") {
+      return { ok: false as const, error: "SNAPSHOT_INCOMPLETE" as const };
+    }
+    return { ok: false as const, error: "FAILED" as const };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/overview");
+  return { ok: true as const };
 }
 
 export async function approveProposalAction(formData: FormData) {
@@ -1132,6 +1196,43 @@ export async function bulkCancelOrdersAction(formData: FormData) {
   return { ok: true as const, count: result.count };
 }
 
+export async function cancelOrderAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+
+  const result = await cancelOrders([orderId], session.user.id);
+  if (result.count === 0) return { ok: false as const, error: "NOT_FOUND" as const };
+
+  revalidatePath("/orders");
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/overview");
+  return { ok: true as const };
+}
+
+export async function duplicateOrderAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+
+  try {
+    const order = await duplicateOrder({ orderId, userId: session.user.id });
+    revalidatePath("/orders");
+    revalidatePath("/overview");
+    return { ok: true as const, orderId: order.id, number: order.number };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" as const };
+    return { ok: false as const, error: "ERROR" as const };
+  }
+}
+
 export async function updateOrderMarginAction(formData: FormData) {
   const session = await auth();
   if (!session?.user) throw new Error("UNAUTHORIZED");
@@ -1165,6 +1266,7 @@ export async function uploadOrderFileAction(formData: FormData) {
 
   const orderId = String(formData.get("orderId") ?? "");
   const orderItemIdRaw = String(formData.get("orderItemId") ?? "").trim();
+  const caption = String(formData.get("caption") ?? "").trim() || null;
   const file = formData.get("file");
   if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
   if (!(file instanceof File) || file.size === 0) {
@@ -1190,33 +1292,17 @@ export async function uploadOrderFileAction(formData: FormData) {
     return { ok: false as const, error: "TOO_MANY" as const };
   }
 
-  const purpose = String(formData.get("purpose") ?? "general");
-  const decoratedItems = order.items.filter((item) => item.decorations.length > 0);
   let orderItemId: string | null = orderItemIdRaw || null;
   if (orderItemId) {
     const match = order.items.find((item) => item.id === orderItemId);
     if (!match) return { ok: false as const, error: "ITEM" as const };
-  } else if (purpose === "artwork") {
-    if (decoratedItems.length === 1) {
-      orderItemId = decoratedItems[0]!.id;
-    } else if (decoratedItems.length > 1) {
-      return { ok: false as const, error: "ITEM_REQUIRED" as const };
-    }
   }
 
   try {
-    const { getSupabaseAdmin, UPLOADS_BUCKET } = await import("@/lib/supabase/client");
-    const supabase = getSupabaseAdmin();
-    const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
-    const safe = file.name.replace(/[^\w.\-а-яА-ЯіІїЇєЄёЁ ]+/g, "_").slice(0, 80);
-    const storageKey = `orders/${orderId}/${Date.now()}-${safe || `file.${ext}`}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const { error } = await supabase.storage.from(UPLOADS_BUCKET).upload(storageKey, buffer, {
-      contentType: file.type || "application/octet-stream",
-      upsert: false,
-    });
-    if (error) {
-      return { ok: false as const, error: "UPLOAD" as const, message: error.message };
+    const { storeOrderFile } = await import("@/lib/uploads");
+    const stored = await storeOrderFile(orderId, file);
+    if (!stored.ok) {
+      return { ok: false as const, error: "UPLOAD" as const, message: stored.message };
     }
 
     await addOrderFile({
@@ -1225,7 +1311,8 @@ export async function uploadOrderFileAction(formData: FormData) {
       fileName: file.name,
       mimeType: file.type || "application/octet-stream",
       sizeBytes: file.size,
-      storageKey,
+      storageKey: stored.storageKey,
+      caption,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "ORDER_ITEM_NOT_FOUND") {
@@ -1236,6 +1323,35 @@ export async function uploadOrderFileAction(formData: FormData) {
 
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/overview");
+  return { ok: true as const };
+}
+
+export async function updateOrderFileMetaAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  const fileId = String(formData.get("fileId") ?? "");
+  if (!orderId || !fileId) return { ok: false as const, error: "VALIDATION" as const };
+
+  const captionRaw = formData.get("caption");
+  const itemRaw = formData.get("orderItemId");
+  try {
+    await updateOrderFileMeta({
+      fileId,
+      ...(captionRaw !== null ? { caption: String(captionRaw) } : {}),
+      ...(itemRaw !== null ? { orderItemId: String(itemRaw).trim() || null } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "ORDER_LOCKED") return { ok: false as const, error: "ORDER_LOCKED" as const };
+    if (message === "ORDER_ITEM_NOT_FOUND") return { ok: false as const, error: "ITEM" as const };
+    if (message === "NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" as const };
+    return { ok: false as const, error: "ERROR" as const };
+  }
+
+  revalidatePath(`/orders/${orderId}`);
   return { ok: true as const };
 }
 
@@ -1261,9 +1377,8 @@ export async function deleteOrderFileAction(formData: FormData) {
   }
 
   try {
-    const { getSupabaseAdmin, UPLOADS_BUCKET } = await import("@/lib/supabase/client");
-    const supabase = getSupabaseAdmin();
-    await supabase.storage.from(UPLOADS_BUCKET).remove([asset.storageKey]);
+    const { removeStoredOrderFile } = await import("@/lib/uploads");
+    await removeStoredOrderFile(asset.storageKey);
   } catch {
     // Still drop the DB row so the order is not stuck with a dead attachment.
   }

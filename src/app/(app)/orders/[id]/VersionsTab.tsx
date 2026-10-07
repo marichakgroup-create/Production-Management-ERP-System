@@ -20,9 +20,13 @@ import {
 import { IconCheck, IconChevronDown, IconChevronRight, IconLock } from "@/components/ui/Icons";
 import { cn, formatDateUk, formatMoneyUah } from "@/lib/utils";
 import type { OrderProposalGroup } from "@/lib/order-proposals";
-import { approveProposalAction } from "@/server/domains/orders/actions";
+import {
+  activateProposalAction,
+  approveProposalAction,
+} from "@/server/domains/orders/actions";
 import { HandoverDialog, type ReadinessCheck } from "./HandoverDialog";
 import { SaveProposalPanel, type ProposalDraftLine } from "./SaveProposalPanel";
+import { StartNewProposalButton } from "./StartNewProposalButton";
 
 export function VersionsTab({
   orderId,
@@ -35,7 +39,10 @@ export function VersionsTab({
   orderTotalQuantity,
   orderTotalValue,
   status,
+  activeProposalRevision = null,
+  restorableRevisions = [],
   canApprove,
+  canSwitchProposal = false,
   sizesReady = true,
   sizesPendingCount = 0,
   configurationHref,
@@ -54,7 +61,10 @@ export function VersionsTab({
   orderTotalQuantity: number;
   orderTotalValue: number;
   status: string;
+  activeProposalRevision?: number | null;
+  restorableRevisions?: number[];
   canApprove: boolean;
+  canSwitchProposal?: boolean;
   sizesReady?: boolean;
   sizesPendingCount?: number;
   /** Where to send the admin when size layout is required before production. */
@@ -72,12 +82,14 @@ export function VersionsTab({
 
   const approved = proposals.find((row) => row.isComplete && row.isApproved);
   const latestComplete = proposals.find((row) => row.isComplete) ?? null;
-  const handedOver = status === "HANDED_TO_PRODUCTION";
+  const handedOver = status === "HANDED_TO_PRODUCTION" || status === "CLOSED";
+  const isApprovedStatus = status === "APPROVED";
   const handoverReady = readiness.every((check) => check.done);
   const needsApproval = Boolean(latestComplete) && !approved && canApprove && !handedOver;
   const needsSizeBeforeHandover =
     Boolean(approved) && !handedOver && !sizesReady;
   const sizesHref = configurationHref ?? `/orders/${orderId}?tab=configuration`;
+  const restorable = new Set(restorableRevisions);
 
   function approve(proposal: OrderProposalGroup) {
     if (proposal.revision == null) return;
@@ -96,6 +108,33 @@ export function VersionsTab({
     });
   }
 
+  function activate(proposal: OrderProposalGroup) {
+    if (proposal.revision == null) return;
+    if (
+      !window.confirm(
+        `Зробити активною пропозицію v${proposal.revision}? Склад замовлення підставиться з цієї пропозиції, статус стане «Погодження».`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    const formData = new FormData();
+    formData.set("orderId", orderId);
+    formData.set("proposalRevision", String(proposal.revision));
+    startTransition(async () => {
+      const result = await activateProposalAction(formData);
+      if (!result.ok) {
+        setError(
+          result.error === "SNAPSHOT_INCOMPLETE"
+            ? "Цю пропозицію не можна відновити — збережіть нову."
+            : "Не вдалося перемкнути пропозицію.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   return (
     <div className="space-y-4">
       {error ? <Banner tone="danger">{error}</Banner> : null}
@@ -107,7 +146,7 @@ export function VersionsTab({
         </Banner>
       ) : null}
 
-      {draftDrift && !handedOver ? (
+      {draftDrift && !handedOver && !isApprovedStatus ? (
         <Banner tone="warning" title="Поточний розрахунок відрізняється від останньої пропозиції">
           Чернетка змінилась після збереження. Збережіть нову пропозицію, щоб оновити КП для клієнта.
         </Banner>
@@ -115,9 +154,24 @@ export function VersionsTab({
 
       <TableCard>
         <TableToolbar
-          left={<span className="type-subsection">Пропозиції для клієнта</span>}
+          left={
+            <div className="min-w-0">
+              <span className="type-subsection">Пропозиції для клієнта</span>
+              {activeProposalRevision != null ? (
+                <p className="type-caption mt-0.5">
+                  Активна: v{activeProposalRevision}
+                </p>
+              ) : null}
+            </div>
+          }
           right={
-            !handedOver ? (
+            handedOver ? (
+              <span className="type-caption inline-flex items-center gap-1">
+                <IconLock size={14} /> Специфікацію зафіксовано
+              </span>
+            ) : isApprovedStatus ? (
+              <StartNewProposalButton orderId={orderId} accent />
+            ) : (
               <SaveProposalPanel
                 orderId={orderId}
                 lines={draftLines}
@@ -125,10 +179,6 @@ export function VersionsTab({
                 accent={!needsApproval && !approved}
                 defaultOpen={autoSave}
               />
-            ) : (
-              <span className="type-caption inline-flex items-center gap-1">
-                <IconLock size={14} /> Специфікацію зафіксовано
-              </span>
             )
           }
         />
@@ -139,7 +189,7 @@ export function VersionsTab({
             <TH align="right">К-сть</TH>
             <TH align="right">Разом до сплати</TH>
             <TH>Стан</TH>
-            <TH width="140px" stickyRight />
+            <TH width="168px" stickyRight />
           </THead>
           <TBody>
             {proposals.length === 0 ? (
@@ -155,9 +205,18 @@ export function VersionsTab({
                   proposal.revision != null
                     ? `Пропозиція v${proposal.revision}`
                     : `Позиція v${proposal.lines[0]?.versionNumber ?? "?"}`;
+                const isActive =
+                  proposal.revision != null &&
+                  proposal.revision === activeProposalRevision;
+                const canActivate =
+                  canSwitchProposal &&
+                  !handedOver &&
+                  proposal.revision != null &&
+                  !isActive &&
+                  restorable.has(proposal.revision);
                 return (
                   <Fragment key={proposal.key}>
-                    <TR>
+                    <TR className={isActive ? "bg-[var(--color-tint-sage)]/35" : undefined}>
                       <TD>
                         <button
                           type="button"
@@ -190,30 +249,58 @@ export function VersionsTab({
                         {formatMoneyUah(proposal.totalSellingValue)}
                       </TD>
                       <TD nowrap>
-                        {!proposal.isComplete ? (
-                          <StatusBadge dot tone="warning">
-                            Неповна
-                          </StatusBadge>
-                        ) : proposal.isApproved ? (
-                          <StatusBadge dot tone="success">
-                            Погоджено
-                          </StatusBadge>
-                        ) : (
-                          <StatusBadge dot>Чернетка</StatusBadge>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {isActive ? (
+                            <StatusBadge dot tone="info">
+                              Активна
+                            </StatusBadge>
+                          ) : null}
+                          {!proposal.isComplete ? (
+                            <StatusBadge dot tone="warning">
+                              Неповна
+                            </StatusBadge>
+                          ) : proposal.isApproved ? (
+                            <StatusBadge dot tone="success">
+                              Погоджено
+                            </StatusBadge>
+                          ) : (
+                            <StatusBadge dot>Чернетка</StatusBadge>
+                          )}
+                        </div>
                       </TD>
                       <TD align="right" stickyRight>
-                        {proposal.isComplete && !proposal.isApproved && canApprove && !handedOver ? (
-                          <Button
-                            size="sm"
-                            variant={needsApproval && proposal.key === latestComplete?.key ? "primary" : "secondary"}
-                            onClick={() => setApproveTarget(proposal)}
-                            hint="approveProposal"
-                          >
-                            <IconCheck size={14} />
-                            Погодити
-                          </Button>
-                        ) : null}
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          {canActivate ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={pending}
+                              onClick={() => activate(proposal)}
+                              hint="activateProposal"
+                            >
+                              Зробити активною
+                            </Button>
+                          ) : null}
+                          {proposal.isComplete &&
+                          !proposal.isApproved &&
+                          canApprove &&
+                          !handedOver &&
+                          (isActive || activeProposalRevision == null) ? (
+                            <Button
+                              size="sm"
+                              variant={
+                                needsApproval && proposal.key === latestComplete?.key
+                                  ? "primary"
+                                  : "secondary"
+                              }
+                              onClick={() => setApproveTarget(proposal)}
+                              hint="approveProposal"
+                            >
+                              <IconCheck size={14} />
+                              Погодити
+                            </Button>
+                          ) : null}
+                        </div>
                       </TD>
                     </TR>
                     {open
@@ -244,7 +331,7 @@ export function VersionsTab({
         </Table>
       </TableCard>
 
-      {approved || handedOver ? (
+      {(approved && isApprovedStatus) || handedOver ? (
         <div
           className={cn(
             "rounded-[var(--radius-surface)] border p-4",

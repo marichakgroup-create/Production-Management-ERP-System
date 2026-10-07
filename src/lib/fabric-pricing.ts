@@ -161,23 +161,6 @@ export function fabricQuoteSuffix(
   return "₴/м";
 }
 
-export function fabricQuoteHint(
-  currency: FabricQuoteCurrency,
-  unit: FabricQuoteUnit,
-): string {
-  if (currency === "usd" && unit === "kg") {
-    return "Авто в ₴/м: $/кг ÷ м.п./кг × курс (без доставки)";
-  }
-  if (currency === "usd" && unit === "meter") {
-    return "Авто в ₴/м: $/м × курс (без доставки)";
-  }
-  if (currency === "uah" && unit === "kg") {
-    return "Авто в ₴/м: ₴/кг ÷ м.п./кг (без доставки)";
-  }
-  return "Базова ціна тканини без доставки";
-}
-
-
 export function metersPerRollFromWeight(
   rollWeightKg: number | null | undefined,
   metersPerKg: number | null | undefined,

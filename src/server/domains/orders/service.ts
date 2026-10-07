@@ -67,6 +67,14 @@ import {
   normalizeFabricDeliveryType,
   type FabricDeliveryTypeCode,
 } from "@/lib/fabric-delivery-types";
+import {
+  additionalCostCreateFromSnapshot,
+  decorationCreateFromSnapshot,
+  materialCreateFromSnapshot,
+  operationCreateFromSnapshot,
+  parseProposalItemSnapshot,
+  proposalSnapshotRestorable,
+} from "@/lib/proposal-snapshot";
 
 function deliveryTypeOrNull(value: unknown): FabricDeliveryTypeCode | null {
   return isFabricDeliveryType(value) ? value : null;
@@ -398,6 +406,7 @@ export async function listOrders(filters?: {
       client: true,
       manager: { select: { id: true, name: true } },
       items: {
+        where: { superseded: false },
         orderBy: { createdAt: "asc" },
         include: {
           versions: {
@@ -413,7 +422,7 @@ export async function listOrders(filters?: {
           _count: { select: { materials: true, operations: true } },
         },
       },
-      _count: { select: { items: true } },
+      _count: { select: { items: { where: { superseded: false } } } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -1205,20 +1214,33 @@ export async function removeOrderItem(input: { orderItemId: string; userId?: str
       id: true,
       nameUk: true,
       orderId: true,
-      order: { select: { status: true, _count: { select: { items: true } } } },
+      superseded: true,
+      _count: { select: { versions: true } },
+      order: {
+        select: {
+          status: true,
+          items: { where: { superseded: false }, select: { id: true } },
+        },
+      },
     },
   });
-  if (!item) throw new Error("NOT_FOUND");
+  if (!item || item.superseded) throw new Error("NOT_FOUND");
   assertOrderEditable(item.order.status);
+  const workingCount = item.order.items.length;
   // Empty order is allowed only on draft / calculation.
-  if (
-    item.order._count.items <= 1 &&
-    !STAGES_ALLOWING_EMPTY.includes(item.order.status)
-  ) {
+  if (workingCount <= 1 && !STAGES_ALLOWING_EMPTY.includes(item.order.status)) {
     throw new Error("EMPTY_ORDER_NOT_ALLOWED");
   }
 
   await prisma.$transaction(async (tx) => {
+    if (item._count.versions > 0) {
+      // Keep the row for proposal history; hide from the working composition.
+      await tx.orderItem.update({
+        where: { id: item.id },
+        data: { superseded: true },
+      });
+      return;
+    }
     await tx.quotation.deleteMany({
       where: { calculationVersion: { orderItemId: item.id } },
     });
@@ -2001,7 +2023,7 @@ export async function getOrderSizeBreakdownStatus(
   orderId: string,
 ): Promise<OrderItemSizeReadiness[]> {
   const items = await prisma.orderItem.findMany({
-    where: { orderId },
+    where: { orderId, superseded: false },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
@@ -2747,6 +2769,51 @@ async function nextProposalRevision(orderId: string) {
   return (agg._max.proposalRevision ?? 0) + 1;
 }
 
+function workingOrderItems<T extends { superseded?: boolean }>(items: T[]): T[] {
+  return items.filter((item) => !item.superseded);
+}
+
+async function replaceOrderItemComposition(
+  tx: Prisma.TransactionClient,
+  orderItemId: string,
+  snap: NonNullable<ReturnType<typeof parseProposalItemSnapshot>>,
+) {
+  await tx.orderItemSize.deleteMany({ where: { orderItemId } });
+  await tx.orderItemMaterial.deleteMany({ where: { orderItemId } });
+  await tx.orderItemOperation.deleteMany({ where: { orderItemId } });
+  await tx.orderItemDecoration.deleteMany({ where: { orderItemId } });
+  await tx.orderItemAdditionalCost.deleteMany({ where: { orderItemId } });
+
+  await tx.orderItem.update({
+    where: { id: orderItemId },
+    data: {
+      productId: snap.productId,
+      sourceProductId: snap.sourceProductId,
+      nameUk: snap.nameUk,
+      totalQuantity: snap.totalQuantity,
+      comment: snap.comment,
+      sewerCountOverride: snap.sewerCountOverride,
+      fabricDeliveryAmount: snap.fabricDeliveryAmount ?? 0,
+      fabricDeliveryComputed: snap.fabricDeliveryComputed,
+      fabricDeliveryManual: Boolean(snap.fabricDeliveryManual),
+      superseded: false,
+      sizes: { create: snap.sizes },
+      materials: {
+        create: snap.materials.map((row, index) => materialCreateFromSnapshot(row, index)),
+      },
+      operations: {
+        create: snap.operations.map((row, index) => operationCreateFromSnapshot(row, index)),
+      },
+      decorations: {
+        create: snap.decorations.map((row, index) => decorationCreateFromSnapshot(row, index)),
+      },
+      additionalCosts: {
+        create: snap.additionalCosts.map((row) => additionalCostCreateFromSnapshot(row)),
+      },
+    },
+  });
+}
+
 export async function saveProposal(input: {
   orderId: string;
   authorId: string;
@@ -2760,19 +2827,21 @@ export async function saveProposal(input: {
 }) {
   const order = await getOrder(input.orderId);
   if (!order) throw new Error("ORDER_NOT_FOUND");
+  if (order.status === "APPROVED") throw new Error("USE_NEW_PROPOSAL");
   assertOrderEditable(order.status);
 
   const proposalLabel = input.label?.trim() || null;
   const comment = input.comment?.trim() || null;
+  const items = workingOrderItems(order.items);
 
   // Empty orders may be saved only on DRAFT / CALCULATION (no calc versions).
-  if (order.items.length === 0) {
+  if (items.length === 0) {
     if (!STAGES_ALLOWING_EMPTY.includes(order.status)) {
       throw new Error("EMPTY_ORDER_NOT_ALLOWED");
     }
     await prisma.order.updateMany({
       where: { id: input.orderId, status: "DRAFT" },
-      data: { status: "CALCULATION" },
+      data: { status: "CALCULATION", activeProposalRevision: null },
     });
     await recordActivity({
       entityType: "order",
@@ -2791,7 +2860,7 @@ export async function saveProposal(input: {
   }
 
   const lineMap = new Map(input.lines.map((line) => [line.orderItemId, line]));
-  for (const item of order.items) {
+  for (const item of items) {
     if (!lineMap.has(item.id)) throw new Error("MISSING_LINE");
     if (item.totalQuantity <= 0) throw new Error("NO_QUANTITY");
     if (item.materials.length === 0 || item.operations.length === 0) throw new Error("INCOMPLETE");
@@ -2800,10 +2869,11 @@ export async function saveProposal(input: {
   const proposalRevision = await nextProposalRevision(input.orderId);
   const pricing = await getPricingForOrder(input.orderId);
   const fixedCosts = await fixedCostOptionsFromDb();
+  const fromStatus = order.status;
 
   const created = await prisma.$transaction(async (tx) => {
     const versions = [];
-    for (const item of order.items) {
+    for (const item of items) {
       const line = lineMap.get(item.id)!;
       const manualSellingPricePerUnit =
         line.manualSellingPricePerUnit != null && !Number.isNaN(line.manualSellingPricePerUnit)
@@ -2872,9 +2942,18 @@ export async function saveProposal(input: {
           proposalLabel,
           snapshotJson: {
             item: {
+              productId: item.productId,
+              sourceProductId: item.sourceProductId,
               nameUk: item.nameUk,
               totalQuantity: item.totalQuantity,
+              comment: item.comment,
               sewerCountOverride: item.sewerCountOverride,
+              fabricDeliveryAmount: Number(item.fabricDeliveryAmount),
+              fabricDeliveryComputed:
+                item.fabricDeliveryComputed == null
+                  ? null
+                  : Number(item.fabricDeliveryComputed),
+              fabricDeliveryManual: item.fabricDeliveryManual,
               sizes: item.sizes,
               materials: item.materials,
               operations: item.operations,
@@ -2905,9 +2984,18 @@ export async function saveProposal(input: {
       versions.push(version);
     }
 
-    await tx.order.updateMany({
-      where: { id: input.orderId, status: "DRAFT" },
-      data: { status: "CALCULATION" },
+    await tx.calculationVersion.updateMany({
+      where: { orderItem: { orderId: input.orderId }, isApproved: true },
+      data: { isApproved: false },
+    });
+
+    await tx.order.update({
+      where: { id: input.orderId },
+      data: {
+        status: "PENDING_APPROVAL",
+        approvedDate: null,
+        activeProposalRevision: proposalRevision,
+      },
     });
 
     return versions;
@@ -2925,7 +3013,209 @@ export async function saveProposal(input: {
     },
   });
 
+  if (fromStatus !== "PENDING_APPROVAL") {
+    await recordActivity({
+      entityType: "order",
+      entityId: input.orderId,
+      action: "status_changed",
+      userId: input.authorId,
+      payload: {
+        from: fromStatus,
+        to: "PENDING_APPROVAL",
+        fromLabel: orderStatusLabel[fromStatus] ?? fromStatus,
+        toLabel: orderStatusLabel.PENDING_APPROVAL,
+      },
+    });
+  }
+
   return { proposalRevision, versions: created };
+}
+
+/** From Погоджено → Розрахунок to edit a new commercial variant (same order). */
+export async function startNewProposal(orderId: string, userId?: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, status: true },
+  });
+  if (!order) throw new Error("ORDER_NOT_FOUND");
+  if (order.status !== "APPROVED") throw new Error("NOT_APPROVED");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.calculationVersion.updateMany({
+      where: { orderItem: { orderId }, isApproved: true },
+      data: { isApproved: false },
+    });
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: "CALCULATION",
+        approvedDate: null,
+        activeProposalRevision: null,
+      },
+    });
+  });
+
+  await recordActivity({
+    entityType: "order",
+    entityId: orderId,
+    action: "status_changed",
+    userId: userId ?? null,
+    payload: {
+      from: "APPROVED",
+      to: "CALCULATION",
+      fromLabel: orderStatusLabel.APPROVED,
+      toLabel: orderStatusLabel.CALCULATION,
+      reason: "new_proposal",
+    },
+  });
+
+  return { orderId };
+}
+
+/** Load a saved proposal into live items and move order to Погодження. */
+export async function activateProposal(
+  orderId: string,
+  proposalRevision: number,
+  userId?: string,
+) {
+  const order = await getOrder(orderId);
+  if (!order) throw new Error("ORDER_NOT_FOUND");
+  assertOrderEditable(order.status);
+
+  if (order.activeProposalRevision === proposalRevision && order.status === "PENDING_APPROVAL") {
+    return { orderId, proposalRevision };
+  }
+
+  const versions = await prisma.calculationVersion.findMany({
+    where: { proposalRevision, orderItem: { orderId } },
+    orderBy: { createdAt: "asc" },
+  });
+  if (versions.length === 0) throw new Error("PROPOSAL_NOT_FOUND");
+
+  const snaps = versions.map((version) => ({
+    version,
+    snap: parseProposalItemSnapshot(version.snapshotJson),
+  }));
+  if (snaps.some((row) => !row.snap || !proposalSnapshotRestorable(row.version.snapshotJson))) {
+    throw new Error("SNAPSHOT_INCOMPLETE");
+  }
+
+  const fromStatus = order.status;
+  const keepIds = new Set(versions.map((version) => version.orderItemId));
+
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.orderItem.findMany({
+      where: { orderId },
+      select: { id: true, _count: { select: { versions: true } } },
+    });
+    const existingIds = new Set(existing.map((row) => row.id));
+
+    for (const row of existing) {
+      if (keepIds.has(row.id)) continue;
+      if (row._count.versions > 0) {
+        await tx.orderItem.update({
+          where: { id: row.id },
+          data: { superseded: true },
+        });
+      } else {
+        await tx.quotation.deleteMany({
+          where: { calculationVersion: { orderItemId: row.id } },
+        });
+        await tx.productionSpecification.deleteMany({ where: { orderItemId: row.id } });
+        await tx.orderItem.delete({ where: { id: row.id } });
+      }
+    }
+
+    for (const { version, snap } of snaps) {
+      const itemSnap = snap!;
+      if (existingIds.has(version.orderItemId)) {
+        await replaceOrderItemComposition(tx, version.orderItemId, itemSnap);
+        continue;
+      }
+
+      const created = await tx.orderItem.create({
+        data: {
+          orderId,
+          productId: itemSnap.productId,
+          sourceProductId: itemSnap.sourceProductId,
+          nameUk: itemSnap.nameUk,
+          totalQuantity: itemSnap.totalQuantity,
+          comment: itemSnap.comment,
+          sewerCountOverride: itemSnap.sewerCountOverride,
+          fabricDeliveryAmount: itemSnap.fabricDeliveryAmount ?? 0,
+          fabricDeliveryComputed: itemSnap.fabricDeliveryComputed,
+          fabricDeliveryManual: Boolean(itemSnap.fabricDeliveryManual),
+          superseded: false,
+          sizes: { create: itemSnap.sizes },
+          materials: {
+            create: itemSnap.materials.map((row, index) =>
+              materialCreateFromSnapshot(row, index),
+            ),
+          },
+          operations: {
+            create: itemSnap.operations.map((row, index) =>
+              operationCreateFromSnapshot(row, index),
+            ),
+          },
+          decorations: {
+            create: itemSnap.decorations.map((row, index) =>
+              decorationCreateFromSnapshot(row, index),
+            ),
+          },
+          additionalCosts: {
+            create: itemSnap.additionalCosts.map((row) =>
+              additionalCostCreateFromSnapshot(row),
+            ),
+          },
+        },
+      });
+
+      await tx.calculationVersion.update({
+        where: { id: version.id },
+        data: { orderItemId: created.id },
+      });
+    }
+
+    await tx.calculationVersion.updateMany({
+      where: { orderItem: { orderId }, isApproved: true },
+      data: { isApproved: false },
+    });
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: "PENDING_APPROVAL",
+        approvedDate: null,
+        activeProposalRevision: proposalRevision,
+      },
+    });
+  });
+
+  await recordActivity({
+    entityType: "order",
+    entityId: orderId,
+    action: "proposal_activated",
+    userId: userId ?? null,
+    payload: { proposalRevision },
+  });
+
+  if (fromStatus !== "PENDING_APPROVAL") {
+    await recordActivity({
+      entityType: "order",
+      entityId: orderId,
+      action: "status_changed",
+      userId: userId ?? null,
+      payload: {
+        from: fromStatus,
+        to: "PENDING_APPROVAL",
+        fromLabel: orderStatusLabel[fromStatus] ?? fromStatus,
+        toLabel: orderStatusLabel.PENDING_APPROVAL,
+        reason: "activate_proposal",
+      },
+    });
+  }
+
+  return { orderId, proposalRevision };
 }
 
 export async function approveProposal(orderId: string, proposalRevision: number, userId?: string) {
@@ -2939,13 +3229,17 @@ export async function approveProposal(orderId: string, proposalRevision: number,
     },
   });
 
-  const itemIds = new Set(order.items.map((item) => item.id));
+  const itemIds = new Set(workingOrderItems(order.items).map((item) => item.id));
   const covered = new Set(versions.map((version) => version.orderItemId));
-  if (covered.size !== itemIds.size || [...itemIds].some((id) => !covered.has(id))) {
+  if (
+    itemIds.size === 0 ||
+    covered.size !== itemIds.size ||
+    [...itemIds].some((id) => !covered.has(id))
+  ) {
     throw new Error("INCOMPLETE_PROPOSAL");
   }
 
-  if (versions.every((version) => version.isApproved)) {
+  if (versions.every((version) => version.isApproved) && order.status === "APPROVED") {
     return versions;
   }
 
@@ -2973,7 +3267,11 @@ export async function approveProposal(orderId: string, proposalRevision: number,
     if (!locked) {
       await tx.order.update({
         where: { id: orderId },
-        data: { status: "APPROVED", approvedDate: new Date() },
+        data: {
+          status: "APPROVED",
+          approvedDate: new Date(),
+          activeProposalRevision: proposalRevision,
+        },
       });
     }
 
@@ -2996,19 +3294,21 @@ export async function approveProposal(orderId: string, proposalRevision: number,
 export async function handOverToProduction(orderId: string, userId?: string) {
   const order = await getOrder(orderId);
   if (!order) throw new Error("ORDER_NOT_FOUND");
-  if (order.items.length === 0) throw new Error("NO_ITEM");
+  const working = workingOrderItems(order.items);
+  if (working.length === 0) throw new Error("NO_ITEM");
 
   await assertOrderSizesReady(orderId);
 
   // Recompute fabric meters / wholesale / delivery on the final size layout (incl. 3XL+).
-  for (const item of order.items) {
+  for (const item of working) {
     await syncOrderItemFabricPricing(item.id);
   }
 
   const fresh = await getOrder(orderId);
   if (!fresh) throw new Error("ORDER_NOT_FOUND");
+  const freshWorking = workingOrderItems(fresh.items);
 
-  const lines = fresh.items.map((item) => {
+  const lines = freshWorking.map((item) => {
     const approved = item.versions.find((v) => v.isApproved);
     if (!approved) throw new Error("NO_APPROVED_VERSION");
     if (item.totalQuantity <= 0) throw new Error("NO_QUANTITY");
@@ -3017,7 +3317,7 @@ export async function handOverToProduction(orderId: string, userId?: string) {
 
   if (
     !orderArtworkReady(
-      fresh.items.map((item) => ({
+      freshWorking.map((item) => ({
         id: item.id,
         decorationsCount: item.decorations.length,
       })),
@@ -3201,6 +3501,135 @@ export async function cancelOrders(ids: string[], userId?: string) {
   return { count: orders.length };
 }
 
+/** Clone order + line BOM into a new DRAFT (no proposals, specs, or files). */
+export async function duplicateOrder(input: { orderId: string; userId: string }) {
+  const source = await prisma.order.findUnique({
+    where: { id: input.orderId },
+    include: {
+      items: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          sizes: true,
+          materials: { orderBy: { sortOrder: "asc" } },
+          operations: { orderBy: { sortOrder: "asc" } },
+          decorations: { orderBy: { sortOrder: "asc" } },
+          additionalCosts: true,
+        },
+      },
+    },
+  });
+  if (!source) throw new Error("NOT_FOUND");
+
+  const number = await nextOrderNumber();
+  const created = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.create({
+      data: {
+        number,
+        clientId: source.clientId,
+        managerId: input.userId,
+        title: source.title,
+        status: "DRAFT",
+        deadline: source.deadline,
+        comment: source.comment,
+        targetMarginPercent: source.targetMarginPercent,
+      },
+    });
+
+    for (const item of source.items) {
+      await tx.orderItem.create({
+        data: {
+          orderId: order.id,
+          productId: item.productId,
+          sourceProductId: item.sourceProductId,
+          nameUk: item.nameUk,
+          totalQuantity: item.totalQuantity,
+          comment: item.comment,
+          fabricDeliveryAmount: item.fabricDeliveryAmount,
+          fabricDeliveryComputed: item.fabricDeliveryComputed,
+          fabricDeliveryManual: item.fabricDeliveryManual,
+          sewerCountOverride: item.sewerCountOverride,
+          sizes: {
+            create: item.sizes.map((size) => ({
+              sizeCode: size.sizeCode,
+              sizeNameUk: size.sizeNameUk,
+              quantity: size.quantity,
+            })),
+          },
+          materials: {
+            create: item.materials.map((row) => ({
+              materialId: row.materialId,
+              nameSnapshot: row.nameSnapshot,
+              unitCodeSnapshot: row.unitCodeSnapshot,
+              consumptionPerUnit: row.consumptionPerUnit,
+              wastePercent: row.wastePercent,
+              purchasePrice: row.purchasePrice,
+              actualPurchasePrice: row.actualPurchasePrice,
+              supplierId: row.supplierId,
+              supplierNameSnapshot: row.supplierNameSnapshot,
+              colorSnapshot: row.colorSnapshot,
+              deliveryType: row.deliveryType,
+              cargoUsdPerKg: row.cargoUsdPerKg,
+              usdUahRate: row.usdUahRate,
+              costVatOverride: row.costVatOverride,
+              fabricDeliveryAmount: row.fabricDeliveryAmount,
+              fabricDeliveryComputed: row.fabricDeliveryComputed,
+              fabricDeliveryManual: row.fabricDeliveryManual,
+              minWholesaleMetersOverride: row.minWholesaleMetersOverride,
+              sortOrder: row.sortOrder,
+              sizeCode: row.sizeCode,
+            })),
+          },
+          operations: {
+            create: item.operations.map((row) => ({
+              operationId: row.operationId,
+              nameSnapshot: row.nameSnapshot,
+              calculationMethod: row.calculationMethod,
+              unitRate: row.unitRate,
+              shiftCost: row.shiftCost,
+              standardOutput: row.standardOutput,
+              sortOrder: row.sortOrder,
+              sizeCode: row.sizeCode,
+            })),
+          },
+          decorations: {
+            create: item.decorations.map((row) => ({
+              decorationMethodId: row.decorationMethodId,
+              nameSnapshot: row.nameSnapshot,
+              setupCost: row.setupCost,
+              unitRate: row.unitRate,
+              sortOrder: row.sortOrder,
+            })),
+          },
+          additionalCosts: {
+            create: item.additionalCosts.map((row) => ({
+              nameUk: row.nameUk,
+              amount: row.amount,
+              isPerUnit: row.isPerUnit,
+            })),
+          },
+        },
+      });
+    }
+
+    return order;
+  });
+
+  await recordActivity({
+    entityType: "order",
+    entityId: created.id,
+    action: "created",
+    userId: input.userId,
+    payload: {
+      number: created.number,
+      duplicatedFrom: source.id,
+      duplicatedFromNumber: source.number,
+      itemCount: source.items.length,
+    },
+  });
+
+  return created;
+}
+
 export async function updateOrderTargetMargin(orderId: string, targetMarginPercent: number | null) {
   await assertOrderEditableById(orderId);
   return prisma.order.update({
@@ -3221,6 +3650,7 @@ export async function addOrderFile(input: {
   sizeBytes: number;
   storageKey: string;
   orderItemId?: string | null;
+  caption?: string | null;
 }) {
   await assertOrderEditableById(input.orderId);
   if (input.orderItemId) {
@@ -3230,6 +3660,7 @@ export async function addOrderFile(input: {
     });
     if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
   }
+  const caption = input.caption?.trim() || null;
   return prisma.fileAsset.create({
     data: {
       orderId: input.orderId,
@@ -3238,6 +3669,36 @@ export async function addOrderFile(input: {
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
       storageKey: input.storageKey,
+      caption,
+    },
+  });
+}
+
+export async function updateOrderFileMeta(input: {
+  fileId: string;
+  caption?: string | null;
+  orderItemId?: string | null;
+}) {
+  const file = await prisma.fileAsset.findUnique({
+    where: { id: input.fileId },
+    select: { orderId: true },
+  });
+  if (!file?.orderId) throw new Error("NOT_FOUND");
+  await assertOrderEditableById(file.orderId);
+
+  if (input.orderItemId) {
+    const item = await prisma.orderItem.findFirst({
+      where: { id: input.orderItemId, orderId: file.orderId },
+      select: { id: true },
+    });
+    if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
+  }
+
+  return prisma.fileAsset.update({
+    where: { id: input.fileId },
+    data: {
+      ...(input.caption !== undefined ? { caption: input.caption?.trim() || null } : {}),
+      ...(input.orderItemId !== undefined ? { orderItemId: input.orderItemId || null } : {}),
     },
   });
 }

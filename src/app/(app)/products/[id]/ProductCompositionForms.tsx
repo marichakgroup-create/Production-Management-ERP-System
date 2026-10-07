@@ -311,11 +311,7 @@ export function AddProductMaterialPanel({
           step="0.0001"
           min="0"
           required
-          hint={
-            selectedUnit
-              ? `Одиниця з каталогу: ${selectedUnit}. Приклад: 0,02 ${selectedUnit} на одну футболку.`
-              : "Спочатку оберіть позицію — з’явиться одиниця виміру (м, шт…)."
-          }
+          hint={selectedUnit ? undefined : "Спочатку оберіть позицію"}
         />
         <Input
           name="wastePercent"
@@ -323,7 +319,6 @@ export function AddProductMaterialPanel({
           type="number"
           step="0.01"
           min="0"
-          hint="Порожньо — з каталогу"
         />
       </FormGroup>
 

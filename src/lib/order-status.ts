@@ -16,7 +16,7 @@ export const orderStatusLabel: Record<string, string> = {
   APPROVED: "Погоджено",
   HANDED_TO_PRODUCTION: "У виробництві",
   CLOSED: "Закрито",
-  CANCELLED: "Скасовано",
+  CANCELLED: "Архів",
 };
 
 export const orderStatusTone: Record<string, BadgeTone> = {

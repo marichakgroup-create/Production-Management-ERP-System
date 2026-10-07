@@ -4,11 +4,26 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Banner } from "@/components/ui/Banner";
-import { Select } from "@/components/ui/Field";
 import { StatusBadge } from "@/components/ui/Page";
-import { IconDecoration, IconPlus, IconTrash } from "@/components/ui/Icons";
+import { IconPlus, IconTrash } from "@/components/ui/Icons";
+import { controlClass } from "@/components/ui/Field";
+import {
+  Table,
+  TableCard,
+  TableToolbar,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from "@/components/ui/Table";
 import { cn, formatDateUk } from "@/lib/utils";
-import { deleteOrderFileAction, uploadOrderFileAction } from "@/server/domains/orders/actions";
+import { ProductThumb } from "@/components/orders/ProductCatalogPanel";
+import {
+  deleteOrderFileAction,
+  updateOrderFileMetaAction,
+  uploadOrderFileAction,
+} from "@/server/domains/orders/actions";
 import {
   itemNeedsArtworkFile,
   ORDER_FILE_ACCEPT,
@@ -24,16 +39,22 @@ export type OrderFileRow = {
   sizeBytes: number;
   createdAt: string;
   url: string;
+  caption?: string | null;
   orderItemId?: string | null;
   orderItemNameUk?: string | null;
+  orderItemImageUrl?: string | null;
 };
 
 export type OrderArtworkItem = {
   id: string;
   nameUk: string;
+  imageUrl?: string | null;
   decorationsCount: number;
   decorationNames: string[];
 };
+
+const selectClass = cn(controlClass, "h-8 min-w-0 px-2 text-[13px]");
+const inputClass = cn(controlClass, "h-8 min-w-0 px-2 text-[13px]");
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} Б`;
@@ -41,27 +62,74 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-function uploadErrorMessage(error: string | undefined) {
+function uploadErrorMessage(error: string | undefined, message?: string) {
   switch (error) {
     case "TOO_LARGE":
       return `Файл більший за ${ORDER_FILE_MAX_MB} МБ.`;
     case "TOO_MANY":
-      return `У замовленні вже ${ORDER_FILE_MAX_COUNT} файлів — більше додавати не можна.`;
+      return `У замовленні вже ${ORDER_FILE_MAX_COUNT} файлів.`;
     case "TYPE":
       return "Підходять PDF, зображення, AI/EPS або ZIP.";
-    case "ITEM_REQUIRED":
-      return "Оберіть виріб (позицію), до якого належить макет.";
     case "ITEM":
-      return "Обрана позиція не знайдена в замовленні.";
+      return "Обрана позиція не знайдена.";
     case "ORDER_LOCKED":
       return "До цього замовлення файли вже не додаються.";
+    case "UPLOAD":
+      return message?.trim() || "Не вдалося зберегти файл у сховищі.";
     default:
-      return "Не вдалося завантажити файл. Перевірте сховище і спробуйте ще раз.";
+      return "Не вдалося завантажити файл.";
   }
 }
 
 function hasFileDrag(event: React.DragEvent) {
   return Array.from(event.dataTransfer.types).includes("Files");
+}
+
+function ProductSelect({
+  items,
+  value,
+  onChange,
+  disabled,
+  ariaLabel,
+}: {
+  items: OrderArtworkItem[];
+  value: string;
+  onChange: (id: string) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  const selected = items.find((item) => item.id === value);
+  const label = selected?.nameUk ?? "Без виробу";
+
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <ProductThumb
+        imageUrl={selected?.imageUrl}
+        label={label}
+        size="sm"
+      />
+      {items.length > 0 ? (
+        <select
+          value={value}
+          disabled={disabled}
+          aria-label={ariaLabel ?? "Виріб"}
+          onChange={(event) => onChange(event.target.value)}
+          className={cn(selectClass, "flex-1")}
+        >
+          <option value="">Без виробу</option>
+          {items.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.nameUk}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="truncate text-[13px] text-[var(--color-text-tertiary)]">
+          Без виробу
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function OrderAttachments({
@@ -76,36 +144,36 @@ export function OrderAttachments({
   locked?: boolean;
 }) {
   const router = useRouter();
-  const artworkInputRef = useRef<HTMLInputElement>(null);
-  const generalInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [artworkDragging, setArtworkDragging] = useState(false);
-  const [generalDragging, setGeneralDragging] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [linkItemId, setLinkItemId] = useState(() =>
+    artworkItems.length === 1 ? artworkItems[0]!.id : "",
+  );
+  const [caption, setCaption] = useState("");
+
   const decorated = useMemo(
     () => artworkItems.filter((item) => item.decorationsCount > 0),
     [artworkItems],
   );
-  const defaultItemId = decorated.length === 1 ? decorated[0]!.id : "";
-  const [artworkItemId, setArtworkItemId] = useState(defaultItemId);
-  const selectedArtworkItemId = artworkItemId || defaultItemId;
 
   const artworkReady = orderArtworkReady(
     decorated.map((item) => ({ id: item.id, decorationsCount: item.decorationsCount })),
     files,
   );
-  const hasLinkedFiles = files.some((file) => file.orderItemId);
-  const unlinkedFiles = files.filter((file) => !file.orderItemId);
+  const missingArtwork = decorated.filter((item) =>
+    itemNeedsArtworkFile(
+      { id: item.id, decorationsCount: item.decorationsCount },
+      files,
+    ),
+  );
   const atLimit = files.length >= ORDER_FILE_MAX_COUNT;
   const canUpload = !locked && !atLimit;
 
-  function uploadFiles(fileList: FileList | File[] | null, purpose: "artwork" | "general") {
+  function uploadFiles(fileList: FileList | File[] | null) {
     const selected = fileList ? Array.from(fileList) : [];
     if (selected.length === 0) return;
-    if (purpose === "artwork" && decorated.length > 1 && !selectedArtworkItemId) {
-      setError(uploadErrorMessage("ITEM_REQUIRED"));
-      return;
-    }
     setError(null);
     startTransition(async () => {
       let remaining = ORDER_FILE_MAX_COUNT - files.length;
@@ -117,25 +185,28 @@ export function OrderAttachments({
         const formData = new FormData();
         formData.set("orderId", orderId);
         formData.set("file", file);
-        formData.set("purpose", purpose);
-        if (purpose === "artwork" && selectedArtworkItemId) {
-          formData.set("orderItemId", selectedArtworkItemId);
-        }
+        if (linkItemId) formData.set("orderItemId", linkItemId);
+        if (caption.trim()) formData.set("caption", caption.trim());
         const result = await uploadOrderFileAction(formData);
         if (!result.ok) {
-          setError(uploadErrorMessage(result.error));
+          setError(
+            uploadErrorMessage(
+              result.error,
+              "message" in result ? String(result.message ?? "") : undefined,
+            ),
+          );
           break;
         }
         remaining -= 1;
       }
-      if (artworkInputRef.current) artworkInputRef.current.value = "";
-      if (generalInputRef.current) generalInputRef.current.value = "";
+      if (inputRef.current) inputRef.current.value = "";
+      setCaption("");
       router.refresh();
     });
   }
 
   function remove(fileId: string) {
-    if (!window.confirm("Прибрати цей файл із замовлення?")) return;
+    if (!window.confirm("Прибрати цей файл?")) return;
     setError(null);
     const formData = new FormData();
     formData.set("orderId", orderId);
@@ -154,329 +225,260 @@ export function OrderAttachments({
     });
   }
 
-  function makeDropHandlers(
-    purpose: "artwork" | "general",
-    setDragging: (value: boolean) => void,
-  ) {
-    return {
-      onDragEnter(event: React.DragEvent) {
-        if (!canUpload || !hasFileDrag(event)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setDragging(true);
-      },
-      onDragOver(event: React.DragEvent) {
-        if (!canUpload || !hasFileDrag(event)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.dataTransfer.dropEffect = "copy";
-        setDragging(true);
-      },
-      onDragLeave(event: React.DragEvent) {
-        if (!canUpload) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const next = event.relatedTarget as Node | null;
-        if (next && event.currentTarget.contains(next)) return;
-        setDragging(false);
-      },
-      onDrop(event: React.DragEvent) {
-        if (!canUpload) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setDragging(false);
-        uploadFiles(event.dataTransfer.files, purpose);
-      },
-    };
+  function saveMeta(fileId: string, next: { caption?: string; orderItemId?: string }) {
+    const formData = new FormData();
+    formData.set("orderId", orderId);
+    formData.set("fileId", fileId);
+    if (next.caption !== undefined) formData.set("caption", next.caption);
+    if (next.orderItemId !== undefined) formData.set("orderItemId", next.orderItemId);
+    startTransition(async () => {
+      const result = await updateOrderFileMetaAction(formData);
+      if (!result.ok) {
+        setError("Не вдалося оновити файл.");
+        return;
+      }
+      router.refresh();
+    });
   }
 
-  const generalList =
-    decorated.length === 0 ? files : hasLinkedFiles ? unlinkedFiles : [];
-
   return (
-    <div className="space-y-4">
-      {error ? <Banner tone="danger">{error}</Banner> : null}
-
-      {decorated.length > 0 ? (
-        <section className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)]">
-          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3.5 py-2.5">
-            <div className="min-w-0">
-              <p className="inline-flex items-center gap-1.5 type-subsection">
-                <IconDecoration size={15} />
-                Нанесення — макети
-              </p>
-              <p className="type-caption mt-0.5">
-                Без файлу макета передати в цех не можна. До {ORDER_FILE_MAX_MB} МБ · до{" "}
-                {ORDER_FILE_MAX_COUNT} файлів на замовлення.
-              </p>
-            </div>
-            <StatusBadge tone={artworkReady ? "success" : "warning"}>
-              {artworkReady ? "Макети є" : "Потрібен файл"}
-            </StatusBadge>
+    <TableCard>
+      <TableToolbar
+        left={
+          <div className="min-w-0">
+            <p className="type-subsection">Вкладення</p>
+            <p className="type-caption mt-0.5">
+              До {ORDER_FILE_MAX_MB} МБ · до {ORDER_FILE_MAX_COUNT} файлів
+            </p>
           </div>
+        }
+        right={
+          <>
+            {decorated.length > 0 ? (
+              <StatusBadge tone={artworkReady ? "success" : "warning"}>
+                {artworkReady ? "Макети є" : `Потрібен макет · ${missingArtwork.length}`}
+              </StatusBadge>
+            ) : null}
+            <span className="type-caption tabular">
+              {files.length}/{ORDER_FILE_MAX_COUNT}
+            </span>
+          </>
+        }
+      />
 
-          <ul className="divide-y divide-[var(--color-divider)]">
-            {decorated.map((item) => {
-              const needs = itemNeedsArtworkFile(
-                { id: item.id, decorationsCount: item.decorationsCount },
-                files,
-              );
-              const itemFiles = files.filter((file) => file.orderItemId === item.id);
-              const legacyCover =
-                !needs && itemFiles.length === 0 && unlinkedFiles.length > 0 && !hasLinkedFiles;
-              return (
-                <li key={item.id} className="px-3.5 py-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[13.5px] font-semibold text-[var(--color-text-primary)]">
-                        {item.nameUk}
-                      </p>
-                      <p className="type-caption mt-0.5">
-                        {item.decorationNames.length > 0
-                          ? item.decorationNames.join(" · ")
-                          : `${item.decorationsCount} нанесен.`}
-                      </p>
-                    </div>
-                    <StatusBadge tone={needs ? "warning" : "success"}>
-                      {needs
-                        ? "Додайте файл"
-                        : legacyCover
-                          ? "Покрито загальним файлом"
-                          : `${itemFiles.length} файл.`}
-                    </StatusBadge>
-                  </div>
-                  {itemFiles.length > 0 ? (
-                    <ul className="mt-2 space-y-1.5">
-                      {itemFiles.map((file) => (
-                        <li key={file.id}>
-                          <FileRow
-                            file={file}
-                            locked={locked}
-                            pending={pending}
-                            onRemove={() => remove(file.id)}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  ) : needs ? (
-                    <p className="type-caption mt-2 text-[var(--color-warning-text)]">
-                      Завантажте макет для цього виробу — інакше виробництво недоступне.
-                    </p>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-
-          {canUpload ? (
-            <div
-              className={cn(
-                "border-t border-[var(--color-border)] px-3.5 py-3 transition-colors",
-                artworkDragging && "bg-[var(--color-primary-50)]",
-              )}
-              {...makeDropHandlers("artwork", setArtworkDragging)}
-            >
-              <div className="flex flex-wrap items-end gap-2">
-                {decorated.length > 1 ? (
-                  <div className="min-w-[12rem] flex-1">
-                    <Select
-                      label="Виріб для макета"
-                      value={selectedArtworkItemId}
-                      onChange={(event) => setArtworkItemId(event.target.value)}
-                      options={[
-                        { value: "", label: "Оберіть позицію…" },
-                        ...decorated.map((item) => ({
-                          value: item.id,
-                          label: item.nameUk,
-                        })),
-                      ]}
-                    />
-                  </div>
-                ) : null}
-                <input
-                  ref={artworkInputRef}
-                  type="file"
-                  className="sr-only"
-                  accept={ORDER_FILE_ACCEPT}
-                  multiple
-                  onChange={(event) => {
-                    uploadFiles(event.target.files, "artwork");
-                  }}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  loading={pending}
-                  disabled={pending || (decorated.length > 1 && !selectedArtworkItemId)}
-                  onClick={() => artworkInputRef.current?.click()}
-                >
-                  <IconPlus size={14} />
-                  {pending ? "Завантаження…" : "Додати макет"}
-                </Button>
-              </div>
-              <p className="type-caption mt-2">
-                {artworkDragging
-                  ? "Відпустіть файл, щоб завантажити макет"
-                  : "Або перетягніть файл макета в цю зону"}
-              </p>
-            </div>
-          ) : null}
-        </section>
+      {error ? (
+        <div className="border-b border-[var(--color-divider)] px-3.5 py-2.5">
+          <Banner tone="danger">{error}</Banner>
+        </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)]">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-3.5 py-2.5">
-          <div>
-            <p className="type-subsection">
-              {decorated.length > 0 ? "Інші вкладення" : "Вкладення"}
-            </p>
-            <p className="type-caption mt-0.5">
-              {decorated.length > 0
-                ? "Лекала, підтвердження клієнта тощо"
-                : `Макети, лекала, підтвердження · до ${ORDER_FILE_MAX_MB} МБ · до ${ORDER_FILE_MAX_COUNT} файлів`}
-            </p>
-          </div>
-          <span className="type-caption tabular">
-            {files.length}/{ORDER_FILE_MAX_COUNT}
-          </span>
-        </div>
-
-        {generalList.length > 0 ? (
-          <ul>
-            {generalList.map((file) => (
-              <li
-                key={file.id}
-                className="border-b border-[var(--color-divider)] px-4 py-3 last:border-0"
-              >
-                <FileRow
-                  file={file}
-                  locked={locked}
-                  pending={pending}
-                  onRemove={() => remove(file.id)}
-                  showProduct
-                />
-              </li>
+      {files.length > 0 ? (
+        <Table>
+          <THead>
+            <TH>Виріб</TH>
+            <TH>Файл</TH>
+            <TH>Підпис</TH>
+            {!locked ? <TH width="44px" /> : null}
+          </THead>
+          <TBody>
+            {files.map((file) => (
+              <FileRow
+                key={`${file.id}:${file.caption ?? ""}:${file.orderItemId ?? ""}`}
+                file={file}
+                items={artworkItems}
+                locked={locked}
+                pending={pending}
+                onRemove={() => remove(file.id)}
+                onCaption={(value) => saveMeta(file.id, { caption: value })}
+                onLinkItem={(value) => saveMeta(file.id, { orderItemId: value })}
+              />
             ))}
-          </ul>
-        ) : (
-          <div className="px-4 py-5 text-center">
-            <p className="text-[14px] font-semibold">
-              {decorated.length > 0 ? "Додаткових файлів немає" : "Файлів ще немає"}
-            </p>
-            {decorated.length === 0 ? (
-              <p className="type-body-secondary mx-auto mt-0.5 max-w-md">
-                Якщо зʼявиться нанесення — тут буде блок макетів і жовтий маркер на вкладці
-                «Документи».
-              </p>
-            ) : null}
-          </div>
-        )}
+          </TBody>
+        </Table>
+      ) : (
+        <p className="px-3.5 py-5 text-center type-caption">Файлів ще немає</p>
+      )}
 
-        {canUpload ? (
-          <div
-            className={cn(
-              "border-t border-dashed border-[var(--color-border)] px-4 py-5 text-center transition-colors",
-              generalDragging
-                ? "border-[var(--color-primary-600)] bg-[var(--color-primary-50)]"
-                : "bg-[var(--color-surface-subtle)]",
-            )}
-            {...makeDropHandlers("general", setGeneralDragging)}
-          >
+      {canUpload ? (
+        <div
+          className={cn(
+            "border-t border-dashed px-3.5 py-3 transition-colors",
+            dragging
+              ? "border-[var(--color-primary-600)] bg-[var(--color-primary-50)]"
+              : "border-[var(--color-border)] bg-[var(--color-surface-subtle)]",
+          )}
+          onDragEnter={(event) => {
+            if (!hasFileDrag(event)) return;
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragOver={(event) => {
+            if (!hasFileDrag(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+            setDragging(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            const next = event.relatedTarget as Node | null;
+            if (next && event.currentTarget.contains(next)) return;
+            setDragging(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            uploadFiles(event.dataTransfer.files);
+          }}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-[12rem] flex-1 basis-[12rem]">
+              <ProductSelect
+                items={artworkItems}
+                value={linkItemId}
+                onChange={setLinkItemId}
+                disabled={pending}
+              />
+            </div>
             <input
-              ref={generalInputRef}
+              value={caption}
+              disabled={pending}
+              placeholder="Підпис"
+              className={cn(inputClass, "min-w-[8rem] flex-1 basis-[8rem]")}
+              onChange={(event) => setCaption(event.target.value)}
+            />
+            <input
+              ref={inputRef}
               type="file"
               className="sr-only"
               accept={ORDER_FILE_ACCEPT}
               multiple
-              onChange={(event) => {
-                uploadFiles(event.target.files, "general");
-              }}
+              onChange={(event) => uploadFiles(event.target.files)}
             />
-            <p className="type-body-secondary mb-3">
-              {generalDragging
-                ? "Відпустіть файл, щоб завантажити"
-                : "Перетягніть файл сюди або натисніть кнопку"}
-            </p>
             <Button
               type="button"
               size="sm"
               loading={pending}
               disabled={pending}
-              onClick={() => generalInputRef.current?.click()}
+              onClick={() => inputRef.current?.click()}
             >
               <IconPlus size={14} />
               {pending ? "Завантаження…" : "Додати файл"}
             </Button>
+            <span className="type-caption whitespace-nowrap text-[var(--color-text-tertiary)]">
+              {dragging ? "Відпустіть файли" : "або перетягніть сюди"}
+            </span>
           </div>
-        ) : null}
-      </section>
-
-      {decorated.length > 0 && !hasLinkedFiles && unlinkedFiles.length > 0 ? (
-        <section className="overflow-hidden rounded-[var(--radius-surface)] border border-dashed border-[var(--color-border)]">
-          <div className="px-3.5 py-2.5">
-            <p className="type-caption mb-2">
-              Файли без привʼязки до виробу (враховуються для передачі в цех)
-            </p>
-            <ul className="space-y-1.5">
-              {unlinkedFiles.map((file) => (
-                <li key={file.id}>
-                  <FileRow
-                    file={file}
-                    locked={locked}
-                    pending={pending}
-                    onRemove={() => remove(file.id)}
-                  />
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
+        </div>
       ) : null}
-    </div>
+    </TableCard>
   );
 }
 
 function FileRow({
   file,
+  items,
   locked,
   pending,
   onRemove,
-  showProduct,
+  onCaption,
+  onLinkItem,
 }: {
   file: OrderFileRow;
+  items: OrderArtworkItem[];
   locked?: boolean;
   pending: boolean;
   onRemove: () => void;
-  showProduct?: boolean;
+  onCaption: (value: string) => void;
+  onLinkItem: (value: string) => void;
 }) {
+  const [captionDraft, setCaptionDraft] = useState(file.caption ?? "");
+  const linked = items.find((item) => item.id === file.orderItemId);
+  const productName = linked?.nameUk ?? file.orderItemNameUk;
+  const productImage = linked?.imageUrl ?? file.orderItemImageUrl;
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="min-w-0 flex-1">
-        <a
-          href={file.url}
-          target="_blank"
-          rel="noreferrer"
-          className="font-medium text-[var(--color-text-primary)] hover:text-[var(--color-primary-700)] hover:underline"
-        >
-          {file.fileName}
-        </a>
-        <p className="type-caption">
-          {formatBytes(file.sizeBytes)} · {formatDateUk(file.createdAt)}
-          {showProduct && file.orderItemNameUk ? ` · ${file.orderItemNameUk}` : ""}
-        </p>
-      </div>
+    <TR>
+      <TD>
+        {locked || items.length === 0 ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <ProductThumb
+              imageUrl={productImage}
+              label={productName ?? "Без виробу"}
+              size="sm"
+            />
+            <span
+              className={cn(
+                "min-w-0 truncate text-[13px]",
+                productName
+                  ? "font-medium text-[var(--color-text-primary)]"
+                  : "text-[var(--color-text-tertiary)]",
+              )}
+            >
+              {productName ?? "Без виробу"}
+            </span>
+          </div>
+        ) : (
+          <ProductSelect
+            items={items}
+            value={file.orderItemId ?? ""}
+            onChange={onLinkItem}
+            disabled={pending}
+            ariaLabel="Привʼязати до виробу"
+          />
+        )}
+      </TD>
+      <TD>
+        <div className="min-w-0">
+          <a
+            href={file.url}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate font-medium text-[var(--color-text-primary)] hover:text-[var(--color-primary-700)] hover:underline"
+          >
+            {file.fileName}
+          </a>
+          <p className="type-caption tabular">
+            {formatBytes(file.sizeBytes)} · {formatDateUk(file.createdAt)}
+          </p>
+        </div>
+      </TD>
+      <TD>
+        {locked ? (
+          <span className="type-caption text-[var(--color-text-secondary)]">
+            {file.caption || "—"}
+          </span>
+        ) : (
+          <input
+            value={captionDraft}
+            disabled={pending}
+            placeholder="Підпис"
+            className={inputClass}
+            onChange={(event) => setCaptionDraft(event.target.value)}
+            onBlur={() => {
+              if ((file.caption ?? "") !== captionDraft.trim()) {
+                onCaption(captionDraft.trim());
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+          />
+        )}
+      </TD>
       {locked ? null : (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={pending}
-          aria-label={`Видалити ${file.fileName}`}
-          onClick={onRemove}
-        >
-          <IconTrash size={14} />
-        </Button>
+        <TD>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            aria-label={`Видалити ${file.fileName}`}
+            onClick={onRemove}
+          >
+            <IconTrash size={14} />
+          </Button>
+        </TD>
       )}
-    </div>
+    </TR>
   );
 }

@@ -185,6 +185,10 @@ export function SaveProposalPanel({
           setError("Порожнє замовлення можна зберігати лише на Чернетці або Розрахунку.");
           return;
         }
+        if (result.error === "USE_NEW_PROPOSAL") {
+          setError("Замовлення вже погоджене. Натисніть «Нова пропозиція».");
+          return;
+        }
         setError("Не вдалося зберегти пропозицію. Перевірте склад усіх позицій.");
         return;
       }
@@ -239,7 +243,6 @@ export function SaveProposalPanel({
               step="0.1"
               value={discountPercent}
               onChange={(event) => setDiscountPercent(event.target.value)}
-              hint="Опційно · застосовується до всіх позицій без ручної ціни"
             />
           </FormGroup>
 

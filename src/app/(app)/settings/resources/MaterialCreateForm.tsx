@@ -96,21 +96,6 @@ function resolveUnitCode(unit: UnitOption | undefined): string {
   return "m";
 }
 
-function fabricUnitTip(mode: FabricUnitMode): string {
-  switch (mode) {
-    case "kg":
-      return "Щільність і ширина обовʼязкові · м.п./кг рахується сам";
-    case "m2":
-      return "Потрібна ширина · ₴/м.п. з ₴/м²";
-    case "pcs":
-      return "Норма і ціна в штуках";
-    case "cone":
-      return "Норма і ціна за бобіну";
-    default:
-      return "Ціна в ₴/м · м.п./кг лише для логістики";
-  }
-}
-
 export type MaterialWizardMeta = {
   step: number;
   stepCount: number;
@@ -449,30 +434,16 @@ function MaterialFields({
     if (pricingInline) recalcMeterPrices({ metersPerKg: value });
   }
 
-  function syncMetersPerKgFromDensity(
-    nextDensity: string,
-    nextWidth: string,
-    force = false,
-  ) {
+  function syncMetersPerKgFromDensity(nextDensity: string, nextWidth: string) {
     const auto = metersPerKgFromDensityWidth(nextDensity, nextWidth);
     if (auto == null) return;
-    // kg mode: always keep auto in sync; other modes: only if not manually overridden
-    if (metersPerKgAutoOnly) {
-      applyMetersPerKg(String(auto), { fromAuto: true });
-      return;
-    }
-    if (!force && metersPerKgManual && metersPerKg.trim()) return;
+    // Density × width always drives м.п./кг (kg required; m/m² optional logistics).
     applyMetersPerKg(String(auto), { fromAuto: true });
   }
 
-  // Edit/create: re-apply formula when density/width or kg-mode flips (create already did this onChange).
+  // Edit/create: keep м.п./кг in sync whenever density/width (or kg mode) can compute it.
   useEffect(() => {
     if (autoMetersPerKg == null) return;
-    if (metersPerKgAutoOnly) {
-      applyMetersPerKg(String(autoMetersPerKg), { fromAuto: true });
-      return;
-    }
-    if (metersPerKgManual && metersPerKg.trim()) return;
     applyMetersPerKg(String(autoMetersPerKg), { fromAuto: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- drive from formula inputs / kg mode only
   }, [autoMetersPerKg, metersPerKgAutoOnly]);
@@ -792,10 +763,9 @@ function MaterialFields({
             setUnitOfMeasureId(event.target.value);
             const nextUnit = units.find((unit) => unit.id === event.target.value) ?? units[0];
             if (type === "FABRIC" && resolveFabricUnitMode(resolveUnitCode(nextUnit)) === "kg") {
-              syncMetersPerKgFromDensity(densityGsm, widthCm, true);
+              syncMetersPerKgFromDensity(densityGsm, widthCm);
             }
           }}
-          hint={type === "FABRIC" ? fabricUnitTip(fabricUnitMode) : undefined}
         >
           {unitOptions.map((unit) => (
             <option key={unit.id} value={unit.id}>
@@ -827,7 +797,6 @@ function MaterialFields({
               step="1"
               min="1"
               optional
-              hint={packLabels.contentHint}
               value={unitsPerPack}
               onChange={(event) => setUnitsPerPack(event.target.value)}
             />
@@ -839,7 +808,6 @@ function MaterialFields({
                 step="0.01"
                 min="0"
                 optional
-                hint="Напр. комірці — ~35 шт у 1 кг (для закупівлі $/кг)"
                 value={unitsPerKg}
                 onChange={(event) => setUnitsPerKg(event.target.value)}
               />
@@ -867,7 +835,6 @@ function MaterialFields({
                   min="0"
                   optional
                   suffix="₴"
-                  hint="Фікс за пачку · або задайте в умовах постачальника"
                   value={packDeliveryCostUah}
                   onChange={(event) => setPackDeliveryCostUah(event.target.value)}
                 />
@@ -904,7 +871,7 @@ function MaterialFields({
             hint={
               trimPackActive
                 ? `(ціна + доставка) ÷ ${Math.floor(Number(unitsPerPack))} ${packLabels.eachQuote}`
-                : "Або вкажіть упаковку / шт·кг — ₴/од. порахуємо самі"
+                : undefined
             }
             onChange={
               purchaseReadOnly
@@ -1012,7 +979,7 @@ function MaterialFields({
                 onChange={(event) => {
                   const value = event.target.value;
                   setDensityGsm(value);
-                  syncMetersPerKgFromDensity(value, widthCm, densityWidthRequired);
+                  syncMetersPerKgFromDensity(value, widthCm);
                 }}
               />
             ) : (
@@ -1028,7 +995,7 @@ function MaterialFields({
                 onChange={(event) => {
                   const value = event.target.value;
                   setWidthCm(value);
-                  syncMetersPerKgFromDensity(densityGsm, value, densityWidthRequired);
+                  syncMetersPerKgFromDensity(densityGsm, value);
                   if (fabricUnitMode === "m2") applyM2Prices({ widthCm: value });
                 }}
               />
@@ -1211,7 +1178,6 @@ function MaterialFields({
                       recalcMeterPrices({ fabricCargoUsdPerKg: value });
                     }
                   }}
-                  hint="Для кількох типів (НП стандарт + обʼємні) — після створення редагуйте в «Умовах» постачальника"
                 />
               </FormGroup>
             )}
@@ -1250,7 +1216,6 @@ function MaterialFields({
                       setPriceMeterVat("");
                       recalcMeterPrices({ priceKgUsd: value, priceKgUsdVat: "" });
                     }}
-                    hint="Без ПДВ — як у більшості прайсів"
                   />
                   <Input
                     label="З доставкою"
@@ -1258,7 +1223,6 @@ function MaterialFields({
                     suffix="$/кг"
                     readOnly
                     tabIndex={-1}
-                    hint="Авто + тариф доставки"
                   />
                   <input type="hidden" name="priceKgUsdCargo" value={derived.priceKgUsdCargo ?? ""} />
                   <input type="hidden" name="priceKgUsdVat" value="" />
@@ -1285,7 +1249,6 @@ function MaterialFields({
                       setPriceMeterVat("");
                       applyM2Prices({ priceM2NoVat: event.target.value, priceM2Vat: "" });
                     }}
-                    hint="Без ПДВ"
                   />
                   <input type="hidden" name="priceKgUsd" value={priceKgUsd} />
                   <input type="hidden" name="priceKgUsdVat" value="" />
@@ -1335,17 +1298,6 @@ function MaterialFields({
                           setPriceMeterVat("");
                         }
                   }
-                  hint={
-                    fabricUnitMode === "kg"
-                      ? "Авто: $/кг ÷ м.п./кг × курс"
-                      : fabricUnitMode === "m2"
-                        ? "Авто з ₴/м² × ширина"
-                        : tierMode === "tier" &&
-                            minWholesaleMeters.trim() !== "" &&
-                            Number(minWholesaleMeters) > 0
-                          ? `Базова · від ${minWholesaleMeters} ${qtyUnit}`
-                          : "Базова ціна тканини без доставки"
-                  }
                 />
                 <input type="hidden" name="priceMeterUahVat" value="" />
                 {tierMode === "tier" ? (
@@ -1384,7 +1336,7 @@ function MaterialFields({
                       hint={
                         minWholesaleMeters.trim() === "" || Number(minWholesaleMeters) <= 0
                           ? "Спочатку вкажіть межу роздробу"
-                          : "До межі (зазвичай дорожча за базову)"
+                          : undefined
                       }
                     />
                   </>
@@ -1454,7 +1406,6 @@ function MaterialFields({
                 optional
                 value={costOverride}
                 onChange={(event) => setCostOverride(event.target.value)}
-                hint="За замовчуванням — без ПДВ. Окрему ціну «з ПДВ» вводити не потрібно."
               >
                 <option value="">{`Як у налаштуваннях (${policyLabel})`}</option>
                 <option value="NET">Завжди без ПДВ</option>

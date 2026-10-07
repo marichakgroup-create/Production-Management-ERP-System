@@ -10,6 +10,7 @@ export type ActivityAction =
   | "version_approved"
   | "proposal_saved"
   | "proposal_approved"
+  | "proposal_activated"
   | "handed_to_production"
   | "updated";
 
@@ -67,6 +68,8 @@ export function activityActionLabel(action: string): string {
       return "Збережено пропозицію";
     case "proposal_approved":
       return "Погоджено пропозицію";
+    case "proposal_activated":
+      return "Активовано пропозицію";
     case "handed_to_production":
       return "Передано у виробництво";
     case "updated":

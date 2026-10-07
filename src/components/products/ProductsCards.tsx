@@ -99,118 +99,120 @@ export function ProductsCards({
         <span className="type-caption">Обрати всі на сторінці</span>
       </div>
 
-      <ul className="grid grid-cols-1 gap-2.5 p-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {sorted.map((product) => {
-          const isSelected = selection.isSelected(product.id);
-          const initial = product.nameUk.trim().charAt(0).toUpperCase() || "В";
+      <div className="max-h-[min(70vh,calc(100dvh-13rem))] overflow-y-auto overflow-x-hidden">
+        <ul className="grid grid-cols-1 gap-2.5 p-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {sorted.map((product) => {
+            const isSelected = selection.isSelected(product.id);
+            const initial = product.nameUk.trim().charAt(0).toUpperCase() || "В";
 
-          return (
-            <li key={product.id} className="min-w-0">
-              <article
-                className={cn(
-                  "group relative flex h-full overflow-hidden rounded-[var(--radius-surface)] border bg-[var(--color-surface)] transition-colors",
-                  isSelected
-                    ? "border-[var(--color-primary-300)] ring-1 ring-[var(--color-primary-200)]"
-                    : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]",
-                )}
-              >
-                <div className="absolute top-2 left-2 z-[1]">
-                  <RowCheckbox
-                    checked={isSelected}
-                    onChange={() => selection.toggleOne(product.id)}
-                    label={`Обрати ${product.nameUk}`}
-                  />
-                </div>
-
-                <Link
-                  href={`/products/${product.id}`}
-                  className="flex min-w-0 flex-1 gap-3 p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)] focus-visible:ring-inset"
+            return (
+              <li key={product.id} className="min-w-0">
+                <article
+                  className={cn(
+                    "group relative flex h-full overflow-hidden rounded-[var(--radius-surface)] border bg-[var(--color-surface)] transition-colors",
+                    isSelected
+                      ? "border-[var(--color-primary-300)] ring-1 ring-[var(--color-primary-200)]"
+                      : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]",
+                  )}
                 >
-                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-[6px] border border-[var(--color-border)] bg-[var(--color-tint-slate)]">
-                    {product.imageUrl ? (
-                      <Image
-                        src={product.imageUrl}
-                        alt=""
-                        fill
-                        sizes="48px"
-                        className="object-cover"
-                        unoptimized={
-                          product.imageUrl.startsWith("/uploads/") ||
-                          product.imageUrl.includes("supabase.co")
-                        }
-                      />
-                    ) : (
-                      <div className="flex h-full w-full flex-col items-center justify-center text-[var(--color-text-tertiary)]">
-                        <span className="text-[11px] font-semibold tracking-wide">{initial}</span>
-                      </div>
-                    )}
+                  <div className="absolute top-2 left-2 z-[1]">
+                    <RowCheckbox
+                      checked={isSelected}
+                      onChange={() => selection.toggleOne(product.id)}
+                      label={`Обрати ${product.nameUk}`}
+                    />
                   </div>
 
-                  <div className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug text-[var(--color-text-primary)]">
-                          {product.nameUk}
-                        </h3>
-                        <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-tertiary)]">
-                          {product.isBaseModel ? (
-                            <span className="text-[var(--color-primary-700)]">Базова</span>
-                          ) : null}
-                          {product.isBaseModel && product.internalCode ? " · " : null}
-                          {product.internalCode ?? "Без коду"}
-                        </p>
-                      </div>
-                      <StatusBadge dot tone={product.ready ? "success" : "warning"}>
-                        {product.ready ? "Готовий" : "Комплектація"}
-                      </StatusBadge>
-                    </div>
-
-                    {product.compositionSummary ? (
-                      <p className="line-clamp-4 text-[11.5px] leading-snug text-[var(--color-text-quiet)]">
-                        {product.compositionSummary}
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-[var(--color-text-quiet)]">Склад не вказано</p>
-                    )}
-
-                    <div className="mt-auto space-y-0.5 pt-0.5">
-                      {showPrices ? (
-                        product.ready && product.prices.some((p) => p != null) ? (
-                          product.priceTiers.map((qty, index) => {
-                            const tierPrice = product.prices[index];
-                            if (tierPrice == null) return null;
-                            return (
-                              <p
-                                key={`${product.id}-${qty}`}
-                                className="flex items-baseline justify-between gap-2 tabular text-[12.5px]"
-                              >
-                                <span className="text-[10.5px] text-[var(--color-text-tertiary)]">
-                                  від {qty} шт
-                                </span>
-                                <span className="font-semibold text-[var(--color-text-primary)]">
-                                  {formatMoneyUah(tierPrice)}
-                                </span>
-                              </p>
-                            );
-                          })
-                        ) : (
-                          <p className="text-[11.5px] text-[var(--color-text-tertiary)]">
-                            Ціна після комплектації
-                          </p>
-                        )
+                  <Link
+                    href={`/products/${product.id}`}
+                    className="flex min-w-0 flex-1 gap-3 p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)] focus-visible:ring-inset"
+                  >
+                    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-[6px] border border-[var(--color-border)] bg-[var(--color-tint-slate)]">
+                      {product.imageUrl ? (
+                        <Image
+                          src={product.imageUrl}
+                          alt=""
+                          fill
+                          sizes="48px"
+                          className="object-cover"
+                          unoptimized={
+                            product.imageUrl.startsWith("/uploads/") ||
+                            product.imageUrl.includes("supabase.co")
+                          }
+                        />
                       ) : (
-                        <p className="text-[11.5px] text-[var(--color-text-quiet)]">
-                          {product.materialsCount} мат. · {product.operationsCount} оп.
-                        </p>
+                        <div className="flex h-full w-full flex-col items-center justify-center text-[var(--color-text-tertiary)]">
+                          <span className="text-[11px] font-semibold tracking-wide">{initial}</span>
+                        </div>
                       )}
                     </div>
-                  </div>
-                </Link>
-              </article>
-            </li>
-          );
-        })}
-      </ul>
+
+                    <div className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug text-[var(--color-text-primary)]">
+                            {product.nameUk}
+                          </h3>
+                          <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-tertiary)]">
+                            {product.isBaseModel ? (
+                              <span className="text-[var(--color-primary-700)]">Базова</span>
+                            ) : null}
+                            {product.isBaseModel && product.internalCode ? " · " : null}
+                            {product.internalCode ?? "Без коду"}
+                          </p>
+                        </div>
+                        <StatusBadge dot tone={product.ready ? "success" : "warning"}>
+                          {product.ready ? "Готовий" : "Комплектація"}
+                        </StatusBadge>
+                      </div>
+
+                      {product.compositionSummary ? (
+                        <p className="line-clamp-4 text-[11.5px] leading-snug text-[var(--color-text-quiet)]">
+                          {product.compositionSummary}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-[var(--color-text-quiet)]">Склад не вказано</p>
+                      )}
+
+                      <div className="mt-auto space-y-0.5 pt-0.5">
+                        {showPrices ? (
+                          product.ready && product.prices.some((p) => p != null) ? (
+                            product.priceTiers.map((qty, index) => {
+                              const tierPrice = product.prices[index];
+                              if (tierPrice == null) return null;
+                              return (
+                                <p
+                                  key={`${product.id}-${qty}`}
+                                  className="flex items-baseline justify-between gap-2 tabular text-[12.5px]"
+                                >
+                                  <span className="text-[10.5px] text-[var(--color-text-tertiary)]">
+                                    від {qty} шт
+                                  </span>
+                                  <span className="font-semibold text-[var(--color-text-primary)]">
+                                    {formatMoneyUah(tierPrice)}
+                                  </span>
+                                </p>
+                              );
+                            })
+                          ) : (
+                            <p className="text-[11.5px] text-[var(--color-text-tertiary)]">
+                              Ціна після комплектації
+                            </p>
+                          )
+                        ) : (
+                          <p className="text-[11.5px] text-[var(--color-text-quiet)]">
+                            {product.materialsCount} мат. · {product.operationsCount} оп.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                </article>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

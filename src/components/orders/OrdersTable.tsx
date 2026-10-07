@@ -1,13 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CellStack,
   Table,
   TableEmpty,
-  TableRowButton,
   TBody,
   TD,
   TH,
@@ -28,11 +26,14 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconGarment,
-  IconInfo,
   IconOrders,
 } from "@/components/ui/Icons";
 import { cn, formatDateUk, formatMoneyShort, formatMoneyUah } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
+import {
+  OrderDeleteIconButton,
+  OrderDuplicateIconButton,
+} from "@/components/orders/OrderRowActions";
 import { bulkCancelOrdersAction } from "@/server/domains/orders/actions";
 
 export type OrdersTableRow = {
@@ -67,7 +68,7 @@ function itemsSummary(items: OrdersTableRow["items"]) {
   if (items.length === 0) return { title: "Без позицій", subtitle: undefined as string | undefined };
   if (items.length === 1) {
     return {
-      title: items[0].nameUk,
+      title: items[0]!.nameUk,
       subtitle: qty > 0 ? `${qty} шт` : undefined,
     };
   }
@@ -82,24 +83,29 @@ function orderAmount(order: OrdersTableRow) {
 }
 
 /**
- * Orders list with expand-for-lines, sortable columns, row selection and bulk cancel.
+ * Orders list with expand-for-lines, sortable columns, row selection and archive/duplicate.
  */
 export function OrdersTable({
   orders,
   empty,
-  canDelete = false,
+  canManage = false,
   showAmounts = true,
+  archiveView = false,
 }: {
   orders: OrdersTableRow[];
   empty: { title: string; description?: string; action?: React.ReactNode };
-  canDelete?: boolean;
+  canManage?: boolean;
   showAmounts?: boolean;
+  /** Archive tab: hide trash (already archived). */
+  archiveView?: boolean;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { sort, toggle } = useTableSort<SortKey>({ key: "number", direction: "desc" });
 
-  const colCount = (showAmounts ? 7 : 6) + 2;
+  const showActions = canManage;
+  // checkbox + expand + number + client + [amount] + status + updated + created + [actions]
+  const colCount = 7 + (showAmounts ? 1 : 0) + (showActions ? 1 : 0);
 
   const sorted = useMemo(
     () =>
@@ -128,12 +134,12 @@ export function OrdersTable({
         {selection.selectedIds.length === 1 ? (
           <OpenSelectedLink href={`/orders/${selection.selectedIds[0]}`} />
         ) : null}
-        {canDelete ? (
+        {canManage && !archiveView ? (
           <BulkDeleteButton
             ids={selection.selectedIds}
             action={bulkCancelOrdersAction}
-            title="Скасувати замовлення?"
-            description="Обрані замовлення отримають статус «Скасовано». Історія та версії збережуться."
+            title="Перемістити в архів?"
+            description="Обрані замовлення потраплять в архів і зникнуть зі списку «Усі» та інших фільтрів."
             onDone={selection.clear}
           />
         ) : null}
@@ -176,9 +182,11 @@ export function OrdersTable({
           <SortableTH columnKey="created" sort={sort} onSort={toggle}>
             Створено
           </SortableTH>
-          <TH align="right" stickyRight width="120px">
-            Дії
-          </TH>
+          {showActions ? (
+            <TH align="right" stickyRight width="88px">
+              Дії
+            </TH>
+          ) : null}
         </THead>
         <TBody>
           {sorted.length === 0 ? (
@@ -197,6 +205,7 @@ export function OrdersTable({
               const summary = itemsSummary(order.items);
               const totalValue = orderAmount(order);
               const hasAmount = order.items.some((item) => item.amount != null);
+              const archived = archiveView || order.status === "CANCELLED";
 
               return (
                 <FragmentRows key={order.id}>
@@ -243,18 +252,18 @@ export function OrdersTable({
                       />
                     </TD>
                     {showAmounts ? (
-                    <TD numeric className="font-medium text-[var(--color-text-primary)]">
-                      {hasAmount ? (
-                        formatMoneyShort(totalValue)
-                      ) : (
-                        <span
-                          className="font-normal text-[var(--color-text-quiet)]"
-                          title="Сума зʼявиться після збереження пропозиції"
-                        >
-                          —
-                        </span>
-                      )}
-                    </TD>
+                      <TD numeric className="font-medium text-[var(--color-text-primary)]">
+                        {hasAmount ? (
+                          formatMoneyShort(totalValue)
+                        ) : (
+                          <span
+                            className="font-normal text-[var(--color-text-quiet)]"
+                            title="Сума зʼявиться після збереження пропозиції"
+                          >
+                            —
+                          </span>
+                        )}
+                      </TD>
                     ) : null}
                     <TD nowrap>
                       <div className="flex flex-col items-start gap-1">
@@ -277,23 +286,22 @@ export function OrdersTable({
                     <TD nowrap className="tabular type-caption text-[var(--color-text-secondary)]">
                       {formatDateUk(order.createdAt)}
                     </TD>
-                    <TD align="right" stickyRight nowrap>
-                      <div className="inline-flex items-center gap-0.5">
-                        <Link
-                          href={`/orders/${order.id}`}
-                          className="inline-flex h-7 items-center rounded-[6px] px-2 text-[12.5px] font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]"
-                        >
-                          Відкрити
-                        </Link>
-                        <TableRowButton
-                          aria-label="Деталі замовлення"
-                          title="Інфо"
-                          onClick={() => toggleExpand(order.id)}
-                        >
-                          <IconInfo size={14} />
-                        </TableRowButton>
-                      </div>
-                    </TD>
+                    {showActions ? (
+                      <TD align="right" stickyRight nowrap>
+                        <div className="inline-flex items-center justify-end gap-0.5">
+                          <OrderDuplicateIconButton
+                            orderId={order.id}
+                            orderNumber={order.number}
+                          />
+                          {!archived ? (
+                            <OrderDeleteIconButton
+                              orderId={order.id}
+                              orderNumber={order.number}
+                            />
+                          ) : null}
+                        </div>
+                      </TD>
+                    ) : null}
                   </TR>
 
                   {isOpen ? (

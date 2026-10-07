@@ -75,7 +75,6 @@ export default async function PricingSettingsPage() {
                   step="0.01"
                   min="0.01"
                   defaultValue={Number(pricing?.usdUahRate ?? 45)}
-                  hint="Для перерахунку $/кг → грн/м.п."
                 />
                 <Input
                   name="fabricCargoUsdPerKg"
@@ -84,7 +83,6 @@ export default async function PricingSettingsPage() {
                   step="0.01"
                   min="0"
                   defaultValue={Number(pricing?.fabricCargoUsdPerKg ?? 1.7)}
-                  hint="Тип доставки на картці тканини"
                 />
                 <Input
                   name="npStandardUsdPerKg"
@@ -93,7 +91,7 @@ export default async function PricingSettingsPage() {
                   step="0.01"
                   min="0"
                   defaultValue={Number(pricing?.npStandardUsdPerKg ?? 0.4)}
-                  hint="Завжди 0,4 $/кг · не змінювати без потреби"
+                  hint="Не змінювати без потреби (стандарт 0,4 $/кг)"
                 />
                 <Input
                   name="npVolumeUsdPerKg"

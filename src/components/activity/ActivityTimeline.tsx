@@ -14,11 +14,15 @@ export type ActivityRow = {
 function detailFromPayload(action: string, payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const data = payload as Record<string, unknown>;
-  if (action === "version_saved" || action === "version_approved" || action === "proposal_saved" || action === "proposal_approved") {
+  if (action === "version_saved" || action === "version_approved") {
     const n = data.versionNumber;
     return typeof n === "number" ? `v${n}` : null;
   }
-  if (action === "proposal_saved" || action === "proposal_approved") {
+  if (
+    action === "proposal_saved" ||
+    action === "proposal_approved" ||
+    action === "proposal_activated"
+  ) {
     const n = data.proposalRevision;
     return typeof n === "number" ? `v${n}` : null;
   }

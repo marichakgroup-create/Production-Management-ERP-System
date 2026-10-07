@@ -45,6 +45,8 @@ type ItemInput = {
   id: string;
   nameUk: string;
   totalQuantity: number;
+  /** Hidden from working composition; still carries proposal history. */
+  superseded?: boolean;
   versions: VersionInput[];
 };
 
@@ -63,7 +65,9 @@ function toLine(item: ItemInput, version: VersionInput): ProposalLineVersion {
 }
 
 export function buildOrderProposals(items: ItemInput[]): OrderProposalGroup[] {
-  const itemIds = new Set(items.map((item) => item.id));
+  const workingItemIds = new Set(
+    items.filter((item) => !item.superseded).map((item) => item.id),
+  );
   const grouped = new Map<number, { versions: Array<{ item: ItemInput; version: VersionInput }> }>();
 
   for (const item of items) {
@@ -81,6 +85,11 @@ export function buildOrderProposals(items: ItemInput[]): OrderProposalGroup[] {
     const lines = bucket.versions.map(({ item, version }) => toLine(item, version));
     const uniqueItems = new Set(lines.map((line) => line.orderItemId));
     const first = bucket.versions[0]!.version;
+    // Approving requires the revision to cover every current working line.
+    const matchesWorking =
+      workingItemIds.size > 0 &&
+      uniqueItems.size === workingItemIds.size &&
+      [...workingItemIds].every((id) => uniqueItems.has(id));
     proposals.push({
       key: `rev-${revision}`,
       revision,
@@ -92,7 +101,7 @@ export function buildOrderProposals(items: ItemInput[]): OrderProposalGroup[] {
       lines: lines.sort((a, b) => a.itemNameUk.localeCompare(b.itemNameUk, "uk")),
       totalSellingValue: lines.reduce((sum, line) => sum + line.totalSellingValue, 0),
       totalQuantity: lines.reduce((sum, line) => sum + line.totalQuantity, 0),
-      isComplete: uniqueItems.size === itemIds.size && [...uniqueItems].every((id) => itemIds.has(id)),
+      isComplete: matchesWorking || (workingItemIds.size === 0 && uniqueItems.size > 0),
     });
   }
 

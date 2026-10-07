@@ -10,7 +10,6 @@ import { SupplierPaletteEditor } from "@/components/catalog/SupplierPaletteEdito
 import { DeliveryRatesFields } from "@/components/catalog/DeliveryRatesFields";
 import {
   deriveFabricPricing,
-  fabricQuoteHint,
   fabricQuoteSuffix,
   meterUahFromSupplierQuote,
   supplierQuoteFromMeterUah,
@@ -876,7 +875,7 @@ export function MaterialSupplierDraftsEditor({
                   }
                   hint={
                     unitsPerPack != null && unitsPerPack > 0
-                      ? packLabels.packPriceHint(unitsPerPack)
+                      ? undefined
                       : packLabels.packPriceEmptyHint
                   }
                 />
@@ -894,7 +893,7 @@ export function MaterialSupplierDraftsEditor({
                   }
                   hint={
                     unitsPerKg != null && unitsPerKg > 0
-                      ? `${unitsPerKg} шт/кг · курс ${effectiveUsdRate} ₴/$`
+                      ? undefined
                       : "Спочатку «Шт / кг» на матеріалі"
                   }
                 />
@@ -975,17 +974,6 @@ export function MaterialSupplierDraftsEditor({
                     priceMeterUahVat: event.target.value,
                   }))
                 }
-                hint={
-                  tierMode === "tier"
-                    ? "Базова ціна (коли витрата ≥ межі роздробу)"
-                    : unitQuoteMode === "kg"
-                      ? packLabels.derivedHintKg
-                      : unitQuoteMode === "pack"
-                        ? packLabels.derivedHintPack
-                        : unitQuoteCurrency === "usd"
-                          ? `Курс ${effectiveUsdRate} ₴/$ · у собівартість піде в гривнях`
-                          : undefined
-                }
               />
               {tierMode === "tier" ? (
                 <>
@@ -1026,7 +1014,7 @@ export function MaterialSupplierDraftsEditor({
                       draft.minWholesaleMeters.trim() === "" ||
                       Number(draft.minWholesaleMeters) <= 0
                         ? "Спочатку вкажіть межу роздробу"
-                        : "До межі (зазвичай дорожча за базову)"
+                        : undefined
                     }
                   />
                 </>
@@ -1259,11 +1247,6 @@ export function MaterialSupplierDraftsEditor({
                     suffix={suffix}
                     value={quoteDisplayFromMeter(draft.priceMeterUahNoVat, true)}
                     onChange={(event) => applyQuote(event.target.value, "base")}
-                    hint={
-                      tierMode === "tier"
-                        ? "Базова ціна (коли витрата ≥ межі роздробу)"
-                        : fabricQuoteHint(quoteCurrency, quoteUnit)
-                    }
                   />
                   {tierMode === "tier" ? (
                     <>
@@ -1299,7 +1282,7 @@ export function MaterialSupplierDraftsEditor({
                           draft.minWholesaleMeters.trim() === "" ||
                           Number(draft.minWholesaleMeters) <= 0
                             ? "Спочатку вкажіть межу роздробу"
-                            : "До межі (зазвичай дорожча за базову)"
+                            : undefined
                         }
                       />
                     </>

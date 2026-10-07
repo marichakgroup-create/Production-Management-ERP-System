@@ -294,11 +294,7 @@ export function DraftAddMaterialForm({
           step="0.0001"
           value={consumption}
           onChange={(event) => setConsumption(event.target.value)}
-          hint={
-            selected
-              ? `Одиниця з каталогу: ${selected.unit}. Скільки ${selected.unit} іде на один виріб.`
-              : "Спочатку оберіть матеріал — з’явиться одиниця виміру."
-          }
+          hint={selected ? undefined : "Спочатку оберіть матеріал"}
         />
         <Input
           label="Відходи %"

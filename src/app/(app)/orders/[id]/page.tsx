@@ -67,6 +67,8 @@ import { CalculationTab } from "./CalculationTab";
 import { VersionsTab } from "./VersionsTab";
 import { FilesTab } from "./FilesTab";
 import { SaveProposalPanel } from "./SaveProposalPanel";
+import { StartNewProposalButton } from "./StartNewProposalButton";
+import { proposalSnapshotRestorable } from "@/lib/proposal-snapshot";
 import type { ReadinessCheck } from "./HandoverDialog";
 
 export default async function OrderDetailPage({
@@ -84,11 +86,18 @@ export default async function OrderDetailPage({
   const session = await auth();
   let order = await getOrder(id);
   if (!order) notFound();
-  
-  // Handle empty order (all items deleted) - don't 404, render empty state
-  const hasItems = order.items.length > 0;
+  type OrderLoaded = NonNullable<typeof order>;
+
+  const workingItemsOf = (items: OrderLoaded["items"]) =>
+    items.filter((row) => !row.superseded);
+
+  // Handle empty order (all working items removed) - don't 404, render empty state
+  let workingItems = workingItemsOf(order.items);
+  const hasItems = workingItems.length > 0;
   let item =
-    (itemParam ? order.items.find((row) => row.id === itemParam) : null) ?? order.items[0] ?? null;
+    (itemParam ? workingItems.find((row) => row.id === itemParam) : null) ??
+    workingItems[0] ??
+    null;
 
   if (
     item &&
@@ -98,12 +107,15 @@ export default async function OrderDetailPage({
   ) {
     await refreshOrderItemFabricPricing(item.id);
     order = (await getOrder(id))!;
+    workingItems = workingItemsOf(order.items);
     item =
-      (itemParam ? order.items.find((row) => row.id === itemParam) : null) ?? order.items[0] ?? null;
+      (itemParam ? workingItems.find((row) => row.id === itemParam) : null) ??
+      workingItems[0] ??
+      null;
   }
 
   const tabHref = (key: string) =>
-    `/orders/${order.id}?tab=${key}${order.items.length > 1 && item ? `&item=${item.id}` : ""}`;
+    `/orders/${order.id}?tab=${key}${workingItems.length > 1 && item ? `&item=${item.id}` : ""}`;
 
   const [
     materials,
@@ -135,7 +147,7 @@ export default async function OrderDetailPage({
     sizes: variant.sizes.map((size) => ({ code: size.code, nameUk: size.nameUk })),
   }));
 
-  const itemSizeFlags = order.items.map((row) => {
+  const itemSizeFlags = workingItems.map((row) => {
     const catalogHasSizes = (row.product?._count?.sizes ?? 0) > 0;
     const sizeLines = row.sizes.map((size) => ({
       sizeCode: size.sizeCode,
@@ -180,7 +192,7 @@ export default async function OrderDetailPage({
       })
     : "MONTHLY_TOTAL_ZERO";
   const totalQuantity = item?.totalQuantity ?? 0;
-  const orderQuantity = order.items.reduce((sum, row) => sum + row.totalQuantity, 0);
+  const orderQuantity = workingItems.reduce((sum, row) => sum + row.totalQuantity, 0);
   const locked = order.status === "HANDED_TO_PRODUCTION" || order.status === "CLOSED";
   const canApprove = accessHas(access, "changeOrderStatus");
   const canViewCosts = canViewOrderCosts(access);
@@ -399,6 +411,7 @@ export default async function OrderDetailPage({
     id: row.id,
     nameUk: row.nameUk,
     totalQuantity: row.totalQuantity,
+    superseded: row.superseded,
     versions: row.versions.map((version) => ({
       id: version.id,
       orderItemId: row.id,
@@ -419,7 +432,20 @@ export default async function OrderDetailPage({
   const proposals = buildOrderProposals(proposalItems);
   const latestProposal = latestCompleteProposal(proposalItems);
   const approvedProposalGroup = approvedProposal(proposalItems);
-  const draftLines = order.items.map((row) => {
+  const restorableRevisions = [
+    ...new Set(
+      order.items.flatMap((row) =>
+        row.versions
+          .filter(
+            (version) =>
+              version.proposalRevision != null &&
+              proposalSnapshotRestorable(version.snapshotJson),
+          )
+          .map((version) => version.proposalRevision as number),
+      ),
+    ),
+  ];
+  const draftLines = workingItems.map((row) => {
     const lineCalc = buildCalcFromOrderItem(row, pricing, {
       ...calcOptionsFromProduct(row.product),
       fixedCosts,
@@ -445,19 +471,20 @@ export default async function OrderDetailPage({
     Math.abs(latestProposal.totalSellingValue - orderDraftTotal) > 0.009;
 
   const approvedVersion = versions.find((version) => version.isApproved);
-  const allItemsApproved = Boolean(approvedProposalGroup);
-  const allItemsHaveQty = order.items.every((row) => row.totalQuantity > 0);
+  const allItemsApproved = Boolean(approvedProposalGroup) && order.status === "APPROVED";
+  const allItemsHaveQty = workingItems.every((row) => row.totalQuantity > 0);
   const hasAnyApprovedVersion = allItemsApproved;
   const hasCompleteProposal = Boolean(latestProposal);
-  const hasApprovedProposal = Boolean(approvedProposalGroup);
+  const hasApprovedProposal = Boolean(approvedProposalGroup) && order.status === "APPROVED";
   const orderApprovedTotal = approvedProposalGroup?.totalSellingValue ?? orderDraftTotal;
+  const activeProposalRevision = order.activeProposalRevision;
 
   const sizesPendingCount = itemSizeFlags.filter((row) => !row.sizesReady).length;
   const sizesFocusItemId =
     itemSizeFlags.find((row) => !row.sizesReady)?.id ?? item?.id ?? "";
   const configurationHrefForSizes =
     `/orders/${order.id}?tab=configuration${
-      order.items.length > 1 ? `&item=${sizesFocusItemId}` : ""
+      workingItems.length > 1 ? `&item=${sizesFocusItemId}` : ""
     }`;
   // Attention only after approve — size layout is the gate before production.
   const needsSizeAttention =
@@ -471,12 +498,12 @@ export default async function OrderDetailPage({
     {
       key: "version",
       label:
-        order.items.length > 1
+        workingItems.length > 1
           ? "Погоджено пропозицію по всіх позиціях"
           : "Є погоджена пропозиція",
       done: allItemsApproved,
       hint: allItemsApproved
-        ? `${order.items.length} поз. · ${formatMoneyUah(orderApprovedTotal)}`
+        ? `${workingItems.length} поз. · ${formatMoneyUah(orderApprovedTotal)}`
         : latestProposal
           ? `Пропозиція v${latestProposal.revision} збережена — потрібне погодження`
           : "Збережіть пропозицію у вкладці «Пропозиції»",
@@ -493,7 +520,7 @@ export default async function OrderDetailPage({
       key: "quantity",
       label: "Вказано кількість",
       done: allItemsHaveQty,
-      hint: `${orderQuantity} шт${order.items.length > 1 ? ` · ${order.items.length} поз.` : ""}`,
+      hint: `${orderQuantity} шт${workingItems.length > 1 ? ` · ${workingItems.length} поз.` : ""}`,
     },
     {
       key: "materials",
@@ -515,9 +542,9 @@ export default async function OrderDetailPage({
     },
   ];
 
-  const needsArtwork = order.items.some((row) => row.decorations.length > 0);
+  const needsArtwork = workingItems.some((row) => row.decorations.length > 0);
   const artworkReady = orderArtworkReady(
-    order.items.map((row) => ({
+    workingItems.map((row) => ({
       id: row.id,
       decorationsCount: row.decorations.length,
     })),
@@ -579,7 +606,7 @@ export default async function OrderDetailPage({
     hasCompleteProposal,
     hasApprovedProposal,
     sizesReady: orderSizesReady,
-    items: order.items.map((row) => {
+    items: workingItems.map((row) => {
       const flags = itemSizeFlags.find((entry) => entry.id === row.id);
       return {
         id: row.id,
@@ -606,7 +633,7 @@ export default async function OrderDetailPage({
     !(action.key === "closed" && !action.specificationReady);
   const headerPrimary = action.key !== "handover" || handoverReady;
   const withRail = canViewCosts && activeTab !== "configuration";
-  const itemRows = order.items.map((row) => {
+  const itemRows = workingItems.map((row) => {
     const lineCalc = buildCalcFromOrderItem(row, pricing, {
       ...calcOptionsFromProduct(row.product),
       fixedCosts,
@@ -688,9 +715,17 @@ export default async function OrderDetailPage({
     { label: "Кількість", value: `${orderQuantity} шт` },
     {
       label: "Позиції",
-      value: String(order.items.length),
-      hint: order.items.length > 1 ? "у замовленні" : undefined,
+      value: String(workingItems.length),
+      hint: workingItems.length > 1 ? "у замовленні" : undefined,
     },
+    ...(activeProposalRevision != null
+      ? [
+          {
+            label: "Активна пропозиція",
+            value: `v${activeProposalRevision}`,
+          },
+        ]
+      : []),
   ];
 
   const clientFacts = [
@@ -815,10 +850,16 @@ export default async function OrderDetailPage({
                 ) : (
                   <span>{item?.nameUk}</span>
                 )}
-                {order.items.length > 1 ? (
+                {workingItems.length > 1 ? (
                   <span className="text-[var(--color-text-tertiary)]">
                     {" "}
-                    · {order.items.length} позиції
+                    · {workingItems.length} позиції
+                  </span>
+                ) : null}
+                {activeProposalRevision != null ? (
+                  <span className="text-[var(--color-text-tertiary)]">
+                    {" "}
+                    · пропозиція v{activeProposalRevision}
                   </span>
                 ) : null}
               </>
@@ -862,12 +903,15 @@ export default async function OrderDetailPage({
                     </QuickAction>
                   ) : null}
                 </QuickActions>
+                {order.status === "APPROVED" && canRunCalc && !locked ? (
+                  <StartNewProposalButton orderId={order.id} accent={false} />
+                ) : null}
                 {order.status === "DRAFT" && accessHas(access, "manageOrders") ? (
                   <SubmitForCalculationButton
                     orderId={order.id}
                     asAdmin={canViewCosts}
                     disabled={
-                      !order.items.every(
+                      !workingItems.every(
                         (row) =>
                           row.totalQuantity > 0 &&
                           row.materials.length > 0 &&
@@ -966,6 +1010,7 @@ export default async function OrderDetailPage({
                 sizeBytes: file.sizeBytes,
                 createdAt: file.createdAt.toISOString(),
                 url: publicUploadUrl(file.storageKey),
+                caption: file.caption ?? null,
                 orderItemId: file.orderItemId ?? null,
                 orderItemNameUk: null,
               }))}
@@ -1129,7 +1174,7 @@ export default async function OrderDetailPage({
               <VersionsTab
                 orderId={order.id}
                 orderNumber={order.number}
-                itemCount={order.items.length}
+                itemCount={workingItems.length}
                 activeItemName={item.nameUk}
                 proposals={proposals}
                 draftLines={draftLines}
@@ -1137,7 +1182,10 @@ export default async function OrderDetailPage({
                 orderTotalQuantity={orderQuantity}
                 orderTotalValue={orderDraftTotal}
                 status={order.status}
+                activeProposalRevision={activeProposalRevision}
+                restorableRevisions={restorableRevisions}
                 canApprove={canApprove}
+                canSwitchProposal={canRunCalc}
                 sizesReady={orderSizesReady}
                 sizesPendingCount={sizesPendingCount}
                 configurationHref={configurationHrefForSizes}
@@ -1156,9 +1204,10 @@ export default async function OrderDetailPage({
                 specificationLockedAt={item.specification?.lockedAt.toISOString() ?? null}
                 needsArtwork={needsArtwork}
                 locked={locked}
-                artworkItems={order.items.map((row) => ({
+                artworkItems={workingItems.map((row) => ({
                   id: row.id,
                   nameUk: row.nameUk,
+                  imageUrl: row.product?.imageUrl ?? null,
                   decorationsCount: row.decorations.length,
                   decorationNames: row.decorations.map((decoration) => decoration.nameSnapshot),
                 }))}
@@ -1171,8 +1220,10 @@ export default async function OrderDetailPage({
                     sizeBytes: file.sizeBytes,
                     createdAt: file.createdAt.toISOString(),
                     url: publicUploadUrl(file.storageKey),
+                    caption: file.caption ?? null,
                     orderItemId: file.orderItemId ?? null,
                     orderItemNameUk: linked?.nameUk ?? null,
+                    orderItemImageUrl: linked?.product?.imageUrl ?? null,
                   };
                 })}
               />
