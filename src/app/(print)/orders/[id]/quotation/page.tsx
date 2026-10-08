@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getOrder } from "@/server/domains/orders/service";
 import { prisma } from "@/server/db/client";
+import { getPricingForOrder } from "@/server/domains/calculation/from-entities";
 import { PrintToolbar } from "@/components/print/PrintToolbar";
 import {
   PrintDocFooter,
@@ -17,6 +18,7 @@ import { quotationProposal } from "@/lib/order-proposals";
 import {
   buildQuotationSizeRows,
   quotationGrandTotal,
+  quotationNeedsBaseSizeDisclaimer,
   type QuotationSnapshot,
 } from "@/lib/quotation-lines";
 
@@ -29,13 +31,20 @@ export default async function QuotationPage({
 }) {
   const { id } = await params;
   const { item: itemParam } = await searchParams;
-  const [order, company] = await Promise.all([getOrder(id), prisma.companySettings.findFirst()]);
+  const [order, company, pricing] = await Promise.all([
+    getOrder(id),
+    prisma.companySettings.findFirst(),
+    getPricingForOrder(id),
+  ]);
   if (!order) notFound();
+
+  const workingItems = order.items.filter((row) => !row.superseded);
 
   const proposalItems = order.items.map((row) => ({
     id: row.id,
     nameUk: row.nameUk,
     totalQuantity: row.totalQuantity,
+    superseded: row.superseded,
     versions: row.versions.map((version) => ({
       id: version.id,
       orderItemId: row.id,
@@ -59,7 +68,7 @@ export default async function QuotationPage({
 
   const lines = proposal.lines
     .map((line) => {
-      const item = order.items.find((row) => row.id === line.orderItemId);
+      const item = workingItems.find((row) => row.id === line.orderItemId);
       if (!item) return null;
       if (itemParam && item.id !== itemParam) return null;
       const version = item.versions.find((row) => row.id === line.id);
@@ -70,11 +79,44 @@ export default async function QuotationPage({
 
   if (lines.length === 0) notFound();
 
-  const tableRows = lines.flatMap(({ item, version }) =>
-    buildQuotationSizeRows({
+  const showBaseSizeDisclaimer = quotationNeedsBaseSizeDisclaimer(
+    lines.map(({ item }) => ({
+      sizes: item.sizes.map((size) => ({
+        sizeCode: size.sizeCode,
+        sizeNameUk: size.sizeNameUk,
+        quantity: size.quantity,
+      })),
+      catalogHasSizes: (item.product?._count?.sizes ?? 0) > 0,
+    })),
+  );
+
+  const tableRows = lines.flatMap(({ item, version }) => {
+    const decorationSetup = item.decorations.reduce(
+      (sum, row) => sum + Number(row.setupCost),
+      0,
+    );
+    const decorationUnit = item.decorations.reduce(
+      (sum, row) => sum + Number(row.unitRate),
+      0,
+    );
+    const additionalPerUnit = item.additionalCosts
+      .filter((row) => row.isPerUnit)
+      .reduce((sum, row) => sum + Number(row.amount), 0);
+    const additionalFixed = item.additionalCosts
+      .filter((row) => !row.isPerUnit)
+      .reduce((sum, row) => sum + Number(row.amount), 0);
+    const fabricDelivery = Number(item.fabricDeliveryAmount ?? 0);
+    const qty = Math.max(1, item.totalQuantity);
+    const sharedPerUnit =
+      decorationUnit +
+      additionalPerUnit +
+      (decorationSetup + additionalFixed + fabricDelivery) / qty;
+
+    return buildQuotationSizeRows({
       itemKey: item.id,
       snapshot: (version.snapshotJson ?? {}) as QuotationSnapshot,
       unitPrice: Number(version.sellingPricePerUnit),
+      totalSellingValue: Number(version.totalSellingValue),
       fallbackNameUk: item.nameUk,
       fallbackSizes: item.sizes.map((size) => ({
         sizeCode: size.sizeCode,
@@ -83,8 +125,24 @@ export default async function QuotationPage({
       })),
       fallbackDecorations: item.decorations.map((row) => ({ nameSnapshot: row.nameSnapshot })),
       fallbackTotalQuantity: item.totalQuantity,
-    }),
-  );
+      materials: item.materials.map((row) => ({
+        sizeCode: row.sizeCode,
+        nameSnapshot: row.nameSnapshot,
+        materialId: row.materialId,
+        consumptionPerUnit: Number(row.consumptionPerUnit),
+        wastePercent: Number(row.wastePercent),
+        purchasePrice: Number(row.purchasePrice),
+      })),
+      operations: item.operations.map((row) => ({
+        sizeCode: row.sizeCode,
+        nameSnapshot: row.nameSnapshot,
+        operationId: row.operationId,
+        unitRate: row.unitRate != null ? Number(row.unitRate) : null,
+      })),
+      sizeRules: pricing.sizeRules,
+      sharedPerUnit,
+    });
+  });
 
   const grandTotal = quotationGrandTotal(lines);
   const notes = proposal.comment ?? "";
@@ -150,13 +208,15 @@ export default async function QuotationPage({
           ]}
         />
 
-        <p className="print-doc-scope-banner">
-          Розрахунок для базових моделей — розміри XS–XXL.
-          <br />
-          <span className="print-doc-scope-banner-sub">
-            Крупні розміри (3XL+) уточнюються перед виробництвом і можуть змінити вартість.
-          </span>
-        </p>
+        {showBaseSizeDisclaimer ? (
+          <p className="print-doc-scope-banner">
+            Розрахунок для базових моделей — розміри XS–XXL.
+            <br />
+            <span className="print-doc-scope-banner-sub">
+              Крупні розміри (3XL+) уточнюються перед виробництвом і можуть змінити вартість.
+            </span>
+          </p>
+        ) : null}
 
         <PrintDocSection title="Позиції замовлення" breakable>
           <PrintDocTable
