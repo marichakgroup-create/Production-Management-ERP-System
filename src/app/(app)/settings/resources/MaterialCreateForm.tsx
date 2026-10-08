@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useId,
   useEffect,
   useMemo,
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { Banner } from "@/components/ui/Banner";
 import { SidePanel } from "@/components/ui/Overlay";
 import { SidePanelSkeleton } from "@/components/ui/Skeleton";
+import { useUnsavedCloseGuard } from "@/hooks/useUnsavedCloseGuard";
 import {
   IconCalc,
   IconClients,
@@ -319,12 +321,6 @@ function MaterialFields({
     () => defaults?.referenceUrls ?? [],
   );
   const [costOverride, setCostOverride] = useState(defaults?.costVatOverride ?? "");
-  const dirtyNotified = useRef(false);
-  function markDirty() {
-    if (dirtyNotified.current) return;
-    dirtyNotified.current = true;
-    onDirtyChange?.(true);
-  }
   const [deliveryType, setDeliveryType] = useState<FabricDeliveryTypeCode>(
     normalizeFabricDeliveryType(defaults?.deliveryType),
   );
@@ -346,6 +342,108 @@ function MaterialFields({
   const [packDeliveryCostUah, setPackDeliveryCostUah] = useState(
     numStr(defaults?.packDeliveryCostUah),
   );
+
+  const dirtyBaseline = useRef<string | null>(null);
+  const formFingerprint = useMemo(
+    () =>
+      JSON.stringify({
+        type,
+        nameUk,
+        tagColor,
+        unitOfMeasureId,
+        compositionSelect,
+        compositionOther,
+        fabricKindSelect,
+        fabricKindOther,
+        supplierSelect,
+        supplierOther,
+        supplierDrafts,
+        densityGsm,
+        widthCm,
+        metersPerKg,
+        metersPerKgManual,
+        priceKgUsd,
+        priceKgUsdVat,
+        priceMeterNoVat,
+        priceMeterVat,
+        priceMeterCutVat,
+        priceM2NoVat,
+        priceM2Vat,
+        minWholesaleMeters,
+        tierMode,
+        wholesaleNote,
+        note,
+        referenceUrls,
+        costOverride,
+        deliveryType,
+        fabricCargoUsdPerKg,
+        usdUahRate,
+        purchasePrice,
+        unitsPerPack,
+        unitsPerKg,
+        purchasePackPrice,
+        packDeliveryCostUah,
+      }),
+    [
+      type,
+      nameUk,
+      tagColor,
+      unitOfMeasureId,
+      compositionSelect,
+      compositionOther,
+      fabricKindSelect,
+      fabricKindOther,
+      supplierSelect,
+      supplierOther,
+      supplierDrafts,
+      densityGsm,
+      widthCm,
+      metersPerKg,
+      metersPerKgManual,
+      priceKgUsd,
+      priceKgUsdVat,
+      priceMeterNoVat,
+      priceMeterVat,
+      priceMeterCutVat,
+      priceM2NoVat,
+      priceM2Vat,
+      minWholesaleMeters,
+      tierMode,
+      wholesaleNote,
+      note,
+      referenceUrls,
+      costOverride,
+      deliveryType,
+      fabricCargoUsdPerKg,
+      usdUahRate,
+      purchasePrice,
+      unitsPerPack,
+      unitsPerKg,
+      purchasePackPrice,
+      packDeliveryCostUah,
+    ],
+  );
+
+  const fingerprintRef = useRef(formFingerprint);
+  fingerprintRef.current = formFingerprint;
+
+  // Wait for auto-sync effects (м.п./кг etc.) before locking the clean baseline.
+  useEffect(() => {
+    if (!onDirtyChange) return;
+    dirtyBaseline.current = null;
+    onDirtyChange(false);
+    const timer = window.setTimeout(() => {
+      dirtyBaseline.current = fingerprintRef.current;
+      onDirtyChange(false);
+    }, 120);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-baseline only when the loaded material changes
+  }, [defaults?.id, onDirtyChange]);
+
+  useEffect(() => {
+    if (!onDirtyChange || dirtyBaseline.current == null) return;
+    onDirtyChange(formFingerprint !== dirtyBaseline.current);
+  }, [formFingerprint, onDirtyChange]);
 
   const selectedUnit = units.find((unit) => unit.id === unitOfMeasureId) ?? units[0];
   const fabricUnitMode = resolveFabricUnitMode(resolveUnitCode(selectedUnit));
@@ -691,7 +789,7 @@ function MaterialFields({
   }
 
   return (
-    <div className="space-y-4" onInput={markDirty} onChange={markDirty}>
+    <div className="space-y-4">
       {defaults ? <input type="hidden" name="id" value={defaults.id} /> : null}
       {managePricingSeparately ? (
         <input type="hidden" name="pricingManagedSeparately" value="1" />
@@ -1552,10 +1650,7 @@ function MaterialFields({
         />
         <MaterialReferenceLinks
           value={referenceUrls}
-          onChange={(next) => {
-            setReferenceUrls(next);
-            markDirty();
-          }}
+          onChange={setReferenceUrls}
         />
       </FormGroup>
       </div>
@@ -1587,18 +1682,18 @@ export function MaterialCreatePanel({
   const [error, setError] = useState<string | null>(null);
   const [wizardMeta, setWizardMeta] = useState<MaterialWizardMeta | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [leaveOpen, setLeaveOpen] = useState(false);
 
-  function requestClose() {
-    if (pending) return;
-    if (dirty) {
-      setLeaveOpen(true);
-      return;
-    }
+  const closePanel = useCallback(() => {
     setOpen(false);
     setWizardMeta(null);
     setDirty(false);
-  }
+  }, []);
+
+  const { leaveOpen, requestClose, stay, discard } = useUnsavedCloseGuard({
+    dirty: open && dirty,
+    pending,
+    onDiscard: closePanel,
+  });
 
   function submit(formData: FormData) {
     setError(null);
@@ -1608,9 +1703,7 @@ export function MaterialCreatePanel({
         setError("Заповніть обовʼязкові поля (*) і спробуйте ще.");
         return;
       }
-      setOpen(false);
-      setWizardMeta(null);
-      setDirty(false);
+      closePanel();
       onCreated?.(result);
       router.refresh();
     });
@@ -1694,13 +1787,8 @@ export function MaterialCreatePanel({
       <UnsavedChangesDialog
         open={leaveOpen}
         pending={pending}
-        onStay={() => setLeaveOpen(false)}
-        onDiscard={() => {
-          setLeaveOpen(false);
-          setOpen(false);
-          setWizardMeta(null);
-          setDirty(false);
-        }}
+        onStay={stay}
+        onDiscard={discard}
       />
     </>
   );
@@ -1730,7 +1818,18 @@ export function MaterialEditPanel({
   const [globals, setGlobals] = useState(fabricGlobals);
   const [tab, setTab] = useState<"main" | "suppliers">("main");
   const [dirty, setDirty] = useState(false);
-  const [leaveOpen, setLeaveOpen] = useState(false);
+
+  const closePanel = useCallback(() => {
+    setOpen(false);
+    setLoaded(null);
+    setDirty(false);
+  }, []);
+
+  const { leaveOpen, requestClose, stay, discard } = useUnsavedCloseGuard({
+    dirty: open && dirty,
+    pending: pending || loading,
+    onDiscard: closePanel,
+  });
 
   async function openEditor() {
     setOpen(true);
@@ -1754,16 +1853,6 @@ export function MaterialEditPanel({
     }
   }
 
-  function requestClose() {
-    if (pending || loading) return;
-    if (dirty) {
-      setLeaveOpen(true);
-      return;
-    }
-    setOpen(false);
-    setDirty(false);
-  }
-
   function submit(formData: FormData) {
     setError(null);
     startTransition(async () => {
@@ -1772,8 +1861,7 @@ export function MaterialEditPanel({
         setError("Перевірте обовʼязкові поля — запис не збережено.");
         return;
       }
-      setOpen(false);
-      setDirty(false);
+      closePanel();
       router.refresh();
     });
   }
@@ -1815,8 +1903,7 @@ export function MaterialEditPanel({
                   appearance="button"
                   disabled={pending || loading}
                   onDuplicated={() => {
-                    setDirty(false);
-                    setOpen(false);
+                    closePanel();
                   }}
                 />
               </span>
@@ -1907,13 +1994,9 @@ export function MaterialEditPanel({
       </SidePanel>
       <UnsavedChangesDialog
         open={leaveOpen}
-        pending={pending}
-        onStay={() => setLeaveOpen(false)}
-        onDiscard={() => {
-          setLeaveOpen(false);
-          setOpen(false);
-          setDirty(false);
-        }}
+        pending={pending || loading}
+        onStay={stay}
+        onDiscard={discard}
       />
     </>
   );
