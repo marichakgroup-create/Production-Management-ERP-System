@@ -16,11 +16,7 @@ import { Hint } from "@/components/ui/Hint";
 import { IconClose, IconOrders, IconPlus } from "@/components/ui/Icons";
 import { cn, formatDateUk, formatMoneyShort } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
-import {
-  DashboardHeader,
-  DashboardLowerBlocks,
-  OwnerDashboard,
-} from "@/components/overview/OwnerDashboard";
+import { DashboardHeader, OwnerDashboard } from "@/components/overview/OwnerDashboard";
 import { DashboardToolbar } from "@/components/overview/DashboardToolbar";
 import { canViewOrderCosts, getCurrentUserAccess } from "@/server/auth/access";
 import { PORTFOLIO_STAGES, dashboardQuery, daysLeft } from "./dashboard-model";
@@ -135,7 +131,7 @@ export default async function OverviewPage({
   const resetHref = dashboardQuery({ range, managerId, focus: "all" });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <DashboardHeader>
         <DashboardToolbar
           range={range}
@@ -145,157 +141,153 @@ export default async function OverviewPage({
         />
       </DashboardHeader>
 
-      <div className="space-y-4">
-        <OwnerDashboard data={data} focus={focus} />
+      <OwnerDashboard data={data} focus={focus} />
 
-        <TableCard id="orders" className="min-w-0 scroll-mt-20">
-          <TableToolbar
-            left={
-              <div className="min-w-0">
-                <span className="type-subsection">{focusLabel(focus)}</span>
-                <span className="type-caption ml-2 tabular">{sorted.length}</span>
-              </div>
-            }
-            right={
-              <div className="flex flex-wrap items-center gap-2.5">
-                {focus !== "all" ? (
-                  <Hint hint="resetFilter">
-                    <Link
-                      href={`${resetHref}#orders`}
-                      className="inline-flex items-center gap-1 type-caption font-medium text-[var(--color-primary-700)] hover:underline"
-                    >
-                      <IconClose size={14} />
-                      Скинути фільтр
-                    </Link>
-                  </Hint>
-                ) : null}
-                <Hint hint="allOrders">
+      <TableCard id="orders" className="min-w-0 scroll-mt-20">
+        <TableToolbar
+          left={
+            <div className="min-w-0">
+              <span className="type-subsection">{focusLabel(focus)}</span>
+              <span className="type-caption ml-2 tabular">{sorted.length}</span>
+            </div>
+          }
+          right={
+            <div className="flex flex-wrap items-center gap-2.5">
+              {focus !== "all" ? (
+                <Hint hint="resetFilter">
                   <Link
-                    href="/orders"
-                    className="inline-flex items-center gap-1 type-caption text-[var(--color-text-quiet)] hover:text-[var(--color-primary-700)]"
+                    href={`${resetHref}#orders`}
+                    className="inline-flex items-center gap-1 type-caption font-medium text-[var(--color-primary-700)] hover:underline"
                   >
-                    <IconOrders size={14} />
-                    Усі замовлення
+                    <IconClose size={14} />
+                    Скинути фільтр
                   </Link>
                 </Hint>
-              </div>
-            }
-          />
-          <Table>
-            <THead>
-              <TH>Замовлення</TH>
-              {showAmounts ? (
-                <TH
-                  align="right"
-                  title="Ціна для клієнта вже з урахуванням маржі — це не собівартість"
-                >
-                  Сума продажу
-                </TH>
               ) : null}
-              {showAmounts ? (
-                <TH
-                  align="right"
-                  title="Частка прибутку в сумі продажу, % (не додається зверху до суми)"
+              <Hint hint="allOrders">
+                <Link
+                  href="/orders"
+                  className="inline-flex items-center gap-1 type-caption text-[var(--color-text-quiet)] hover:text-[var(--color-primary-700)]"
                 >
-                  Маржа %
-                </TH>
-              ) : null}
-              <TH>Дедлайн</TH>
-              <TH>Менеджер</TH>
-              <TH>Статус</TH>
-            </THead>
-            <TBody>
-              {sorted.length === 0 ? (
-                <TableEmpty
-                  colSpan={showAmounts ? 6 : 4}
-                  title={emptyTitleFor(focus)}
-                  description={
-                    focus !== "all"
-                      ? "Скиньте фільтр або оберіть інший етап портфеля."
-                      : "Створіть перше замовлення — воно зʼявиться тут із сумою та маржею."
-                  }
-                  action={
-                    focus !== "all" ? (
-                      <Link href={`${resetHref}#orders`} className="btn-primary btn-primary-sm">
-                        Показати всі активні
-                      </Link>
-                    ) : (
-                      <Link href="/orders/new" className="btn-primary btn-primary-sm">
-                        <IconPlus size={15} />
-                        Нове замовлення
-                      </Link>
-                    )
-                  }
-                />
-              ) : (
-                sorted.slice(0, 12).map((order) => {
-                  const href = `/orders/${order.id}`;
-                  const days = daysLeft(order.deadline);
+                  <IconOrders size={14} />
+                  Усі замовлення
+                </Link>
+              </Hint>
+            </div>
+          }
+        />
+        <Table>
+          <THead>
+            <TH>Замовлення</TH>
+            {showAmounts ? (
+              <TH
+                align="right"
+                title="Ціна для клієнта вже з урахуванням маржі — це не собівартість"
+              >
+                Сума продажу
+              </TH>
+            ) : null}
+            {showAmounts ? (
+              <TH
+                align="right"
+                title="Частка прибутку в сумі продажу, % (не додається зверху до суми)"
+              >
+                Маржа %
+              </TH>
+            ) : null}
+            <TH>Дедлайн</TH>
+            <TH>Менеджер</TH>
+            <TH>Статус</TH>
+          </THead>
+          <TBody>
+            {sorted.length === 0 ? (
+              <TableEmpty
+                colSpan={showAmounts ? 6 : 4}
+                title={emptyTitleFor(focus)}
+                description={
+                  focus !== "all"
+                    ? "Скиньте фільтр або оберіть інший етап воронки."
+                    : "Створіть перше замовлення — воно зʼявиться тут із сумою та маржею."
+                }
+                action={
+                  focus !== "all" ? (
+                    <Link href={`${resetHref}#orders`} className="btn-primary btn-primary-sm">
+                      Показати всі активні
+                    </Link>
+                  ) : (
+                    <Link href="/orders/new" className="btn-primary btn-primary-sm">
+                      <IconPlus size={15} />
+                      Нове замовлення
+                    </Link>
+                  )
+                }
+              />
+            ) : (
+              sorted.slice(0, 12).map((order) => {
+                const href = `/orders/${order.id}`;
+                const days = daysLeft(order.deadline);
 
-                  return (
-                    <TR
-                      key={order.id}
-                      className={cn(order.overdue && "bg-[var(--color-tint-rose)]/70")}
-                    >
-                      <TD>
-                        <CellStack
-                          href={href}
-                          title={order.number}
-                          subtitle={`${order.clientName} · ${order.productName}${order.extraItems > 0 ? ` +${order.extraItems}` : ""}`}
-                          maxWidth="220px"
-                        />
-                      </TD>
-                      {showAmounts ? (
-                        <TD align="right" nowrap>
-                          <span className="tabular font-medium text-[var(--color-text-primary)]">
-                            {order.amount > 0 ? formatMoneyShort(order.amount) : "—"}
-                          </span>
-                        </TD>
-                      ) : null}
-                      {showAmounts ? (
-                        <TD align="right" nowrap>
-                          <span className="tabular font-medium text-[var(--color-text-secondary)]">
-                            {order.margin != null ? `${order.margin.toFixed(1)}%` : "—"}
-                          </span>
-                        </TD>
-                      ) : null}
-                      <TD nowrap>
-                        {order.deadline ? (
-                          <span
-                            className={cn(
-                              "tabular text-[13px] text-[var(--color-text-secondary)]",
-                              order.overdue && "font-medium text-[var(--color-danger-text)]",
-                            )}
-                          >
-                            {formatDateUk(order.deadline)}
-                            {days != null && days < 0 ? (
-                              <span className="type-caption block text-[var(--color-danger-text)]">
-                                −{Math.abs(days)} дн.
-                              </span>
-                            ) : null}
-                          </span>
-                        ) : (
-                          <span className="type-caption">—</span>
-                        )}
-                      </TD>
-                      <TD nowrap>
-                        <span className="text-[13px] text-[var(--color-text-quiet)]">
-                          {order.managerName?.split(" ")[0] ?? "—"}
+                return (
+                  <TR
+                    key={order.id}
+                    className={cn(order.overdue && "bg-[var(--color-tint-rose)]/70")}
+                  >
+                    <TD>
+                      <CellStack
+                        href={href}
+                        title={order.number}
+                        subtitle={`${order.clientName} · ${order.productName}${order.extraItems > 0 ? ` +${order.extraItems}` : ""}`}
+                        maxWidth="220px"
+                      />
+                    </TD>
+                    {showAmounts ? (
+                      <TD align="right" nowrap>
+                        <span className="tabular font-medium text-[var(--color-text-primary)]">
+                          {order.amount > 0 ? formatMoneyShort(order.amount) : "—"}
                         </span>
                       </TD>
-                      <TD nowrap>
-                        <OrderStatusBadge status={order.status} dot />
+                    ) : null}
+                    {showAmounts ? (
+                      <TD align="right" nowrap>
+                        <span className="tabular font-medium text-[var(--color-text-secondary)]">
+                          {order.margin != null ? `${order.margin.toFixed(1)}%` : "—"}
+                        </span>
                       </TD>
-                    </TR>
-                  );
-                })
-              )}
-            </TBody>
-          </Table>
-        </TableCard>
-
-        <DashboardLowerBlocks data={data} />
-      </div>
+                    ) : null}
+                    <TD nowrap>
+                      {order.deadline ? (
+                        <span
+                          className={cn(
+                            "tabular text-[13px] text-[var(--color-text-secondary)]",
+                            order.overdue && "font-medium text-[var(--color-danger-text)]",
+                          )}
+                        >
+                          {formatDateUk(order.deadline)}
+                          {days != null && days < 0 ? (
+                            <span className="type-caption block text-[var(--color-danger-text)]">
+                              −{Math.abs(days)} дн.
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <span className="type-caption">—</span>
+                      )}
+                    </TD>
+                    <TD nowrap>
+                      <span className="text-[13px] text-[var(--color-text-quiet)]">
+                        {order.managerName?.split(" ")[0] ?? "—"}
+                      </span>
+                    </TD>
+                    <TD nowrap>
+                      <OrderStatusBadge status={order.status} dot />
+                    </TD>
+                  </TR>
+                );
+              })
+            )}
+          </TBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }

@@ -59,7 +59,7 @@ import {
 } from "@/lib/size-bom";
 import { operationMethodLabel } from "@/lib/operation-labels";
 import { OrderFixedCostError } from "@/components/orders/OrderSewerCountControl";
-import { OrderScreenPrintCalculator } from "@/components/orders/OrderScreenPrintCalculator";
+import { OrderDecorationFormatPicker } from "@/components/orders/OrderDecorationFormatPicker";
 import { OrderMaterialSupplierColorEditor } from "@/components/catalog/SupplierColorFields";
 import { SoftBusy, RowBusyMark, busyRowClass } from "@/components/ui/SoftBusy";
 import { FIXED_COST_LINE_NAME_UK } from "@/lib/fixed-costs";
@@ -67,9 +67,12 @@ import type { FixedCostAllocation, FixedCostValidationError } from "@/lib/fixed-
 import {
   displayScreenPrintLineName,
   isScreenPrintDecorationName,
-  type ScreenPrintCoefficient,
-  type ScreenPrintPriceCell,
 } from "@/lib/screen-print-pricing";
+import {
+  DECORATION_FORMAT_NAME_PREFIX,
+  isDecorationFormatLineName,
+} from "@/lib/decoration-format-pricing";
+import type { DecorationFormatCatalogRow } from "@/server/domains/decoration-formats/service";
 
 export type MaterialRow = {
   id: string;
@@ -160,7 +163,7 @@ export function ConfigurationTab({
   fixedCostAllocation = null,
   fixedCostError = null,
   canEditFixedCosts = false,
-  screenPrintCells = [],
+  decorationFormats = [],
   screenPrintCoefficients = [],
   needsSizeBreakdown = false,
   sizeCharts = [],
@@ -199,8 +202,14 @@ export function ConfigurationTab({
   fixedCostAllocation?: FixedCostAllocation | null;
   fixedCostError?: FixedCostValidationError | null;
   canEditFixedCosts?: boolean;
-  screenPrintCells?: ScreenPrintPriceCell[];
-  screenPrintCoefficients?: ScreenPrintCoefficient[];
+  decorationFormats?: DecorationFormatCatalogRow[];
+  /** Kept for display of legacy silk-screen lines already on the order. */
+  screenPrintCoefficients?: Array<{
+    code: string;
+    nameUk: string;
+    factor: number;
+    noteUk?: string | null;
+  }>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -263,6 +272,9 @@ export function ConfigurationTab({
   );
 
   function decorationLabel(name: string) {
+    if (isDecorationFormatLineName(name)) {
+      return name.slice(DECORATION_FORMAT_NAME_PREFIX.length) || name;
+    }
     if (!isScreenPrintDecorationName(name)) return name;
     return displayScreenPrintLineName(name, screenPrintCoefficients);
   }
@@ -851,7 +863,7 @@ export function ConfigurationTab({
                 description={
                   locked
                     ? "Нанесення не додано."
-                    : "За потреби додайте шовкодрук нижче."
+                    : "Оберіть формат нижче — можна додати кілька разів."
                 }
               />
             ) : (
@@ -869,22 +881,25 @@ export function ConfigurationTab({
                       <TD numeric className="py-1.5">
                         {locked ? (
                           <span className="text-[var(--color-text-secondary)]">
-                            {formatMoneyUah(row.setupCost)}
+                            {row.setupCost > 0 ? formatMoneyUah(row.setupCost) : "—"}
                           </span>
                         ) : (
                           <input
                             type="number"
                             min={0}
                             step="0.1"
-                            defaultValue={row.setupCost}
+                            defaultValue={row.setupCost > 0 ? row.setupCost : ""}
+                            placeholder="—"
                             disabled={rowBusy}
                             onBlur={(event) => {
-                              const next = Math.max(0, Number(event.target.value) || 0);
+                              const raw = event.target.value.trim();
+                              const next = raw === "" ? 0 : Math.max(0, Number(raw) || 0);
+                              event.target.value = next > 0 ? String(next) : "";
                               if (next === row.setupCost) return;
                               saveDecorationRates(row.id, next, row.unitRate);
                             }}
-                            className="h-7 w-[72px] rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12.5px] tabular outline-none focus:border-[var(--color-primary-500)] disabled:opacity-60"
-                            title="Приладка (разово на партію)"
+                            className="h-7 w-[72px] rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12.5px] tabular outline-none placeholder:text-[var(--color-text-quiet)] focus:border-[var(--color-primary-500)] disabled:opacity-60"
+                            title="Приладка (разово на партію). Можна лишити порожнім."
                           />
                         )}
                       </TD>
@@ -962,13 +977,11 @@ export function ConfigurationTab({
             </TFoot>
           ) : null}
         </Table>
-        <OrderScreenPrintCalculator
+        <OrderDecorationFormatPicker
           orderId={orderId}
           orderItemId={itemId}
           quantity={totalQuantity}
-          cells={screenPrintCells}
-          coefficients={screenPrintCoefficients}
-          existingDecorations={decorations.map((row) => ({ id: row.id, name: row.name }))}
+          formats={decorationFormats}
           locked={locked}
           hideCosts={hideCosts}
         />

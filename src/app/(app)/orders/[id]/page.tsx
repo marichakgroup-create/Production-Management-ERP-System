@@ -7,6 +7,7 @@ import { listOperations } from "@/server/domains/catalog/operations";
 import { buildCalcFromOrderItem, calcOptionsFromProduct, getPricingDefaults, getPricingForOrder, resolveOrderOperationUnitRate, resolveFixedCostAllocationForOrderItem } from "@/server/domains/calculation/from-entities";
 import { fixedCostOptionsFromDb } from "@/server/domains/fixed-costs/service";
 import { getScreenPrintCatalog } from "@/server/domains/screen-print/service";
+import { getDecorationFormatsCatalog } from "@/server/domains/decoration-formats/service";
 import {
   resolveSewerCount,
   validateFixedCostParams,
@@ -127,6 +128,7 @@ export default async function OrderDetailPage({
     catalogProducts,
     fixedCosts,
     screenPrintCatalog,
+    decorationFormats,
     sizeChartVariants,
   ] = await Promise.all([
       listMaterials(),
@@ -138,6 +140,7 @@ export default async function OrderDetailPage({
       listProducts(),
       fixedCostOptionsFromDb(),
       getScreenPrintCatalog(),
+      getDecorationFormatsCatalog(),
       listSizeChartVariants(),
     ]);
 
@@ -547,8 +550,12 @@ export default async function OrderDetailPage({
     workingItems.map((row) => ({
       id: row.id,
       decorationsCount: row.decorations.length,
+      decorations: row.decorations.map((decoration) => ({ id: decoration.id })),
     })),
-    order.files.map((file) => ({ orderItemId: file.orderItemId })),
+    order.files.map((file) => ({
+      orderItemId: file.orderItemId,
+      orderItemDecorationId: file.orderItemDecorationId,
+    })),
   );
   if (needsArtwork) {
     readiness.push({
@@ -1012,6 +1019,7 @@ export default async function OrderDetailPage({
                 url: publicUploadUrl(file.storageKey),
                 caption: file.caption ?? null,
                 orderItemId: file.orderItemId ?? null,
+                orderItemDecorationId: file.orderItemDecorationId ?? null,
                 orderItemNameUk: null,
               }))}
             />
@@ -1104,7 +1112,7 @@ export default async function OrderDetailPage({
             fixedCostAllocation={fixedCostAllocation}
             fixedCostError={fixedCostError}
             canEditFixedCosts={canEditComposition && !locked}
-            screenPrintCells={screenPrintCatalog.cells}
+            decorationFormats={decorationFormats}
             screenPrintCoefficients={screenPrintCatalog.coefficients}
             corridorHint={
               action.focusItemId && action.focusItemId !== item.id
@@ -1210,9 +1218,16 @@ export default async function OrderDetailPage({
                   imageUrl: row.product?.imageUrl ?? null,
                   decorationsCount: row.decorations.length,
                   decorationNames: row.decorations.map((decoration) => decoration.nameSnapshot),
+                  decorations: row.decorations.map((decoration) => ({
+                    id: decoration.id,
+                    nameUk: decoration.nameSnapshot,
+                  })),
                 }))}
                 files={order.files.map((file) => {
                   const linked = order.items.find((row) => row.id === file.orderItemId);
+                  const linkedDecoration = linked?.decorations.find(
+                    (decoration) => decoration.id === file.orderItemDecorationId,
+                  );
                   return {
                     id: file.id,
                     fileName: file.fileName,
@@ -1222,8 +1237,10 @@ export default async function OrderDetailPage({
                     url: publicUploadUrl(file.storageKey),
                     caption: file.caption ?? null,
                     orderItemId: file.orderItemId ?? null,
+                    orderItemDecorationId: file.orderItemDecorationId ?? null,
                     orderItemNameUk: linked?.nameUk ?? null,
                     orderItemImageUrl: linked?.product?.imageUrl ?? null,
+                    decorationNameUk: linkedDecoration?.nameSnapshot ?? null,
                   };
                 })}
               />

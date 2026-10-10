@@ -30,6 +30,11 @@ import { commercialPriceForOrderItem, draftLineFromItem, mergeCommercialAndCost 
 import { isCutOperationName, resolveCutUnitRateForProduct } from "@/lib/cut-rate";
 import { isScreenPrintDecorationName } from "@/lib/screen-print-pricing";
 import {
+  decorationFormatLineName,
+  mapDecorationFormatTiers,
+  resolveDecorationFormatRate,
+} from "@/lib/decoration-format-pricing";
+import {
   pickOperationQuantityTiers,
   resolveQuantityTierRate,
 } from "@/lib/quantity-tiers";
@@ -1328,6 +1333,48 @@ async function syncCutRatesForOrderItem(
   }
 }
 
+/** Refresh format-matrix decoration unitRates when order-item tirage changes. */
+async function syncDecorationFormatRatesForOrderItem(
+  orderItemId: string,
+  totalQuantity: number,
+  tx: Prisma.TransactionClient = prisma,
+) {
+  const decorations = await tx.orderItemDecoration.findMany({
+    where: {
+      orderItemId,
+      decorationFormatId: { not: null },
+    },
+    include: {
+      decorationFormat: {
+        include: { tiers: { orderBy: { minQuantity: "asc" } } },
+      },
+    },
+  });
+
+  for (const row of decorations) {
+    const format = row.decorationFormat;
+    if (!format) continue;
+    const tiers = mapDecorationFormatTiers(format.tiers);
+    if (tiers.length === 0) continue;
+    const unitRate = resolveDecorationFormatRate({
+      quantity: totalQuantity,
+      tiers,
+      fallbackRate: Number(row.unitRate ?? 0),
+    });
+    const nameSnapshot = decorationFormatLineName(format.nameUk);
+    const rateChanged = Math.abs(Number(row.unitRate ?? 0) - unitRate) > 0.0001;
+    const nameChanged = row.nameSnapshot !== nameSnapshot;
+    if (!rateChanged && !nameChanged) continue;
+    await tx.orderItemDecoration.update({
+      where: { id: row.id },
+      data: {
+        unitRate,
+        ...(nameChanged ? { nameSnapshot } : {}),
+      },
+    });
+  }
+}
+
 async function syncOrderItemFabricPrices(
   orderItemId: string,
   tx: Prisma.TransactionClient = prisma,
@@ -2005,6 +2052,7 @@ export async function updateOrderItemSizes(
       data: { totalQuantity },
     });
     await syncCutRatesForOrderItem(orderItemId, totalQuantity, tx);
+    await syncDecorationFormatRatesForOrderItem(orderItemId, totalQuantity, tx);
     await syncOrderItemFabricPricing(orderItemId, tx);
   });
 }
@@ -2123,6 +2171,7 @@ export async function applyOrderItemSizeBreakdown(
       data: { totalQuantity: targetTirage },
     });
     await syncCutRatesForOrderItem(orderItemId, targetTirage, tx);
+    await syncDecorationFormatRatesForOrderItem(orderItemId, targetTirage, tx);
     await syncOrderItemFabricPricing(orderItemId, tx);
   });
 
@@ -2558,13 +2607,14 @@ export async function addOrderItemDecoration(input: {
   });
 }
 
-/** Snapshot a calculated branding line (e.g. silk-screen) onto the order item. */
+/** Snapshot a calculated branding line (e.g. format matrix / silk-screen) onto the order item. */
 export async function addOrderItemDecorationWithRates(input: {
   orderItemId: string;
   nameUk: string;
   setupCost: number;
   unitRate: number;
   decorationMethodId?: string | null;
+  decorationFormatId?: string | null;
 }) {
   await assertOrderItemEditable(input.orderItemId);
   const nameUk = input.nameUk.trim();
@@ -2580,6 +2630,7 @@ export async function addOrderItemDecorationWithRates(input: {
     data: {
       orderItemId: input.orderItemId,
       decorationMethodId: input.decorationMethodId ?? null,
+      decorationFormatId: input.decorationFormatId ?? null,
       nameSnapshot: nameUk,
       setupCost,
       unitRate,
@@ -3320,8 +3371,12 @@ export async function handOverToProduction(orderId: string, userId?: string) {
       freshWorking.map((item) => ({
         id: item.id,
         decorationsCount: item.decorations.length,
+        decorations: item.decorations.map((decoration) => ({ id: decoration.id })),
       })),
-      fresh.files.map((file) => ({ orderItemId: file.orderItemId })),
+      fresh.files.map((file) => ({
+        orderItemId: file.orderItemId,
+        orderItemDecorationId: file.orderItemDecorationId,
+      })),
     )
   ) {
     throw new Error("NO_ARTWORK");
@@ -3650,21 +3705,39 @@ export async function addOrderFile(input: {
   sizeBytes: number;
   storageKey: string;
   orderItemId?: string | null;
+  orderItemDecorationId?: string | null;
   caption?: string | null;
 }) {
   await assertOrderEditableById(input.orderId);
-  if (input.orderItemId) {
+
+  let orderItemId = input.orderItemId || null;
+  let orderItemDecorationId = input.orderItemDecorationId || null;
+
+  if (orderItemDecorationId) {
+    const decoration = await prisma.orderItemDecoration.findFirst({
+      where: {
+        id: orderItemDecorationId,
+        orderItem: { orderId: input.orderId },
+      },
+      select: { id: true, orderItemId: true, nameSnapshot: true },
+    });
+    if (!decoration) throw new Error("ORDER_DECORATION_NOT_FOUND");
+    orderItemId = decoration.orderItemId;
+    orderItemDecorationId = decoration.id;
+  } else if (orderItemId) {
     const item = await prisma.orderItem.findFirst({
-      where: { id: input.orderItemId, orderId: input.orderId },
+      where: { id: orderItemId, orderId: input.orderId },
       select: { id: true },
     });
     if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
   }
+
   const caption = input.caption?.trim() || null;
   return prisma.fileAsset.create({
     data: {
       orderId: input.orderId,
-      orderItemId: input.orderItemId || null,
+      orderItemId,
+      orderItemDecorationId,
       fileName: input.fileName,
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
@@ -3678,6 +3751,7 @@ export async function updateOrderFileMeta(input: {
   fileId: string;
   caption?: string | null;
   orderItemId?: string | null;
+  orderItemDecorationId?: string | null;
 }) {
   const file = await prisma.fileAsset.findUnique({
     where: { id: input.fileId },
@@ -3686,19 +3760,42 @@ export async function updateOrderFileMeta(input: {
   if (!file?.orderId) throw new Error("NOT_FOUND");
   await assertOrderEditableById(file.orderId);
 
-  if (input.orderItemId) {
+  let orderItemId = input.orderItemId;
+  let orderItemDecorationId = input.orderItemDecorationId;
+
+  if (orderItemDecorationId !== undefined) {
+    if (orderItemDecorationId) {
+      const decoration = await prisma.orderItemDecoration.findFirst({
+        where: {
+          id: orderItemDecorationId,
+          orderItem: { orderId: file.orderId },
+        },
+        select: { id: true, orderItemId: true },
+      });
+      if (!decoration) throw new Error("ORDER_DECORATION_NOT_FOUND");
+      orderItemId = decoration.orderItemId;
+      orderItemDecorationId = decoration.id;
+    } else {
+      orderItemDecorationId = null;
+    }
+  } else if (orderItemId) {
     const item = await prisma.orderItem.findFirst({
-      where: { id: input.orderItemId, orderId: file.orderId },
+      where: { id: orderItemId, orderId: file.orderId },
       select: { id: true },
     });
     if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
+    // Changing product clears decoration link unless explicitly set.
+    orderItemDecorationId = null;
   }
 
   return prisma.fileAsset.update({
     where: { id: input.fileId },
     data: {
       ...(input.caption !== undefined ? { caption: input.caption?.trim() || null } : {}),
-      ...(input.orderItemId !== undefined ? { orderItemId: input.orderItemId || null } : {}),
+      ...(orderItemId !== undefined ? { orderItemId: orderItemId || null } : {}),
+      ...(orderItemDecorationId !== undefined
+        ? { orderItemDecorationId: orderItemDecorationId || null }
+        : {}),
     },
   });
 }

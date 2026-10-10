@@ -835,6 +835,39 @@ async function main() {
     }
   }
 
+  // --- Application formats (format × tirage matrix) ---
+  {
+    const qtyTiers = [20, 50, 100, 200] as const;
+    const formats: Array<{ nameUk: string; rates: [number, number, number, number] }> = [
+      { nameUk: "До 5 × 5 см", rates: [45, 35, 29, 25] },
+      { nameUk: "До 10 × 10 см", rates: [55, 48, 43, 40] },
+      { nameUk: "A6 — до 10 × 15 см", rates: [60, 55, 48, 45] },
+      { nameUk: "A5 — до 15 × 21 см", rates: [80, 75, 68, 65] },
+      { nameUk: "½ A4 — до 10 × 30 см", rates: [90, 85, 78, 75] },
+      { nameUk: "A4 — до 21 × 30 см", rates: [110, 100, 95, 90] },
+      { nameUk: "A3 — до 30 × 42 см", rates: [190, 175, 160, 150] },
+    ];
+    const existingFormats = await prisma.decorationFormat.count();
+    if (existingFormats === 0) {
+      for (let i = 0; i < formats.length; i++) {
+        const row = formats[i]!;
+        await prisma.decorationFormat.create({
+          data: {
+            nameUk: row.nameUk,
+            sortOrder: i + 1,
+            status: "ACTIVE",
+            tiers: {
+              create: qtyTiers.map((minQuantity, ti) => ({
+                minQuantity,
+                unitRate: row.rates[ti]!,
+              })),
+            },
+          },
+        });
+      }
+    }
+  }
+
   // --- Size / quantity rules ---
   await prisma.sizeRule.deleteMany();
   await prisma.sizeRule.createMany({

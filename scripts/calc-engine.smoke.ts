@@ -427,3 +427,126 @@ const flatCalc = calculateCosting({
 assert.ok(Number(oversizeCalc.materialsSubtotal) > Number(flatCalc.materialsSubtotal));
 assert.ok(Number(oversizeCalc.operationsSubtotal) > Number(flatCalc.operationsSubtotal));
 console.log("oversize 3XL+ coeffs smoke test passed");
+
+// --- Decoration format matrix: duplicates + setup + tirage tiers ---
+import {
+  DEFAULT_DECORATION_FORMATS,
+  DEFAULT_DECORATION_FORMAT_QTY_TIERS,
+  mapDecorationFormatTiers,
+  resolveDecorationFormatRate,
+} from "../src/lib/decoration-format-pricing";
+
+function formatTiers(nameUk: string) {
+  const row = DEFAULT_DECORATION_FORMATS.find((item) => item.nameUk === nameUk);
+  assert.ok(row, `missing seed format ${nameUk}`);
+  return mapDecorationFormatTiers(
+    DEFAULT_DECORATION_FORMAT_QTY_TIERS.map((minQuantity, index) => ({
+      minQuantity,
+      unitRate: row!.rates[index]!,
+    })),
+  );
+}
+
+const tiers5 = formatTiers("До 5 × 5 см");
+const tiers10 = formatTiers("До 10 × 10 см");
+
+assert.equal(resolveDecorationFormatRate({ quantity: 10, tiers: tiers5 }), 45); // <20 → 20–49
+assert.equal(resolveDecorationFormatRate({ quantity: 30, tiers: tiers5 }), 45);
+assert.equal(resolveDecorationFormatRate({ quantity: 50, tiers: tiers5 }), 35);
+assert.equal(resolveDecorationFormatRate({ quantity: 150, tiers: tiers5 }), 29);
+assert.equal(resolveDecorationFormatRate({ quantity: 200, tiers: tiers5 }), 25);
+assert.equal(resolveDecorationFormatRate({ quantity: 30, tiers: tiers10 }), 55);
+
+// 30 шт · два «5×5» + один «10×10» → 45×30 + 45×30 + 55×30
+{
+  const qty = 30;
+  const r5 = resolveDecorationFormatRate({ quantity: qty, tiers: tiers5 });
+  const r10 = resolveDecorationFormatRate({ quantity: qty, tiers: tiers10 });
+  const calc = calculateCosting({
+    sizes: [{ sizeCode: "M", quantity: qty }],
+    materials: [],
+    operations: [],
+    decorations: [
+      { id: "a", setupCost: 0, unitRate: r5 },
+      { id: "b", setupCost: 0, unitRate: r5 },
+      { id: "c", setupCost: 0, unitRate: r10 },
+    ],
+    additionalCosts: [],
+    pricingMethod: "MARGIN",
+    targetRatePercent: 0,
+  });
+  assert.equal(Number(calc.decorationsSubtotal), 45 * 30 + 45 * 30 + 55 * 30);
+  assert.equal(Number(calc.decorationsSubtotal), 4350);
+  assert.equal(Number(calc.costPerUnit), 145); // 4350 / 30
+  console.log("decoration duplicates @30 smoke passed:", calc.decorationsSubtotal);
+}
+
+// same formats + приладки 100 + 0 + 250
+{
+  const qty = 30;
+  const r5 = resolveDecorationFormatRate({ quantity: qty, tiers: tiers5 });
+  const r10 = resolveDecorationFormatRate({ quantity: qty, tiers: tiers10 });
+  const calc = calculateCosting({
+    sizes: [{ sizeCode: "M", quantity: qty }],
+    materials: [],
+    operations: [],
+    decorations: [
+      { id: "a", setupCost: 100, unitRate: r5 },
+      { id: "b", setupCost: 0, unitRate: r5 },
+      { id: "c", setupCost: 250, unitRate: r10 },
+    ],
+    additionalCosts: [],
+    pricingMethod: "MARGIN",
+    targetRatePercent: 0,
+  });
+  // setups once + unit×qty per line
+  assert.equal(Number(calc.decorationsSubtotal), 100 + 0 + 250 + 45 * 30 + 45 * 30 + 55 * 30);
+  assert.equal(Number(calc.decorationsSubtotal), 4700);
+  console.log("decoration setups @30 smoke passed:", calc.decorationsSubtotal);
+}
+
+// tirage 150 → rates 29 / 43
+{
+  const qty = 150;
+  const r5 = resolveDecorationFormatRate({ quantity: qty, tiers: tiers5 });
+  const r10 = resolveDecorationFormatRate({ quantity: qty, tiers: tiers10 });
+  assert.equal(r5, 29);
+  assert.equal(r10, 43);
+  const calc = calculateCosting({
+    sizes: [{ sizeCode: "M", quantity: qty }],
+    materials: [],
+    operations: [],
+    decorations: [
+      { id: "a", setupCost: 0, unitRate: r5 },
+      { id: "b", setupCost: 0, unitRate: r5 },
+      { id: "c", setupCost: 0, unitRate: r10 },
+    ],
+    additionalCosts: [],
+    pricingMethod: "MARGIN",
+    targetRatePercent: 0,
+  });
+  assert.equal(Number(calc.decorationsSubtotal), 29 * 150 + 29 * 150 + 43 * 150);
+  assert.equal(Number(calc.decorationsSubtotal), 15150);
+  console.log("decoration tier @150 smoke passed:", calc.decorationsSubtotal);
+}
+
+// single decoration only
+{
+  const qty = 80;
+  const r5 = resolveDecorationFormatRate({ quantity: qty, tiers: tiers5 });
+  assert.equal(r5, 35); // 50–99
+  const calc = calculateCosting({
+    sizes: [{ sizeCode: "M", quantity: qty }],
+    materials: [],
+    operations: [],
+    decorations: [{ id: "a", setupCost: 500, unitRate: r5 }],
+    additionalCosts: [],
+    pricingMethod: "MARGIN",
+    targetRatePercent: 0,
+  });
+  assert.equal(Number(calc.decorationsSubtotal), 500 + 35 * 80);
+  assert.equal(Number(calc.decorationsSubtotal), 3300);
+  console.log("decoration single + setup smoke passed:", calc.decorationsSubtotal);
+}
+
+console.log("decoration format pricing smoke tests passed");

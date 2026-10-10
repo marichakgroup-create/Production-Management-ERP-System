@@ -1266,6 +1266,7 @@ export async function uploadOrderFileAction(formData: FormData) {
 
   const orderId = String(formData.get("orderId") ?? "");
   const orderItemIdRaw = String(formData.get("orderItemId") ?? "").trim();
+  const decorationIdRaw = String(formData.get("orderItemDecorationId") ?? "").trim();
   const caption = String(formData.get("caption") ?? "").trim() || null;
   const file = formData.get("file");
   if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
@@ -1293,7 +1294,24 @@ export async function uploadOrderFileAction(formData: FormData) {
   }
 
   let orderItemId: string | null = orderItemIdRaw || null;
-  if (orderItemId) {
+  let orderItemDecorationId: string | null = decorationIdRaw || null;
+
+  if (orderItemDecorationId) {
+    const match = order.items
+      .flatMap((item) =>
+        item.decorations.map((decoration) => ({
+          decorationId: decoration.id,
+          orderItemId: item.id,
+          nameSnapshot: decoration.nameSnapshot,
+        })),
+      )
+      .find((row) => row.decorationId === orderItemDecorationId);
+    if (!match) return { ok: false as const, error: "DECORATION" as const };
+    orderItemId = match.orderItemId;
+    if (!caption) {
+      // Auto-caption from decoration when caller did not pass one.
+    }
+  } else if (orderItemId) {
     const match = order.items.find((item) => item.id === orderItemId);
     if (!match) return { ok: false as const, error: "ITEM" as const };
   }
@@ -1305,18 +1323,33 @@ export async function uploadOrderFileAction(formData: FormData) {
       return { ok: false as const, error: "UPLOAD" as const, message: stored.message };
     }
 
+    let resolvedCaption = caption;
+    if (!resolvedCaption && orderItemDecorationId) {
+      const decoration = order.items
+        .flatMap((item) => item.decorations)
+        .find((row) => row.id === orderItemDecorationId);
+      if (decoration) {
+        const { decorationDisplayName } = await import("@/lib/decoration-format-pricing");
+        resolvedCaption = decorationDisplayName(decoration.nameSnapshot);
+      }
+    }
+
     await addOrderFile({
       orderId,
       orderItemId,
+      orderItemDecorationId,
       fileName: file.name,
       mimeType: file.type || "application/octet-stream",
       sizeBytes: file.size,
       storageKey: stored.storageKey,
-      caption,
+      caption: resolvedCaption,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "ORDER_ITEM_NOT_FOUND") {
       return { ok: false as const, error: "ITEM" as const };
+    }
+    if (error instanceof Error && error.message === "ORDER_DECORATION_NOT_FOUND") {
+      return { ok: false as const, error: "DECORATION" as const };
     }
     return { ok: false as const, error: "UPLOAD" as const };
   }
@@ -1337,16 +1370,23 @@ export async function updateOrderFileMetaAction(formData: FormData) {
 
   const captionRaw = formData.get("caption");
   const itemRaw = formData.get("orderItemId");
+  const decorationRaw = formData.get("orderItemDecorationId");
   try {
     await updateOrderFileMeta({
       fileId,
       ...(captionRaw !== null ? { caption: String(captionRaw) } : {}),
       ...(itemRaw !== null ? { orderItemId: String(itemRaw).trim() || null } : {}),
+      ...(decorationRaw !== null
+        ? { orderItemDecorationId: String(decorationRaw).trim() || null }
+        : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ERROR";
     if (message === "ORDER_LOCKED") return { ok: false as const, error: "ORDER_LOCKED" as const };
     if (message === "ORDER_ITEM_NOT_FOUND") return { ok: false as const, error: "ITEM" as const };
+    if (message === "ORDER_DECORATION_NOT_FOUND") {
+      return { ok: false as const, error: "DECORATION" as const };
+    }
     if (message === "NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" as const };
     return { ok: false as const, error: "ERROR" as const };
   }

@@ -12,7 +12,7 @@ const globalForPrisma = globalThis as unknown as {
  * Bump when Prisma schema changes so dev HMR does not keep a stale client.
  * Also bump after `prisma generate` if a previous bump raced ahead of generation.
  */
-const PRISMA_CLIENT_VERSION = "20260929140000_tag_color_client_guard";
+const PRISMA_CLIENT_VERSION = "20261010094000_decoration_formats_pool";
 
 function materialClientHasTagColor(): boolean {
   try {
@@ -30,6 +30,8 @@ function clientHasCurrentDelegates(client: PrismaClient | undefined): boolean {
     "screenPrintPriceCell" in client &&
     "screenPrintCoefficient" in client &&
     "sizeChartVariant" in client &&
+    "decorationFormat" in client &&
+    "decorationFormatTier" in client &&
     materialClientHasTagColor()
   );
 }
@@ -135,5 +137,8 @@ export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
     const client = getPrismaClient();
     const value = Reflect.get(client, prop, client);
     return typeof value === "function" ? value.bind(client) : value;
+  },
+  has(_target, prop) {
+    return Reflect.has(getPrismaClient(), prop);
   },
 });

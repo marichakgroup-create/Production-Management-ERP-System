@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listOrders } from "@/server/domains/orders/service";
 import { PageHeader } from "@/components/ui/Page";
+import { Banner } from "@/components/ui/Banner";
 import { TableCard, TableToolbar } from "@/components/ui/Table";
 import { SearchField, FilterChips, ResetFilters } from "@/components/ui/Filters";
 import { IconPlus } from "@/components/ui/Icons";
@@ -24,9 +25,12 @@ export default async function OrdersPage({
   const archiveView = status === "archive" || status === "CANCELLED";
 
   let orders: Awaited<ReturnType<typeof listOrders>> = [];
+  let dbError = false;
   try {
     orders = await listOrders();
-  } catch {
+  } catch (error) {
+    dbError = true;
+    console.error("[orders] listOrders failed:", error);
     orders = [];
   }
 
@@ -89,6 +93,14 @@ export default async function OrdersPage({
         }
       />
 
+      {dbError ? (
+        <Banner tone="danger" title="Не вдалося завантажити замовлення" className="mb-4">
+          Перевірте зʼєднання з БД і перезапустіть <code>next dev</code> після{" "}
+          <code>prisma generate</code>. У базі замовлення можуть бути — це помилка читання, не
+          порожній каталог.
+        </Banner>
+      ) : null}
+
       <TableCard>
         <TableToolbar
           left={
@@ -139,26 +151,31 @@ export default async function OrdersPage({
           showAmounts={showAmounts}
           archiveView={archiveView}
           empty={{
-            title: archiveView
-              ? term
-                ? "В архіві нічого не знайдено"
-                : "Архів порожній"
-              : term || status
-                ? "Замовлень не знайдено"
-                : "Замовлень ще немає",
-            description: archiveView
-              ? term
-                ? "Змініть запит або скиньте фільтри."
-                : "Видалені замовлення зʼявляться тут."
-              : term || status
-                ? "Змініть запит або скиньте фільтри."
-                : "Створіть перше замовлення — клієнта й виріб можна додати прямо у формі.",
-            action: archiveView ? undefined : (
-              <Link href="/orders/new" className="btn-primary btn-primary-sm">
-                <IconPlus size={15} />
-                Нове замовлення
-              </Link>
-            ),
+            title: dbError
+              ? "Дані недоступні"
+              : archiveView
+                ? term
+                  ? "В архіві нічого не знайдено"
+                  : "Архів порожній"
+                : term || status
+                  ? "Замовлень не знайдено"
+                  : "Замовлень ще немає",
+            description: dbError
+              ? "Перезапустіть сервер розробки й оновіть сторінку."
+              : archiveView
+                ? term
+                  ? "Змініть запит або скиньте фільтри."
+                  : "Видалені замовлення зʼявляться тут."
+                : term || status
+                  ? "Змініть запит або скиньте фільтри."
+                  : "Створіть перше замовлення — клієнта й виріб можна додати прямо у формі.",
+            action:
+              archiveView || dbError ? undefined : (
+                <Link href="/orders/new" className="btn-primary btn-primary-sm">
+                  <IconPlus size={15} />
+                  Нове замовлення
+                </Link>
+              ),
           }}
         />
       </TableCard>

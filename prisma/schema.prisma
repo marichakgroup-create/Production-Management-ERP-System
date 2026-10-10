@@ -349,6 +349,36 @@ model DecorationQuantityTier {
   @@map("decoration_quantity_tiers")
 }
 
+/// Application format (e.g. «До 5 × 5 см») with qty-tier unit rates.
+model DecorationFormat {
+  id        String       @id @default(cuid())
+  nameUk    String
+  sortOrder Int          @default(0)
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  tiers              DecorationFormatTier[]
+  orderItemDecorations OrderItemDecoration[]
+
+  @@index([sortOrder])
+  @@map("decoration_formats")
+}
+
+/// ₴/шт when order-item quantity >= minQuantity (ladder until next tier).
+model DecorationFormatTier {
+  id          String  @id @default(cuid())
+  formatId    String
+  minQuantity Int
+  unitRate    Decimal @db.Decimal(14, 4)
+
+  format DecorationFormat @relation(fields: [formatId], references: [id], onDelete: Cascade)
+
+  @@unique([formatId, minQuantity])
+  @@index([formatId])
+  @@map("decoration_format_tiers")
+}
+
 /// Silk-screen price cell: ₴/шт for tirage band × color count (base ≤ A4).
 model ScreenPrintPriceCell {
   id          String  @id @default(cuid())
@@ -742,14 +772,19 @@ model OrderItemDecoration {
   id                 String  @id @default(cuid())
   orderItemId        String
   decorationMethodId String?
+  /// Format catalog row for qty-tier reprice (nullable for legacy / silk-screen lines).
+  decorationFormatId String?
   nameSnapshot       String
   setupCost          Decimal @db.Decimal(14, 4)
   unitRate           Decimal @db.Decimal(14, 4)
   sortOrder          Int     @default(0)
 
-  orderItem        OrderItem         @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
-  decorationMethod DecorationMethod? @relation(fields: [decorationMethodId], references: [id])
+  orderItem          OrderItem          @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  decorationMethod   DecorationMethod?  @relation(fields: [decorationMethodId], references: [id])
+  decorationFormat   DecorationFormat?  @relation(fields: [decorationFormatId], references: [id], onDelete: SetNull)
+  files              FileAsset[]
 
+  @@index([decorationFormatId])
   @@map("order_item_decorations")
 }
 
@@ -917,14 +952,18 @@ model FileAsset {
   orderId   String?
   /// Order line (product) this artwork / attachment belongs to.
   orderItemId String?
+  /// Specific decoration line (format / placement) this artwork belongs to.
+  orderItemDecorationId String?
   createdAt DateTime @default(now())
 
   client    Client?    @relation(fields: [clientId], references: [id])
   order     Order?     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  orderItemDecoration OrderItemDecoration? @relation(fields: [orderItemDecorationId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([orderItemId])
+  @@index([orderItemDecorationId])
   @@map("file_assets")
 }
 
