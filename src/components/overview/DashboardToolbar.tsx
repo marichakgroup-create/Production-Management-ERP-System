@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import { Select } from "@/components/ui/Select";
 import { IconPlus } from "@/components/ui/Icons";
 import { cn } from "@/lib/utils";
-import { dashboardQuery } from "@/app/(app)/overview/dashboard-model";
-import type { DashboardRange } from "@/app/(app)/overview/dashboard-model";
+import {
+  dashboardQuery,
+  type DashboardRange,
+  type DashboardView,
+} from "@/app/(app)/overview/dashboard-model";
 
 const RANGES: Array<{ id: DashboardRange; label: string }> = [
   { id: "week", label: "Тиждень" },
@@ -18,29 +21,31 @@ export function DashboardToolbar({
   range,
   managerId,
   focus,
+  view,
   managers,
 }: {
   range: DashboardRange;
   managerId: string | null;
   focus: string;
+  view: DashboardView;
   managers: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <div className="inline-flex h-10 items-center rounded-[9px] border border-[#E1E6E3] bg-[#FAFBFA] p-1">
+      <div className="inline-flex h-10 items-center rounded-[9px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-1">
         {RANGES.map((item) => {
           const on = range === item.id;
           return (
             <Link
               key={item.id}
-              href={dashboardQuery({ range: item.id, managerId, focus })}
+              href={dashboardQuery({ range: item.id, managerId, focus, view })}
               className={cn(
                 "inline-flex h-8 items-center rounded-[8px] px-3 text-[14px] font-semibold transition-colors duration-150",
                 on
-                  ? "bg-white text-[#17212B] shadow-[0_1px_2px_rgba(18,32,25,0.04)]"
-                  : "text-[#66717D] hover:text-[#17212B]",
+                  ? "bg-[var(--color-surface)] text-[var(--color-text-primary)] shadow-[var(--shadow-card)]"
+                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
               )}
             >
               {item.label}
@@ -58,6 +63,7 @@ export function DashboardToolbar({
               range,
               managerId: event.target.value || null,
               focus,
+              view,
             }),
           )
         }

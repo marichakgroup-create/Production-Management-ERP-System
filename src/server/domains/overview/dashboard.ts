@@ -516,7 +516,7 @@ export async function getOwnerDashboard(input: {
       label: "Застарілі пропозиції",
       count: staleCount,
       hint: "Ціни довідника змінені після розрахунку",
-      href: dashboardQuery({ range, managerId, focus: "stale" }),
+      href: dashboardQuery({ range, managerId, view: "portfolio", focus: "stale" }),
     },
     {
       key: "noNorm",

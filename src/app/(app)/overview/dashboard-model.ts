@@ -4,6 +4,21 @@ export type OverviewOrder = Awaited<ReturnType<typeof listOrders>>[number];
 
 export type DashboardRange = "week" | "month" | "quarter";
 
+/** Owner dashboard lens — always-on KPI + one of these tabs. */
+export type DashboardView = "attention" | "portfolio" | "money" | "quality";
+
+export const DASHBOARD_VIEWS: DashboardView[] = [
+  "attention",
+  "portfolio",
+  "money",
+  "quality",
+];
+
+export function parseDashboardView(raw: string | undefined): DashboardView {
+  if (raw === "portfolio" || raw === "money" || raw === "quality") return raw;
+  return "attention";
+}
+
 export const ACTIVE_STATUSES = [
   "DRAFT",
   "CALCULATION",
@@ -24,10 +39,12 @@ export function dashboardQuery(input: {
   range: DashboardRange;
   managerId?: string | null;
   focus?: string;
+  view?: DashboardView | null;
 }) {
   const params = new URLSearchParams();
   if (input.range !== "month") params.set("range", input.range);
   if (input.managerId) params.set("manager", input.managerId);
+  if (input.view && input.view !== "attention") params.set("view", input.view);
   if (input.focus && input.focus !== "all") params.set("focus", input.focus);
   const query = params.toString();
   return query ? `/overview?${query}` : "/overview";
