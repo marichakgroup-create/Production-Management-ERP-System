@@ -47,7 +47,7 @@ export async function saveScreenPrintCatalogAction(formData: FormData) {
     return { ok: false as const, error: "VALIDATION" as const };
   }
 
-  revalidatePath("/settings/screen-print");
+  revalidatePath("/settings/applications");
   revalidatePath("/orders");
   return { ok: true as const };
 }

@@ -34,7 +34,7 @@ type NavItem = {
     | "products"
     | "materials"
     | "operations"
-    | "screenPrint"
+    | "decorations"
     | "sizeCharts"
     | "fixedCosts"
     | "pricing"
@@ -73,8 +73,8 @@ const catalogs: NavItem[] = [
     requiredPermission: "manageCatalogs",
   },
   {
-    href: "/settings/screen-print",
-    labelKey: "screenPrint",
+    href: "/settings/applications",
+    labelKey: "decorations",
     icon: IconDecoration,
     requiredPermission: "manageCatalogs",
   },

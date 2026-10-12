@@ -35,7 +35,7 @@ export async function saveDecorationFormatsMatrixAction(formData: FormData) {
     return { ok: false as const, error: "VALIDATION" as const };
   }
 
-  revalidatePath("/settings/operations");
+  revalidatePath("/settings/applications");
   revalidatePath("/orders");
   return { ok: true as const };
 }

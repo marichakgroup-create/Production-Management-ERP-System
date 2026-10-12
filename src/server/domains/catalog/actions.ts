@@ -568,7 +568,7 @@ export async function createDecorationAction(formData: FormData) {
   }
 
   const decoration = await createDecoration(parsed.data);
-  revalidatePath("/settings/screen-print");
+  revalidatePath("/settings/applications");
   revalidatePath("/orders");
   return {
     ok: true as const,
@@ -603,7 +603,7 @@ export async function updateDecorationAction(formData: FormData) {
   }
 
   const decoration = await updateDecoration(id, parsed.data);
-  revalidatePath("/settings/screen-print");
+  revalidatePath("/settings/applications");
   revalidatePath("/orders");
   revalidatePath("/products");
   return { ok: true as const, decorationId: decoration.id };
@@ -614,7 +614,7 @@ export async function archiveDecorationAction(id: string) {
   if (!session?.user) throw new Error("UNAUTHORIZED");
   await assertSessionPermission("archiveRecords");
   await archiveDecoration(id);
-  revalidatePath("/settings/screen-print");
+  revalidatePath("/settings/applications");
   return { ok: true as const };
 }
 
@@ -662,7 +662,7 @@ export async function bulkArchiveDecorationsAction(formData: FormData) {
   if (ids.length === 0) return { ok: false as const, error: "EMPTY" as const };
 
   const result = await archiveDecorations(ids);
-  revalidatePath("/settings/screen-print");
+  revalidatePath("/settings/applications");
   revalidatePath("/orders");
   return { ok: true as const, count: result.count };
 }

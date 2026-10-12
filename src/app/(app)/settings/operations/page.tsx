@@ -5,15 +5,12 @@ import { PageHeader } from "@/components/ui/Page";
 import { Banner } from "@/components/ui/Banner";
 import { TableCard, TableToolbar } from "@/components/ui/Table";
 import { SearchField, FilterChips, ResetFilters } from "@/components/ui/Filters";
-import { ViewTabs } from "@/components/ui/Tabs";
 import { formatMoneyUah } from "@/lib/utils";
 import { accessHas, getCurrentUserAccess } from "@/server/auth/access";
 import { OperationCreatePanel } from "./OperationCreateForm";
 import { OperationsTable, type OperationsTableRow } from "@/components/catalog/OperationsTable";
 import { CatalogHealthBanner } from "@/components/catalog/CatalogHealthBanner";
 import { OPERATION_METHOD_LABELS } from "@/lib/operation-labels";
-import { getDecorationFormatsCatalog } from "@/server/domains/decoration-formats/service";
-import { DecorationFormatsAdminPanel } from "@/components/settings/DecorationFormatsAdminPanel";
 
 export default async function OperationsSettingsPage({
   searchParams,
@@ -24,22 +21,21 @@ export default async function OperationsSettingsPage({
   if (!access) redirect("/login");
   if (!accessHas(access, "manageCatalogs")) redirect("/overview");
 
-  const { q, method, tab: tabRaw } = await searchParams;
-  const tab = tabRaw === "decorations" ? "decorations" : "operations";
+  const { q, method, tab } = await searchParams;
+  if (tab === "decorations") {
+    redirect("/settings/applications?tab=formats");
+  }
 
   let operations: Awaited<ReturnType<typeof listOperations>> = [];
   let healthTips: Awaited<ReturnType<typeof getCatalogHealth>>["tips"] = [];
-  let decorationFormats: Awaited<ReturnType<typeof getDecorationFormatsCatalog>> = [];
   let dbError = false;
 
   try {
-    const [ops, health, formats] = await Promise.all([
+    const [ops, health] = await Promise.all([
       listOperations(),
       getCatalogHealth().catch(() => null),
-      getDecorationFormatsCatalog({ includeArchived: true }),
     ]);
     operations = ops;
-    decorationFormats = formats;
     if (health) healthTips = tipsForPage(health.tips, "operations");
   } catch {
     dbError = true;
@@ -100,92 +96,54 @@ export default async function OperationsSettingsPage({
     <div>
       <PageHeader
         title="Операції"
-        description={
-          tab === "decorations"
-            ? "Розцінки нанесення за форматом і тиражем. У замовленні ставка підставляється автоматично."
-            : "Спосіб розрахунку визначає, як вартість операції потрапляє в собівартість одиниці."
-        }
-        actions={
-          tab === "operations" && canCreate && !dbError ? <OperationCreatePanel /> : null
-        }
+        description="Спосіб розрахунку визначає, як вартість операції потрапляє в собівартість одиниці."
+        actions={canCreate && !dbError ? <OperationCreatePanel /> : null}
       />
 
-      <ViewTabs
-        className="mb-4"
-        active={tab}
-        items={[
-          {
-            key: "operations",
-            label: "Операції",
-            href: "/settings/operations",
-            count: operations.length || undefined,
-          },
-          {
-            key: "decorations",
-            label: "Операції нанесення",
-            href: "/settings/operations?tab=decorations",
-            count: decorationFormats.filter((row) => row.status === "ACTIVE").length || undefined,
-          },
-        ]}
-      />
-
-      {tab === "decorations" ? (
-        dbError ? (
-          <Banner tone="danger" title="Не вдалося завантажити формати нанесення" className="mb-4">
-            Перевірте <code>DATABASE_URL</code> і перезапустіть <code>next dev</code> після{" "}
-            <code>prisma migrate</code> / <code>prisma generate</code>.
-          </Banner>
-        ) : (
-          <DecorationFormatsAdminPanel formats={decorationFormats} />
-        )
+      {dbError ? (
+        <Banner tone="danger" title="Не вдалося завантажити операції" className="mb-4">
+          Перевірте <code>DATABASE_URL</code> і перезапустіть <code>next dev</code> після{" "}
+          <code>prisma generate</code>.
+        </Banner>
       ) : (
-        <>
-          {dbError ? (
-            <Banner tone="danger" title="Не вдалося завантажити операції" className="mb-4">
-              Перевірте <code>DATABASE_URL</code> і перезапустіть <code>next dev</code> після{" "}
-              <code>prisma generate</code>.
-            </Banner>
-          ) : (
-            <CatalogHealthBanner tips={healthTips} className="mb-4" />
-          )}
-
-          <TableCard>
-            <TableToolbar
-              left={
-                <span className="type-caption tabular">
-                  {filtered.length} з {operations.length}
-                </span>
-              }
-              filters={
-                <>
-                  <SearchField placeholder="Пошук операції" className="w-56" />
-                  <FilterChips
-                    paramKey="method"
-                    options={Object.entries(OPERATION_METHOD_LABELS).map(([value, label]) => ({
-                      value,
-                      label,
-                      count: operations.filter((o) => o.calculationMethod === value).length,
-                    }))}
-                  />
-                  <ResetFilters keys={["q", "method"]} />
-                </>
-              }
-            />
-
-            <OperationsTable
-              rows={rows}
-              canDelete={canDelete}
-              canEdit={canCreate}
-              empty={{
-                title: dbError ? "Дані недоступні" : "Операцій не знайдено",
-                description: dbError
-                  ? undefined
-                  : "Додайте операції, щоб вони брали участь у розрахунку собівартості.",
-              }}
-            />
-          </TableCard>
-        </>
+        <CatalogHealthBanner tips={healthTips} className="mb-4" />
       )}
+
+      <TableCard>
+        <TableToolbar
+          left={
+            <span className="type-caption tabular">
+              {filtered.length} з {operations.length}
+            </span>
+          }
+          filters={
+            <>
+              <SearchField placeholder="Пошук операції" className="w-56" />
+              <FilterChips
+                paramKey="method"
+                options={Object.entries(OPERATION_METHOD_LABELS).map(([value, label]) => ({
+                  value,
+                  label,
+                  count: operations.filter((o) => o.calculationMethod === value).length,
+                }))}
+              />
+              <ResetFilters keys={["q", "method"]} />
+            </>
+          }
+        />
+
+        <OperationsTable
+          rows={rows}
+          canDelete={canDelete}
+          canEdit={canCreate}
+          empty={{
+            title: dbError ? "Дані недоступні" : "Операцій не знайдено",
+            description: dbError
+              ? undefined
+              : "Додайте операції, щоб вони брали участь у розрахунку собівартості.",
+          }}
+        />
+      </TableCard>
     </div>
   );
 }
