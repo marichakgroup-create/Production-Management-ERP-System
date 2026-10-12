@@ -71,6 +71,7 @@ import {
 import {
   DECORATION_FORMAT_NAME_PREFIX,
   isDecorationFormatLineName,
+  isMiscDecorationCostName,
 } from "@/lib/decoration-format-pricing";
 import type { DecorationFormatCatalogRow } from "@/server/domains/decoration-formats/service";
 
@@ -875,6 +876,7 @@ export function ConfigurationTab({
             ) : (
               decorations.map((row) => {
                 const rowBusy = isBusy(`decoration:${row.id}`);
+                const isMiscCost = isMiscDecorationCostName(row.name);
                 return (
                   <TR key={row.id} className={busyRowClass(rowBusy)} aria-busy={rowBusy || undefined}>
                     <TD className="min-w-0 py-1.5">
@@ -885,7 +887,14 @@ export function ConfigurationTab({
                     </TD>
                     {!hideCosts ? (
                       <TD numeric className="py-1.5">
-                        {locked ? (
+                        {isMiscCost ? (
+                          <span
+                            className="text-[var(--color-text-quiet)]"
+                            title="Додаткові витрати йдуть у ставку /шт на тираж, не в приладку"
+                          >
+                            —
+                          </span>
+                        ) : locked ? (
                           <span className="text-[var(--color-text-secondary)]">
                             {row.setupCost > 0 ? formatMoneyUah(row.setupCost) : "—"}
                           </span>

@@ -90,7 +90,7 @@ export async function addOrderDecorationFormatAction(input: {
   return { ok: true as const, unitRate: resolved.unitRate };
 }
 
-/** Unplanned decoration cost — lump sum in setupCost, no format / no artwork slot. */
+/** Unplanned decoration cost for the tirage — unitRate × qty (not приладка). */
 export async function addOrderMiscDecorationCostAction(input: {
   orderId: string;
   orderItemId: string;
@@ -114,8 +114,8 @@ export async function addOrderMiscDecorationCostAction(input: {
   await addOrderItemDecorationWithRates({
     orderItemId: input.orderItemId,
     nameUk: MISC_DECORATION_COST_NAME,
-    setupCost: amount,
-    unitRate: 0,
+    setupCost: 0,
+    unitRate: amount,
     decorationFormatId: null,
   });
 

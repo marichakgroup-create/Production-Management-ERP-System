@@ -41,7 +41,7 @@ function parseScreenPrintColorCount(value: string): number | null {
 }
 
 /**
- * Unified decoration picker: Шовкотрафарет + DTF Друк (+ додаткові витрати).
+ * Unified decoration picker: Шовкотрафарет + DTF Друк (+ додаткові витрати /шт).
  */
 export function OrderDecorationFormatPicker({
   orderId,
@@ -259,7 +259,7 @@ export function OrderDecorationFormatPicker({
           {isMisc && !hideCosts ? (
             <div className="w-[8.5rem] shrink-0">
               <Input
-                label="Сума"
+                label="₴/шт"
                 type="number"
                 min={0}
                 step="0.01"
@@ -268,6 +268,7 @@ export function OrderDecorationFormatPicker({
                 value={miscAmount}
                 disabled={pending}
                 suffix="₴"
+                hint={`× тираж ${quantity}`}
                 onChange={(event) => {
                   setMiscAmount(event.target.value);
                   setError(null);

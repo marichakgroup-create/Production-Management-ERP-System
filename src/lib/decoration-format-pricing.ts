@@ -25,7 +25,7 @@ export const DECORATION_FORMAT_NAME_PREFIX = "Нанесення · ";
 /** Sentinel in the order format picker — not a catalog format. */
 export const MISC_DECORATION_OPTION_VALUE = "__misc_extra__";
 
-/** Snapshot name for unplanned decoration costs (lump sum in setupCost). */
+/** Snapshot name for unplanned decoration costs (unitRate × tirage). */
 export const MISC_DECORATION_COST_NAME = "Додаткові витрати";
 
 export function isMiscDecorationCostName(nameSnapshot: string | null | undefined): boolean {
