@@ -11,6 +11,7 @@ import {
 import { addOrderItemDecorationWithRates } from "@/server/domains/orders/service";
 import {
   decorationFormatLineName,
+  MISC_DECORATION_COST_NAME,
 } from "@/lib/decoration-format-pricing";
 import {
   getDecorationFormatsCatalog,
@@ -87,6 +88,39 @@ export async function addOrderDecorationFormatAction(input: {
 
   revalidatePath(`/orders/${input.orderId}`);
   return { ok: true as const, unitRate: resolved.unitRate };
+}
+
+/** Unplanned decoration cost — lump sum in setupCost, no format / no artwork slot. */
+export async function addOrderMiscDecorationCostAction(input: {
+  orderId: string;
+  orderItemId: string;
+  amount?: number;
+}) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+  await assertCanEditOrderDecorations(input.orderId);
+
+  const item = await prisma.orderItem.findUnique({
+    where: { id: input.orderItemId },
+    select: { id: true, orderId: true },
+  });
+  if (!item || item.orderId !== input.orderId) {
+    return { ok: false as const, error: "NOT_FOUND" as const };
+  }
+
+  const amount = Math.max(0, Number(input.amount) || 0);
+
+  await addOrderItemDecorationWithRates({
+    orderItemId: input.orderItemId,
+    nameUk: MISC_DECORATION_COST_NAME,
+    setupCost: amount,
+    unitRate: 0,
+    decorationFormatId: null,
+  });
+
+  revalidatePath(`/orders/${input.orderId}`);
+  return { ok: true as const };
 }
 
 export async function listDecorationFormatsForOrderAction() {

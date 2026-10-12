@@ -1,3 +1,5 @@
+import { isMiscDecorationCostName } from "@/lib/decoration-format-pricing";
+
 /** Internal limits for order attachments (artwork / documents). */
 export const ORDER_FILE_MAX_BYTES = 50 * 1024 * 1024;
 export const ORDER_FILE_MAX_COUNT = 20;
@@ -35,6 +37,8 @@ export function orderFileAllowed(file: { name: string; type: string }) {
 
 export type ArtworkDecorationFacts = {
   id: string;
+  /** When set, «Додаткові витрати» rows are ignored for artwork gates. */
+  nameUk?: string | null;
 };
 
 export type ArtworkItemFacts = {
@@ -50,7 +54,9 @@ export type ArtworkFileFacts = {
 };
 
 function decorationSlots(item: ArtworkItemFacts): ArtworkDecorationFacts[] {
-  if (item.decorations && item.decorations.length > 0) return item.decorations;
+  if (item.decorations && item.decorations.length > 0) {
+    return item.decorations.filter((row) => !isMiscDecorationCostName(row.nameUk));
+  }
   // Legacy callers without decoration ids: one virtual slot per item.
   if (item.decorationsCount > 0) return [{ id: `__item__:${item.id}` }];
   return [];

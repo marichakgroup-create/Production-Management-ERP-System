@@ -73,7 +73,7 @@ export default async function ApplicationsSettingsPage({
           },
           {
             key: "formats",
-            label: "Операції нанесення",
+            label: "DTF Друк",
             href: "/settings/applications?tab=formats",
             count: activeFormats > 0 ? activeFormats : undefined,
           },

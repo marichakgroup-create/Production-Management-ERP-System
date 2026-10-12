@@ -201,7 +201,7 @@ export async function getOwnerDashboard(input: {
                 standardOutput: true,
               },
             },
-            decorations: { select: { id: true } },
+            decorations: { select: { id: true, nameSnapshot: true } },
             specification: { select: { id: true } },
             versions: {
               orderBy: [{ isApproved: "desc" }, { versionNumber: "desc" }],
@@ -267,7 +267,11 @@ export async function getOwnerDashboard(input: {
     order.items.length > 0 &&
     order.items.every((item) => item.versions[0]?.isApproved);
   const needsDecorationFile = (order: Row) =>
-    order.items.some((item) => item.decorations.length > 0) && order.files.length === 0;
+    order.items.some((item) =>
+      item.decorations.some(
+        (row) => String(row.nameSnapshot ?? "").trim() !== "Додаткові витрати",
+      ),
+    ) && order.files.length === 0;
 
   const staleOf = (order: Row) => {
     if (["HANDED_TO_PRODUCTION", "CLOSED"].includes(order.status)) return false;

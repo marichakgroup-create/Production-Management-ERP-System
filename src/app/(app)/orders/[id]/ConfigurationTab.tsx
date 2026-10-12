@@ -164,6 +164,7 @@ export function ConfigurationTab({
   fixedCostError = null,
   canEditFixedCosts = false,
   decorationFormats = [],
+  screenPrintCells = [],
   screenPrintCoefficients = [],
   needsSizeBreakdown = false,
   sizeCharts = [],
@@ -203,7 +204,12 @@ export function ConfigurationTab({
   fixedCostError?: FixedCostValidationError | null;
   canEditFixedCosts?: boolean;
   decorationFormats?: DecorationFormatCatalogRow[];
-  /** Kept for display of legacy silk-screen lines already on the order. */
+  screenPrintCells?: Array<{
+    minQuantity: number;
+    colorCount: number;
+    unitRate: number;
+  }>;
+  /** Coefficients for silk-screen draft + display of existing lines. */
   screenPrintCoefficients?: Array<{
     code: string;
     nameUk: string;
@@ -863,7 +869,7 @@ export function ConfigurationTab({
                 description={
                   locked
                     ? "Нанесення не додано."
-                    : "Оберіть формат нижче — можна додати кілька разів."
+                    : "Оберіть шовкотрафарет або DTF нижче — можна додати кілька разів."
                 }
               />
             ) : (
@@ -982,6 +988,8 @@ export function ConfigurationTab({
           orderItemId={itemId}
           quantity={totalQuantity}
           formats={decorationFormats}
+          screenPrintCells={screenPrintCells}
+          screenPrintCoefficients={screenPrintCoefficients}
           locked={locked}
           hideCosts={hideCosts}
         />

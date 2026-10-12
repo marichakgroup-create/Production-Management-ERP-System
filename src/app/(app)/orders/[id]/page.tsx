@@ -8,6 +8,7 @@ import { buildCalcFromOrderItem, calcOptionsFromProduct, getPricingDefaults, get
 import { fixedCostOptionsFromDb } from "@/server/domains/fixed-costs/service";
 import { getScreenPrintCatalog } from "@/server/domains/screen-print/service";
 import { getDecorationFormatsCatalog } from "@/server/domains/decoration-formats/service";
+import { isMiscDecorationCostName } from "@/lib/decoration-format-pricing";
 import {
   resolveSewerCount,
   validateFixedCostParams,
@@ -545,12 +546,19 @@ export default async function OrderDetailPage({
     },
   ];
 
-  const needsArtwork = workingItems.some((row) => row.decorations.length > 0);
+  const needsArtwork = workingItems.some((row) =>
+    row.decorations.some((decoration) => !isMiscDecorationCostName(decoration.nameSnapshot)),
+  );
   const artworkReady = orderArtworkReady(
     workingItems.map((row) => ({
       id: row.id,
-      decorationsCount: row.decorations.length,
-      decorations: row.decorations.map((decoration) => ({ id: decoration.id })),
+      decorationsCount: row.decorations.filter(
+        (decoration) => !isMiscDecorationCostName(decoration.nameSnapshot),
+      ).length,
+      decorations: row.decorations.map((decoration) => ({
+        id: decoration.id,
+        nameUk: decoration.nameSnapshot,
+      })),
     })),
     order.files.map((file) => ({
       orderItemId: file.orderItemId,
@@ -621,7 +629,9 @@ export default async function OrderDetailPage({
         totalQuantity: row.totalQuantity,
         materialsCount: row.materials.length,
         operationsCount: row.operations.length,
-        decorationsCount: row.decorations.length,
+        decorationsCount: row.decorations.filter(
+          (decoration) => !isMiscDecorationCostName(decoration.nameSnapshot),
+        ).length,
         versionCount: row.versions.length,
         hasApprovedVersion: row.versions.some((version) => version.isApproved),
         specificationLocked: Boolean(row.specification),
@@ -1113,6 +1123,7 @@ export default async function OrderDetailPage({
             fixedCostError={fixedCostError}
             canEditFixedCosts={canEditComposition && !locked}
             decorationFormats={decorationFormats}
+            screenPrintCells={screenPrintCatalog.cells}
             screenPrintCoefficients={screenPrintCatalog.coefficients}
             corridorHint={
               action.focusItemId && action.focusItemId !== item.id
@@ -1212,17 +1223,24 @@ export default async function OrderDetailPage({
                 specificationLockedAt={item.specification?.lockedAt.toISOString() ?? null}
                 needsArtwork={needsArtwork}
                 locked={locked}
-                artworkItems={workingItems.map((row) => ({
-                  id: row.id,
-                  nameUk: row.nameUk,
-                  imageUrl: row.product?.imageUrl ?? null,
-                  decorationsCount: row.decorations.length,
-                  decorationNames: row.decorations.map((decoration) => decoration.nameSnapshot),
-                  decorations: row.decorations.map((decoration) => ({
-                    id: decoration.id,
-                    nameUk: decoration.nameSnapshot,
-                  })),
-                }))}
+                artworkItems={workingItems.map((row) => {
+                  const artworkDecorations = row.decorations.filter(
+                    (decoration) => !isMiscDecorationCostName(decoration.nameSnapshot),
+                  );
+                  return {
+                    id: row.id,
+                    nameUk: row.nameUk,
+                    imageUrl: row.product?.imageUrl ?? null,
+                    decorationsCount: artworkDecorations.length,
+                    decorationNames: artworkDecorations.map(
+                      (decoration) => decoration.nameSnapshot,
+                    ),
+                    decorations: artworkDecorations.map((decoration) => ({
+                      id: decoration.id,
+                      nameUk: decoration.nameSnapshot,
+                    })),
+                  };
+                })}
                 files={order.files.map((file) => {
                   const linked = order.items.find((row) => row.id === file.orderItemId);
                   const linkedDecoration = linked?.decorations.find(

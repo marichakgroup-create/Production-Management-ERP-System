@@ -21,6 +21,8 @@ export type SelectOption = {
   /** Secondary line in the dropdown (e.g. material composition). */
   description?: string;
   disabled?: boolean;
+  /** Section header in the menu (e.g. «DTF Друк» / «Шовкотрафарет»). */
+  group?: string;
 };
 
 function labelFromNode(node: React.ReactNode): string {
@@ -33,7 +35,10 @@ function labelFromNode(node: React.ReactNode): string {
   return "";
 }
 
-function optionsFromChildren(children: React.ReactNode): SelectOption[] {
+function optionsFromChildren(
+  children: React.ReactNode,
+  group?: string,
+): SelectOption[] {
   const options: SelectOption[] = [];
   Children.forEach(children, (child) => {
     if (child == null || typeof child === "boolean") return;
@@ -41,23 +46,33 @@ function optionsFromChildren(children: React.ReactNode): SelectOption[] {
       !isValidElement<{
         value?: string | number;
         disabled?: boolean;
+        label?: string;
         children?: React.ReactNode;
         "data-description"?: string;
+        "data-group"?: string;
       }>(child)
     ) {
       return;
     }
     if (child.type === Fragment) {
-      options.push(...optionsFromChildren(child.props.children));
+      options.push(...optionsFromChildren(child.props.children, group));
+      return;
+    }
+    if (child.type === "optgroup") {
+      const label = String(child.props.label ?? "").trim();
+      options.push(...optionsFromChildren(child.props.children, label || group));
       return;
     }
     if (child.type !== "option") return;
     const description = child.props["data-description"]?.trim() || undefined;
+    const optionGroup =
+      child.props["data-group"]?.trim() || group || undefined;
     options.push({
       value: String(child.props.value ?? ""),
       label: labelFromNode(child.props.children),
       description,
       disabled: Boolean(child.props.disabled),
+      group: optionGroup,
     });
   });
   return options;
@@ -159,7 +174,8 @@ export function Select({
     if (!q) return options;
     return options.filter((option) => {
       if (option.value === "") return false;
-      const haystack = `${option.label} ${option.description ?? ""}`.toLowerCase();
+      const haystack =
+        `${option.group ?? ""} ${option.label} ${option.description ?? ""}`.toLowerCase();
       return haystack.includes(q);
     });
   }, [options, query]);
@@ -314,49 +330,61 @@ export function Select({
                   const isSelected = option.value === selectedValue;
                   const isActive = index === activeIndex;
                   const isPlaceholder = option.value === "";
+                  const prevGroup = index > 0 ? visible[index - 1]?.group : undefined;
+                  const showGroup =
+                    Boolean(option.group) && option.group !== prevGroup && !isPlaceholder;
                   return (
-                    <li
-                      key={`${option.value}-${index}`}
-                      data-option
-                      role="option"
-                      aria-selected={isSelected}
-                      aria-disabled={option.disabled}
-                      className={cn(
-                        "mx-1 flex cursor-pointer items-center justify-between gap-2 rounded-[8px] px-2.5 py-1.5 text-[13.5px] leading-snug",
-                        option.disabled && "cursor-not-allowed opacity-40",
-                        isPlaceholder && "text-[var(--color-text-tertiary)]",
-                        isSelected &&
-                          "bg-[var(--color-tint-sage)] font-medium text-[var(--color-primary-800)]",
-                        !isSelected && isActive && "bg-[var(--color-surface-subtle)]",
-                        !isSelected &&
-                          !isActive &&
-                          "text-[var(--color-text-primary)] hover:bg-[var(--color-surface-subtle)]",
-                      )}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        if (!option.disabled) commit(option.value);
-                      }}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">{option.label}</span>
-                        {option.description ? (
-                          <span
-                            className={cn(
-                              "mt-0.5 block truncate text-[11.5px] font-normal",
-                              isSelected
-                                ? "text-[var(--color-primary-700)]/80"
-                                : "text-[var(--color-text-quiet)]",
-                            )}
-                          >
-                            {option.description}
-                          </span>
-                        ) : null}
-                      </span>
-                      {isSelected && !isPlaceholder ? (
-                        <IconCheck size={14} className="shrink-0 text-[var(--color-primary-700)]" />
+                    <Fragment key={`${option.group ?? ""}-${option.value}-${index}`}>
+                      {showGroup ? (
+                        <li
+                          role="presentation"
+                          className="sticky top-0 z-[1] bg-[var(--color-surface)] px-3 pt-2 pb-1 text-[10.5px] font-bold tracking-[0.08em] text-[var(--color-text-tertiary)] uppercase"
+                        >
+                          {option.group}
+                        </li>
                       ) : null}
-                    </li>
+                      <li
+                        data-option
+                        role="option"
+                        aria-selected={isSelected}
+                        aria-disabled={option.disabled}
+                        className={cn(
+                          "mx-1 flex cursor-pointer items-center justify-between gap-2 rounded-[8px] px-2.5 py-1.5 text-[13.5px] leading-snug",
+                          option.disabled && "cursor-not-allowed opacity-40",
+                          isPlaceholder && "text-[var(--color-text-tertiary)]",
+                          isSelected &&
+                            "bg-[var(--color-tint-sage)] font-medium text-[var(--color-primary-800)]",
+                          !isSelected && isActive && "bg-[var(--color-surface-subtle)]",
+                          !isSelected &&
+                            !isActive &&
+                            "text-[var(--color-text-primary)] hover:bg-[var(--color-surface-subtle)]",
+                        )}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          if (!option.disabled) commit(option.value);
+                        }}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{option.label}</span>
+                          {option.description ? (
+                            <span
+                              className={cn(
+                                "mt-0.5 block truncate text-[11.5px] font-normal",
+                                isSelected
+                                  ? "text-[var(--color-primary-700)]/80"
+                                  : "text-[var(--color-text-quiet)]",
+                              )}
+                            >
+                              {option.description}
+                            </span>
+                          ) : null}
+                        </span>
+                        {isSelected && !isPlaceholder ? (
+                          <IconCheck size={14} className="shrink-0 text-[var(--color-primary-700)]" />
+                        ) : null}
+                      </li>
+                    </Fragment>
                   );
                 })
               )}
