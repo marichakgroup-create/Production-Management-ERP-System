@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Select, type SelectOption } from "@/components/ui/Select";
-import { Input } from "@/components/ui/Input";
 import { IconPlus } from "@/components/ui/Icons";
 import { SoftBusy } from "@/components/ui/SoftBusy";
 import {
@@ -25,10 +24,14 @@ import {
   type ScreenPrintCoefficient,
   type ScreenPrintPriceCell,
 } from "@/lib/screen-print-pricing";
-import { formatMoneyUah } from "@/lib/utils";
+import { TABLE_ADD_FOOTER_CLASS } from "@/components/ui/Table";
+import { cn, formatMoneyUah } from "@/lib/utils";
 import type { DecorationFormatCatalogRow } from "@/server/domains/decoration-formats/service";
 
 const SCREEN_PRINT_VALUE_PREFIX = "sp:";
+
+const compactFieldClass =
+  "h-8 rounded-[6px] border border-[var(--color-border)] bg-white px-1.5 text-right text-[12.5px] tabular outline-none placeholder:text-[11px] focus:border-[var(--color-primary-500)] disabled:opacity-60";
 
 function screenPrintValue(colorCount: number) {
   return `${SCREEN_PRINT_VALUE_PREFIX}${colorCount}`;
@@ -136,9 +139,10 @@ export function OrderDecorationFormatPicker({
     return rows;
   }, [screenPrintOptions, dtfOptions]);
 
-  const dtfPreview = !isMisc && !isScreenPrint
-    ? (dtfOptions.find((row) => row.id === selected) ?? null)
-    : null;
+  const dtfPreview =
+    !isMisc && !isScreenPrint
+      ? (dtfOptions.find((row) => row.id === selected) ?? null)
+      : null;
 
   const screenPrintPreview = useMemo(() => {
     if (screenPrintColors == null) return null;
@@ -236,71 +240,68 @@ export function OrderDecorationFormatPicker({
   }
 
   return (
-    <SoftBusy busy={pending}>
-      <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
+    <SoftBusy busy={pending} label="Додаємо нанесення…">
+      <div className={cn(TABLE_ADD_FOOTER_CLASS, "space-y-2")}>
         <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-[16rem] flex-1">
-            <Select
-              label="Нанесення"
-              value={selected}
-              disabled={pending}
-              options={selectOptions}
-              searchable
-              onChange={(event) => {
-                setSelected(event.target.value);
-                setError(null);
-                setCoefCodes([]);
-                if (event.target.value !== MISC_DECORATION_OPTION_VALUE) {
-                  setMiscAmount("");
-                }
-              }}
-            />
-          </div>
+          <Select
+            size="sm"
+            className="min-w-[16rem] flex-1"
+            value={selected}
+            disabled={pending}
+            options={selectOptions}
+            searchable
+            hideSelectedDescription
+            aria-label="Тип нанесення"
+            onChange={(event) => {
+              setSelected(event.target.value);
+              setError(null);
+              setCoefCodes([]);
+              if (event.target.value !== MISC_DECORATION_OPTION_VALUE) {
+                setMiscAmount("");
+              }
+            }}
+          />
           {isMisc && !hideCosts ? (
-            <div className="w-[8.5rem] shrink-0">
-              <Input
-                label="₴/шт"
-                type="number"
-                min={0}
-                step="0.01"
-                inputMode="decimal"
-                placeholder="0"
-                value={miscAmount}
-                disabled={pending}
-                suffix="₴"
-                hint={`× тираж ${quantity}`}
-                onChange={(event) => {
-                  setMiscAmount(event.target.value);
-                  setError(null);
-                }}
-              />
-            </div>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              placeholder="₴/шт"
+              title={`Ставка за виріб · × тираж ${quantity}`}
+              aria-label="Ставка додаткових витрат за виріб"
+              value={miscAmount}
+              disabled={pending}
+              onChange={(event) => {
+                setMiscAmount(event.target.value);
+                setError(null);
+              }}
+              className={cn(compactFieldClass, "w-[72px]")}
+            />
           ) : null}
           {!hideCosts && dtfPreview ? (
-            <p className="type-caption pb-2 text-[var(--color-text-secondary)]">
-              {formatMoneyUah(dtfPreview.unitRate)}/шт за тиражем {quantity}
+            <p className="type-caption self-center text-[var(--color-text-secondary)]">
+              {formatMoneyUah(dtfPreview.unitRate)}/шт · тираж {quantity}
             </p>
           ) : null}
           {!hideCosts && screenPrintPreview ? (
-            <div className="pb-1 text-right">
-              <p className="tabular text-[13px] font-semibold text-[var(--color-text-primary)]">
+            <p className="type-caption self-center text-[var(--color-text-secondary)]">
+              <span className="font-semibold tabular text-[var(--color-text-primary)]">
                 {formatMoneyUah(screenPrintPreview.unitRate)}
-                <span className="ml-1 type-caption font-normal">/шт</span>
-              </p>
-              <p className="type-caption">
-                база {formatMoneyUah(screenPrintPreview.baseRate)}
-                {screenPrintPreview.applied.length
-                  ? ` · ${screenPrintPreview.applied.map((a) => `×${a.factor}`).join(" ")}`
-                  : ""}
-              </p>
-            </div>
+              </span>
+              /шт
+              {screenPrintPreview.applied.length
+                ? ` · ${screenPrintPreview.applied.map((a) => `×${a.factor}`).join(" ")}`
+                : ""}
+            </p>
           ) : null}
           <Button
             type="button"
             size="sm"
             onClick={add}
             disabled={pending || !selected}
-            className="shrink-0"
+            loading={pending}
+            className="inline-flex shrink-0 items-center gap-1"
           >
             <IconPlus size={14} />
             Додати
@@ -312,7 +313,7 @@ export function OrderDecorationFormatPicker({
             {screenPrintCoefficients.map((coef) => (
               <label
                 key={coef.code}
-                className="inline-flex items-center gap-1.5 rounded-[8px] border border-[var(--color-border)] bg-white px-2 py-1.5 text-[12px]"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-border)] bg-white px-2 text-[12px]"
                 title={coef.noteUk ?? undefined}
               >
                 <input

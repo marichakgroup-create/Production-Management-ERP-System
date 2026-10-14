@@ -98,8 +98,15 @@ type SelectProps = {
   className?: string;
   selectClassName?: string;
   id?: string;
+  /** Accessibility name when no visible label (e.g. table footers). */
+  "aria-label"?: string;
   /** Show search when the list is long. Default: auto at 6+ options. */
   searchable?: boolean;
+  /**
+   * Hide the selected option’s description under the trigger.
+   * Use in compact inline toolbars so h-8 siblings stay aligned.
+   */
+  hideSelectedDescription?: boolean;
 };
 
 function placeMenu(button: HTMLElement): React.CSSProperties {
@@ -143,7 +150,9 @@ export function Select({
   className,
   selectClassName,
   id,
+  "aria-label": ariaLabel,
   searchable,
+  hideSelectedDescription = false,
 }: SelectProps) {
   const options = useMemo(
     () => optionsProp ?? optionsFromChildren(children),
@@ -338,7 +347,7 @@ export function Select({
                       {showGroup ? (
                         <li
                           role="presentation"
-                          className="sticky top-0 z-[1] bg-[var(--color-surface)] px-3 pt-2 pb-1 text-[10.5px] font-bold tracking-[0.08em] text-[var(--color-text-tertiary)] uppercase"
+                          className="sticky top-0 z-[1] mx-1 bg-[var(--color-surface)] px-2.5 pt-2 pb-1 text-[10.5px] font-bold tracking-[0.08em] text-[var(--color-text-tertiary)] uppercase"
                         >
                           {option.group}
                         </li>
@@ -417,6 +426,7 @@ export function Select({
         id={fieldId}
         type="button"
         disabled={disabled}
+        aria-label={!label ? ariaLabel : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-labelledby={label ? `${fieldId}-label` : undefined}
@@ -460,7 +470,7 @@ export function Select({
 
       {error ? <span className="text-[12px] text-[var(--color-danger-text)]">{error}</span> : null}
       {!error && hint ? <span className="type-caption">{hint}</span> : null}
-      {!error && !hint && selected?.description ? (
+      {!error && !hint && !hideSelectedDescription && selected?.description ? (
         <span className="type-caption">{selected.description}</span>
       ) : null}
       {menu}

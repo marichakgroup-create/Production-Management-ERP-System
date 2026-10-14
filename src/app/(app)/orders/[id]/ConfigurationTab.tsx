@@ -16,6 +16,7 @@ import {
 import {
   CellStack,
   Table,
+  TableAddFooter,
   TableCard,
   TableEmpty,
   TableToolbar,
@@ -1083,77 +1084,78 @@ function InlineAddOrderMaterial({
 
   return (
     <SoftBusy busy={pending} label="Додаємо матеріал…">
-      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-divider)] bg-[var(--color-surface-subtle)] px-3 py-2">
-      <Select
-        size="sm"
-        className="min-w-[160px] flex-1"
-        value={materialId}
-        disabled={pending}
-        onChange={(event) => setMaterialId(event.target.value)}
-        aria-label="Матеріал з каталогу"
-      >
-        <option value="">+ матеріал…</option>
-        {materials.map((row) => (
-          <option
-            key={row.id}
-            value={row.id}
-            data-description={materialOptionDescription(
-              row.densityGsm,
-              row.composition,
-              row.supplierNames,
-            )}
-          >
-            {row.label}
-          </option>
-        ))}
-      </Select>
-      <input
-        type="number"
-        min={0}
-        step="0.0001"
-        value={consumption}
-        onChange={(event) => setConsumption(event.target.value)}
-        aria-label="Норма"
-        title="Норма"
-        className="h-8 w-[68px] rounded-[6px] border border-[var(--color-border)] bg-white px-1.5 text-right text-[12.5px] tabular outline-none focus:border-[var(--color-primary-500)]"
-      />
-      {!hideCosts ? (
+      <TableAddFooter>
+        <Select
+          size="sm"
+          className="min-w-[160px] flex-1"
+          value={materialId}
+          disabled={pending}
+          onChange={(event) => setMaterialId(event.target.value)}
+          aria-label="Матеріал з каталогу"
+          hideSelectedDescription
+        >
+          <option value="">+ матеріал…</option>
+          {materials.map((row) => (
+            <option
+              key={row.id}
+              value={row.id}
+              data-description={materialOptionDescription(
+                row.densityGsm,
+                row.composition,
+                row.supplierNames,
+              )}
+            >
+              {row.label}
+            </option>
+          ))}
+        </Select>
         <input
           type="number"
           min={0}
-          step="0.01"
-          value={waste}
-          placeholder="%"
-          title="Відходи %"
-          aria-label="Відходи %"
-          onChange={(event) => setWaste(event.target.value)}
-          className="h-8 w-[56px] rounded-[6px] border border-[var(--color-border)] bg-white px-1.5 text-right text-[12.5px] tabular outline-none placeholder:text-[11px] focus:border-[var(--color-primary-500)]"
+          step="0.0001"
+          value={consumption}
+          onChange={(event) => setConsumption(event.target.value)}
+          aria-label="Норма"
+          title="Норма"
+          className="h-8 w-[68px] rounded-[6px] border border-[var(--color-border)] bg-white px-1.5 text-right text-[12.5px] tabular outline-none focus:border-[var(--color-primary-500)]"
         />
-      ) : null}
-      <Button
-        type="button"
-        size="sm"
-        disabled={!materialId || pending}
-        loading={pending}
-        onClick={() => submit()}
-        className="inline-flex items-center gap-1"
-      >
-        <IconPlus size={14} />
-        Додати
-      </Button>
-      {canCreateCatalog ? (
-        <MaterialCreatePanel
-          units={units}
-          variant="ghost"
+        {!hideCosts ? (
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={waste}
+            placeholder="%"
+            title="Відходи %"
+            aria-label="Відходи %"
+            onChange={(event) => setWaste(event.target.value)}
+            className="h-8 w-[56px] rounded-[6px] border border-[var(--color-border)] bg-white px-1.5 text-right text-[12.5px] tabular outline-none placeholder:text-[11px] focus:border-[var(--color-primary-500)]"
+          />
+        ) : null}
+        <Button
+          type="button"
           size="sm"
-          triggerLabel="Новий"
-          onCreated={(result) => {
-            const id = typeof result.materialId === "string" ? result.materialId : null;
-            if (id) submit(id);
-          }}
-        />
-      ) : null}
-      </div>
+          disabled={!materialId || pending}
+          loading={pending}
+          onClick={() => submit()}
+          className="inline-flex shrink-0 items-center gap-1"
+        >
+          <IconPlus size={14} />
+          Додати
+        </Button>
+        {canCreateCatalog ? (
+          <MaterialCreatePanel
+            units={units}
+            variant="ghost"
+            size="sm"
+            triggerLabel="Новий"
+            onCreated={(result) => {
+              const id = typeof result.materialId === "string" ? result.materialId : null;
+              if (id) submit(id);
+            }}
+          />
+        ) : null}
+      </TableAddFooter>
     </SoftBusy>
   );
 }
@@ -1191,45 +1193,46 @@ function InlineAddOrderOperation({
 
   return (
     <SoftBusy busy={pending} label="Додаємо операцію…">
-      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-divider)] bg-[var(--color-surface-subtle)] px-3 py-2">
-      <Select
-        size="sm"
-        className="min-w-[180px] flex-1"
-        value={operationId}
-        disabled={pending}
-        onChange={(event) => setOperationId(event.target.value)}
-        aria-label="Операція з каталогу"
-      >
-        <option value="">+ операція…</option>
-        {operations.map((row) => (
-          <option key={row.id} value={row.id}>
-            {row.label}
-          </option>
-        ))}
-      </Select>
-      <Button
-        type="button"
-        size="sm"
-        disabled={!operationId || pending}
-        loading={pending}
-        onClick={() => submit()}
-        className="inline-flex items-center gap-1"
-      >
-        <IconPlus size={14} />
-        Додати
-      </Button>
-      {canCreateCatalog ? (
-        <OperationCreatePanel
-          variant="ghost"
+      <TableAddFooter>
+        <Select
           size="sm"
-          triggerLabel="Нова"
-          onCreated={(result) => {
-            const id = typeof result.operationId === "string" ? result.operationId : null;
-            if (id) submit(id);
-          }}
-        />
-      ) : null}
-      </div>
+          className="min-w-[180px] flex-1"
+          value={operationId}
+          disabled={pending}
+          onChange={(event) => setOperationId(event.target.value)}
+          aria-label="Операція з каталогу"
+          hideSelectedDescription
+        >
+          <option value="">+ операція…</option>
+          {operations.map((row) => (
+            <option key={row.id} value={row.id}>
+              {row.label}
+            </option>
+          ))}
+        </Select>
+        <Button
+          type="button"
+          size="sm"
+          disabled={!operationId || pending}
+          loading={pending}
+          onClick={() => submit()}
+          className="inline-flex shrink-0 items-center gap-1"
+        >
+          <IconPlus size={14} />
+          Додати
+        </Button>
+        {canCreateCatalog ? (
+          <OperationCreatePanel
+            variant="ghost"
+            size="sm"
+            triggerLabel="Нова"
+            onCreated={(result) => {
+              const id = typeof result.operationId === "string" ? result.operationId : null;
+              if (id) submit(id);
+            }}
+          />
+        ) : null}
+      </TableAddFooter>
     </SoftBusy>
   );
 }

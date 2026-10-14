@@ -23,6 +23,24 @@ export function TableCard({
   );
 }
 
+/** Inline “add row” strip under catalog tables (materials / ops / decorations). */
+export const TABLE_ADD_FOOTER_CLASS =
+  "border-t border-[var(--color-divider)] bg-[var(--color-surface-subtle)] px-3 py-2.5";
+
+export function TableAddFooter({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn(TABLE_ADD_FOOTER_CLASS, "flex flex-wrap items-end gap-2", className)}>
+      {children}
+    </div>
+  );
+}
+
 /**
  * Toolbar above a table. Prefer putting SearchField + FilterChips in `filters`
  * so density stays readable; `left` is for title/count, `right` for actions.
