@@ -158,6 +158,7 @@ export async function listProductsSummary() {
       isBaseModel: true,
       imageUrl: true,
       description: true,
+      updatedAt: true,
       category: { select: { nameUk: true } },
       materials: {
         where: { material: { type: "FABRIC" } },

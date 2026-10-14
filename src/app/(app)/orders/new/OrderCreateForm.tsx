@@ -395,8 +395,8 @@ export function OrderCreateForm({
             sizeCodes: row.sizeCodes ?? null,
             sizeConsumption: row.sizeConsumption,
             purchasePrice: row.price,
-            supplierId: row.supplierId ?? null,
-            deliveryType: row.deliveryType ?? null,
+            supplierId: row.supplierId?.trim() || null,
+            deliveryType: row.deliveryType || null,
             colorSnapshot: isPackagingSku(row)
               ? null
               : row.lineColor?.trim() || row.colorSnapshot?.trim() || null,
@@ -420,19 +420,32 @@ export function OrderCreateForm({
     formData.delete("productId");
 
     startTransition(async () => {
-      const result = await createOrderAction(formData);
-      if (!result.ok) {
-        setError(
-          result.error === "QUANTITY_REQUIRED"
-            ? "У кожної позиції має бути кількість."
-            : result.error === "ITEMS_REQUIRED"
-              ? "Додайте хоча б одну позицію до списку."
-              : "Перевірте обовʼязкові поля — замовлення не створено.",
-        );
-        return;
+      try {
+        const result = await createOrderAction(formData);
+        if (!result.ok) {
+          setError(
+            result.error === "QUANTITY_REQUIRED"
+              ? "У кожної позиції має бути кількість."
+              : result.error === "ITEMS_REQUIRED"
+                ? "Додайте хоча б одну позицію до списку."
+                : result.error === "PRODUCT_ARCHIVED" || result.error === "PRODUCT_NOT_FOUND"
+                  ? "Обраний виріб недоступний — оберіть інший з каталогу."
+                  : result.error === "CREATE_FAILED"
+                    ? "Не вдалося зберегти замовлення. Перевірте матеріали й розміри та спробуйте ще раз."
+                    : "Перевірте обовʼязкові поля — замовлення не створено.",
+          );
+          return;
+        }
+        if (!result.orderId) {
+          setError("Замовлення створено, але не отримано посилання. Відкрийте список замовлень.");
+          return;
+        }
+        router.push(`/orders/${result.orderId}`);
+        router.refresh();
+      } catch (error) {
+        console.error("[OrderCreateForm] create failed:", error);
+        setError("Не вдалося створити замовлення. Спробуйте ще раз або оновіть сторінку.");
       }
-      router.push(`/orders/${result.orderId}`);
-      router.refresh();
     });
   }
 

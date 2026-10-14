@@ -20,7 +20,9 @@ import {
   useTableSort,
 } from "@/components/ui/table-interactions";
 import { BulkDeleteButton, OpenSelectedLink } from "@/components/ui/BulkDeleteButton";
-import { cn, formatAmount } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
+import { IconPin } from "@/components/ui/Icons";
+import { cn, formatAmount, formatDateShortUk } from "@/lib/utils";
 import { bulkArchiveProductsAction } from "@/server/domains/products/actions";
 
 export type ProductsTableRow = {
@@ -35,14 +37,19 @@ export type ProductsTableRow = {
   operationsCount: number;
   decorationsCount: number;
   ready: boolean;
+  updatedAt?: string | null;
   prices: Array<number | null>;
   priceTiers: number[];
 };
 
-type SortKey = "name" | "status" | `price:${number}`;
+type SortKey = "name" | "status" | "updated" | `price:${number}`;
 
 const CHECK_COL_PX = 40;
 const NAME_COL_LEFT = `${CHECK_COL_PX}px`;
+const PINNED_STORAGE_KEY = "erp.products.pinnedIds";
+
+/** Price columns hidden from the products list (still used elsewhere). */
+const HIDDEN_LIST_PRICE_TIERS = new Set([10, 20, 60]);
 
 function priceAtTier(row: ProductsTableRow, qty: number): number | null {
   const index = row.priceTiers.indexOf(qty);
@@ -54,7 +61,9 @@ function collectPriceTiers(rows: ProductsTableRow[]): number[] {
   const set = new Set<number>();
   for (const row of rows) {
     for (const qty of row.priceTiers) {
-      if (Number.isFinite(qty) && qty > 0) set.add(qty);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      if (HIDDEN_LIST_PRICE_TIERS.has(qty)) continue;
+      set.add(qty);
     }
   }
   if (set.size === 0) return [50, 100, 500];
@@ -63,6 +72,24 @@ function collectPriceTiers(rows: ProductsTableRow[]): number[] {
 
 function formatTierLabel(qty: number) {
   return `${qty}\u00a0шт`;
+}
+
+function readPinnedIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === "string" && id.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function writePinnedIds(ids: string[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(ids));
 }
 
 export function ProductsTable({
@@ -79,28 +106,73 @@ export function ProductsTable({
   const priceTiers = useMemo(() => collectPriceTiers(rows), [rows]);
   const highlightTier = priceTiers[Math.min(1, Math.max(0, priceTiers.length - 1))];
   const { sort, toggle } = useTableSort<SortKey>({ key: "status", direction: "desc" });
-  const sorted = useMemo(
-    () =>
-      sortRows(
-        rows,
-        sort,
-        {
-          name: (row) => row.nameUk,
-          status: (row) => (row.ready ? 1 : 0),
-          ...Object.fromEntries(
-            priceTiers.map((qty) => [
-              `price:${qty}`,
-              (row: ProductsTableRow) => priceAtTier(row, qty) ?? -1,
-            ]),
-          ),
-        } as Record<SortKey, (row: ProductsTableRow) => string | number | null | undefined>,
-        sort?.key === "status" ? { key: "name", direction: "asc" } : undefined,
-      ),
-    [rows, sort, priceTiers],
-  );
+
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [pinsReady, setPinsReady] = useState(false);
+
+  useEffect(() => {
+    setPinnedIds(readPinnedIds());
+    setPinsReady(true);
+  }, []);
+
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+
+  const sorted = useMemo(() => {
+    const base = sortRows(
+      rows,
+      sort,
+      {
+        name: (row) => row.nameUk,
+        status: (row) => (row.ready ? 1 : 0),
+        updated: (row) => (row.updatedAt ? new Date(row.updatedAt).getTime() : null),
+        ...Object.fromEntries(
+          priceTiers.map((qty) => [
+            `price:${qty}`,
+            (row: ProductsTableRow) => priceAtTier(row, qty) ?? -1,
+          ]),
+        ),
+      } as Record<SortKey, (row: ProductsTableRow) => string | number | null | undefined>,
+      sort?.key === "status" ? { key: "name", direction: "asc" } : undefined,
+    );
+    if (!pinsReady || pinnedSet.size === 0) return base;
+    const pinned: ProductsTableRow[] = [];
+    const rest: ProductsTableRow[] = [];
+    for (const row of base) {
+      if (pinnedSet.has(row.id)) pinned.push(row);
+      else rest.push(row);
+    }
+    // Keep pin order as stored (newest pin actions append / user sequence).
+    pinned.sort((a, b) => pinnedIds.indexOf(a.id) - pinnedIds.indexOf(b.id));
+    return [...pinned, ...rest];
+  }, [rows, sort, priceTiers, pinsReady, pinnedSet, pinnedIds]);
+
   const ids = useMemo(() => sorted.map((row) => row.id), [sorted]);
   const selection = useRowSelection(ids);
-  const colSpan = showPrices ? 3 + priceTiers.length : 3;
+  const colSpan = showPrices ? 4 + priceTiers.length : 4;
+
+  const selectedPinnedCount = useMemo(
+    () => selection.selectedIds.filter((id) => pinnedSet.has(id)).length,
+    [selection.selectedIds, pinnedSet],
+  );
+  const selectedUnpinnedCount = selection.selectedIds.length - selectedPinnedCount;
+
+  function persistPins(next: string[]) {
+    setPinnedIds(next);
+    writePinnedIds(next);
+  }
+
+  function pinSelected() {
+    const next = [...pinnedIds];
+    for (const id of selection.selectedIds) {
+      if (!next.includes(id)) next.push(id);
+    }
+    persistPins(next);
+  }
+
+  function unpinSelected() {
+    const drop = new Set(selection.selectedIds);
+    persistPins(pinnedIds.filter((id) => !drop.has(id)));
+  }
 
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -153,6 +225,17 @@ export function ProductsTable({
   return (
     <div>
       <SelectionBar count={selection.selectedIds.length} onClear={selection.clear}>
+        {selectedUnpinnedCount > 0 ? (
+          <Button type="button" size="sm" variant="secondary" onClick={pinSelected}>
+            <IconPin size={14} />
+            Закріпити
+          </Button>
+        ) : null}
+        {selectedPinnedCount > 0 ? (
+          <Button type="button" size="sm" variant="ghost" onClick={unpinSelected}>
+            Відкріпити
+          </Button>
+        ) : null}
         {selection.selectedIds.length === 1 ? (
           <OpenSelectedLink href={`/products/${selection.selectedIds[0]}`} />
         ) : null}
@@ -225,8 +308,19 @@ export function ProductsTable({
                   </SortableTH>
                 ))
               : null}
-            <SortableTH columnKey="status" sort={sort} onSort={toggle} stickyRight>
+            <SortableTH columnKey="status" sort={sort} onSort={toggle}>
               Стан
+            </SortableTH>
+            <SortableTH
+              columnKey="updated"
+              sort={sort}
+              onSort={toggle}
+              align="right"
+              width="88px"
+              stickyRight
+              title="Дата останньої зміни"
+            >
+              Змінено
             </SortableTH>
           </THead>
           <TBody>
@@ -240,6 +334,7 @@ export function ProductsTable({
             ) : (
               sorted.map((product) => {
                 const isSelected = selection.isSelected(product.id);
+                const isPinned = pinnedSet.has(product.id);
                 return (
                   <TR key={product.id} selected={isSelected}>
                     <TD align="center" stickyLeft className="!border-r-0">
@@ -250,20 +345,30 @@ export function ProductsTable({
                       />
                     </TD>
                     <TD stickyLeft={NAME_COL_LEFT} className="is-pinned-left-edge">
-                      <CellStack
-                        title={product.nameUk}
-                        subtitle={
-                          <>
-                            {product.isBaseModel ? (
-                              <span className="text-[var(--color-primary-700)]">Базова модель</span>
-                            ) : null}
-                            {product.isBaseModel && product.internalCode ? " · " : null}
-                            {product.internalCode ?? undefined}
-                          </>
-                        }
-                        href={`/products/${product.id}`}
-                        maxWidth="240px"
-                      />
+                      <div className="flex min-w-0 items-start gap-1.5">
+                        {isPinned ? (
+                          <span
+                            className="mt-0.5 shrink-0 text-[var(--color-primary-700)]"
+                            title="Закріплено зверху"
+                          >
+                            <IconPin size={13} />
+                          </span>
+                        ) : null}
+                        <CellStack
+                          title={product.nameUk}
+                          subtitle={
+                            <>
+                              {product.isBaseModel ? (
+                                <span className="text-[var(--color-primary-700)]">Базова модель</span>
+                              ) : null}
+                              {product.isBaseModel && product.internalCode ? " · " : null}
+                              {product.internalCode ?? undefined}
+                            </>
+                          }
+                          href={`/products/${product.id}`}
+                          maxWidth="240px"
+                        />
+                      </div>
                     </TD>
                     {showPrices
                       ? priceTiers.map((qty, index) => {
@@ -292,10 +397,22 @@ export function ProductsTable({
                           );
                         })
                       : null}
-                    <TD nowrap stickyRight>
+                    <TD nowrap>
                       <StatusBadge dot tone={product.ready ? "success" : "warning"}>
                         {product.ready ? "Готовий" : "Комплектація"}
                       </StatusBadge>
+                    </TD>
+                    <TD align="right" nowrap stickyRight>
+                      <span
+                        className="tabular text-[12.5px] text-[var(--color-text-secondary)]"
+                        title={
+                          product.updatedAt
+                            ? new Date(product.updatedAt).toLocaleString("uk-UA")
+                            : undefined
+                        }
+                      >
+                        {formatDateShortUk(product.updatedAt)}
+                      </span>
                     </TD>
                   </TR>
                 );

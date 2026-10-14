@@ -105,6 +105,17 @@ const createOrderSchema = z.object({
   itemsJson: z.string().optional().nullable(),
 });
 
+/** Empty strings from selects / JSON → null (Zod enum rejects ""). */
+const optionalTrimmedId = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.string().trim().min(1).optional().nullable(),
+);
+
+const optionalDeliveryType = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.enum(["CARGO", "NP_STANDARD", "NP_VOLUME"]).optional().nullable(),
+);
+
 const draftItemSchema = z.object({
   productId: z.string().min(1),
   comment: z.string().optional().nullable(),
@@ -128,12 +139,12 @@ const draftItemSchema = z.object({
           sizeCodes: z.array(z.string()).optional().nullable(),
           sizeConsumption: z.record(z.string(), z.coerce.number().nonnegative()).optional(),
           purchasePrice: z.coerce.number().nonnegative().optional().nullable(),
-          supplierId: z.string().trim().optional().nullable(),
-          deliveryType: z
-            .enum(["CARGO", "NP_STANDARD", "NP_VOLUME"])
-            .optional()
-            .nullable(),
-          colorSnapshot: z.string().trim().optional().nullable(),
+          supplierId: optionalTrimmedId,
+          deliveryType: optionalDeliveryType,
+          colorSnapshot: z.preprocess(
+            (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+            z.string().trim().optional().nullable(),
+          ),
           cargoUsdPerKg: z.coerce.number().nonnegative().optional().nullable(),
           usdUahRate: z.coerce.number().positive().optional().nullable(),
           fabricDeliveryManual: z.boolean().optional(),
@@ -294,10 +305,15 @@ export async function createOrderAction(formData: FormData) {
     if (message === "PRODUCT_ARCHIVED") {
       return { ok: false as const, error: "PRODUCT_ARCHIVED" as const };
     }
-    throw error;
+    if (message === "PRODUCT_NOT_FOUND" || message === "ITEMS_REQUIRED") {
+      return { ok: false as const, error: message };
+    }
+    console.error("[createOrderAction] failed:", error);
+    return { ok: false as const, error: "CREATE_FAILED" as const };
   }
 
   revalidatePath("/orders");
+  revalidatePath(`/orders/${order.id}`);
   revalidatePath("/overview");
   return { ok: true as const, orderId: order.id };
 }

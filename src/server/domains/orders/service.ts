@@ -902,9 +902,12 @@ export async function createOrderWithProducts(input: {
             const productMat = productMaterialById.get(row.materialId);
             const offers = material.supplierOffers ?? [];
             const preferredSupplierId =
-              draftSource?.supplierId ?? productMat?.supplierId ?? null;
+              draftSource?.supplierId?.trim() ||
+              productMat?.supplierId?.trim() ||
+              null;
             const offer = pickSupplierOffer(offers, preferredSupplierId);
-            const supplierId = offer?.supplierId ?? preferredSupplierId ?? null;
+            const supplierId =
+              offer?.supplierId?.trim() || preferredSupplierId || null;
             const deliveryType = deliveryTypeOrNull(
               draftSource?.deliveryType ??
                 productMat?.deliveryType ??

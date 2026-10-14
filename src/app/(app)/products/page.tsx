@@ -188,6 +188,7 @@ export default async function ProductsPage({
       operationsCount: product._count.operations,
       decorationsCount: product._count.decorations,
       ready,
+      updatedAt: product.updatedAt.toISOString(),
       priceTiers: tierQtys,
       prices: showPrices
         ? tierQtys.map((qty) => {

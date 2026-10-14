@@ -277,6 +277,16 @@ export function IconTrash(props: IconProps) {
   );
 }
 
+/** Thumbtack — pin / unpin table rows. */
+export function IconPin(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11-2.26l.77-3.98A2 2 0 0 1 10.61 3h2.78a2 2 0 0 1 1.95 1.52l.77 3.98A2 2 0 0 1 15 10.76V13a3 3 0 1 1-6 0v-2.24Z" />
+    </svg>
+  );
+}
+
 /** Six-dot grip for drag-reorder handles — filled dots for contrast on light rows. */
 export function IconGrip(props: IconProps) {
   const attrs = base(props);
