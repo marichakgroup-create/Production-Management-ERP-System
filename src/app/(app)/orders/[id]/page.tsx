@@ -44,6 +44,7 @@ import { deliveryRateUsdPerKg } from "@/lib/fabric-delivery-types";
 import {
   accessHas,
   canEditOrderComposition,
+  canEditOrderQuantities,
   canManageOrderItems,
   canViewOrderCosts,
   getCurrentUserAccess,
@@ -202,9 +203,11 @@ export default async function OrderDetailPage({
   const canViewCosts = canViewOrderCosts(access);
   const canRunCalc = accessHas(access, "saveVersions");
   const canEditComposition = canEditOrderComposition(access, order.status);
+  const canEditQuantities = canEditOrderQuantities(access, order.status);
   const canEditItems = canManageOrderItems(access, order.status);
   const canCreateCatalog = accessHas(access, "createInlineCatalog");
   const compositionLocked = locked || !canEditComposition;
+  const sizesLocked = locked || !canEditQuantities;
   const itemsLocked = locked || !canEditItems;
 
   if (!canViewCosts && (activeTab === "calculation" || activeTab === "versions")) {
@@ -416,6 +419,11 @@ export default async function OrderDetailPage({
     nameUk: row.nameUk,
     totalQuantity: row.totalQuantity,
     superseded: row.superseded,
+    sizes: row.sizes.map((size) => ({
+      sizeCode: size.sizeCode,
+      sizeNameUk: size.sizeNameUk,
+      quantity: size.quantity,
+    })),
     versions: row.versions.map((version) => ({
       id: version.id,
       orderItemId: row.id,
@@ -431,6 +439,7 @@ export default async function OrderDetailPage({
       marginPercent: version.marginPercent,
       costPerUnit: version.costPerUnit,
       author: version.author,
+      snapshotJson: version.snapshotJson,
     })),
   }));
   const proposals = buildOrderProposals(proposalItems);
@@ -459,6 +468,7 @@ export default async function OrderDetailPage({
       orderItemId: row.id,
       nameUk: row.nameUk,
       totalQuantity: row.totalQuantity,
+      sizeRun: formatSizeRun(row.sizes),
       costPerUnit: draft.costPerUnit,
       sellingPricePerUnit: draft.sellingPricePerUnit,
       marginPercent: draft.marginPercent,
@@ -493,7 +503,10 @@ export default async function OrderDetailPage({
   // Attention only after approve — size layout is the gate before production.
   const needsSizeAttention =
     (order.status === "APPROVED" || hasApprovedProposal) && !orderSizesReady;
-  /** Size grid UI only after approve — until then managers keep orientative tirage. */
+  /**
+   * Full size-breakdown UI after approve (gate before production).
+   * Until then SizeRun stays editable for tirage / size quantities.
+   */
   const sizeBreakdownUnlocked =
     order.status === "APPROVED" ||
     order.status === "HANDED_TO_PRODUCTION" ||
@@ -1066,8 +1079,9 @@ export default async function OrderDetailPage({
             ) : null}
             {order.status !== "DRAFT" && !canEditComposition ? (
               <Banner tone="info" title="На розрахунку в адміністратора">
-                Склад і калькуляцію змінює адміністратор. Позиції (додати / прибрати виріб) у блоці
-                «Позиції замовлення» можна правити на етапах Чернетка і Розрахунок.
+                Склад і калькуляцію змінює адміністратор. Кількості та розміри можна редагувати до
+                передачі у виробництво. Позиції (додати / прибрати виріб) — на етапах Чернетка і
+                Розрахунок.
               </Banner>
             ) : null}
             <ConfigurationTab
@@ -1075,6 +1089,8 @@ export default async function OrderDetailPage({
             orderId={order.id}
             itemId={item.id}
             locked={compositionLocked}
+            sizesLocked={sizesLocked}
+            orderLocked={locked}
             hideCosts={!canViewCosts}
             canCreateCatalog={canCreateCatalog}
             productName={item.nameUk}

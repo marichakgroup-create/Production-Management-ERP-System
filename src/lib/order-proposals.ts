@@ -1,8 +1,13 @@
+import { parseProposalItemSnapshot } from "@/lib/proposal-snapshot";
+import { formatSizeRun } from "@/lib/size-bom";
+
 export type ProposalLineVersion = {
   id: string;
   orderItemId: string;
   itemNameUk: string;
   totalQuantity: number;
+  /** e.g. «S 2 · M 2 · L 12» — from snapshot or live sizes. */
+  sizeRun?: string;
   versionNumber: number;
   sellingPricePerUnit: number;
   totalSellingValue: number;
@@ -39,6 +44,7 @@ type VersionInput = {
   marginPercent: unknown;
   costPerUnit: unknown;
   author: { name: string };
+  snapshotJson?: unknown;
 };
 
 type ItemInput = {
@@ -47,15 +53,24 @@ type ItemInput = {
   totalQuantity: number;
   /** Hidden from working composition; still carries proposal history. */
   superseded?: boolean;
+  sizes?: Array<{ sizeCode: string; sizeNameUk: string; quantity: number }>;
   versions: VersionInput[];
 };
 
 function toLine(item: ItemInput, version: VersionInput): ProposalLineVersion {
+  const snap = parseProposalItemSnapshot(version.snapshotJson);
+  const sizeRun =
+    snap?.sizes?.length
+      ? formatSizeRun(snap.sizes)
+      : item.sizes?.length
+        ? formatSizeRun(item.sizes)
+        : undefined;
   return {
     id: version.id,
     orderItemId: item.id,
     itemNameUk: item.nameUk,
-    totalQuantity: item.totalQuantity,
+    totalQuantity: snap?.totalQuantity ?? item.totalQuantity,
+    sizeRun: sizeRun || undefined,
     versionNumber: version.versionNumber,
     sellingPricePerUnit: Number(version.sellingPricePerUnit),
     totalSellingValue: Number(version.totalSellingValue),

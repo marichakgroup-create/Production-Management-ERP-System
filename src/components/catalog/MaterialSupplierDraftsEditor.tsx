@@ -43,6 +43,7 @@ import { resolveSupplierDeliveryRate } from "@/lib/supplier-delivery-rates";
 import { formatMoneyUah, cn } from "@/lib/utils";
 import { swatchForColorLabel } from "@/lib/trim-colors";
 import { getSupplierPaletteAction } from "@/server/domains/catalog/actions";
+import { lockedSupplierCatalog } from "@/lib/supplier-palettes";
 import {
   deriveTrimUnitPriceFromSupplier,
   hasTrimKgQuote,
@@ -725,12 +726,18 @@ export function MaterialSupplierDraftsEditor({
                 }
                 setDraft((prev) => ({ ...prev, supplierName: value }));
                 void getSupplierPaletteAction(value).then((result) => {
-                  if (!result.ok || result.colors.length === 0) return;
+                  const catalog = lockedSupplierCatalog(value);
+                  const colors =
+                    result.ok && result.colors.length > 0
+                      ? result.colors
+                      : (catalog ?? []);
+                  if (colors.length === 0) return;
                   setDraft((prev) => {
                     if (prev.supplierName.toLowerCase() !== value.toLowerCase()) return prev;
+                    if (prev.availableColors.trim() && !catalog) return prev;
                     return {
                       ...prev,
-                      availableColors: result.colors.join(", "),
+                      availableColors: colors.join(", "),
                     };
                   });
                 });
@@ -764,6 +771,7 @@ export function MaterialSupplierDraftsEditor({
           <FormGroup label="Палітра" columns={1} compact>
             <SupplierPaletteEditor
               value={draft.availableColors}
+              supplierNameUk={draft.supplierName}
               onChange={(next) => setDraft((prev) => ({ ...prev, availableColors: next }))}
             />
           </FormGroup>

@@ -124,11 +124,7 @@ export function SupplierColorFields({
     : "";
 
   if (offers.length === 0 && palette.length === 0) {
-    return (
-      <p className="type-caption text-[var(--color-text-quiet)]">
-        Немає палітри — додайте кольори в умовах постачальника матеріалу.
-      </p>
-    );
+    return null;
   }
 
   const selectEl =
@@ -171,9 +167,7 @@ export function SupplierColorFields({
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         {selectEl}
         {supplierId || offers.length === 0 ? (
-          palette.length === 0 ? (
-            <span className="text-[11px] text-[var(--color-warning-text)]">Немає кольорів</span>
-          ) : (
+          palette.length > 0 ? (
             <ColorSelect
               value={color}
               options={palette}
@@ -181,10 +175,8 @@ export function SupplierColorFields({
               onChange={onColorChange}
               className="flex-1 basis-[7.5rem]"
             />
-          )
-        ) : (
-          <span className="text-[11px] text-[var(--color-text-quiet)]">оберіть постачальника</span>
-        )}
+          ) : null
+        ) : null}
       </div>
     );
   }
@@ -205,24 +197,23 @@ export function SupplierColorFields({
           <span className="mb-1 block text-[11px] font-medium text-[var(--color-text-tertiary)]">
             Колір
           </span>
-          {palette.length === 0 ? (
-            <p className="type-caption text-[var(--color-warning-text)]">
-              У цього постачальника ще немає кольорів у палітрі.
-            </p>
+          {palette.length === 0 ? null : palette.length > 12 ? (
+            <ColorSelect
+              value={color}
+              options={palette}
+              disabled={disabled}
+              onChange={onColorChange}
+              className="max-w-[16rem]"
+            />
           ) : (
             <SpecColorPicker
               value={color}
               onChange={onColorChange}
               materialColors={palette}
-              hint="Палітра залежить від обраного постачальника"
             />
           )}
         </div>
-      ) : (
-        <p className="type-caption">
-          Спочатку оберіть постачальника і спосіб доставки — зʼявиться палітра.
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }

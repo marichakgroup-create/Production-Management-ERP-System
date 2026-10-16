@@ -100,7 +100,11 @@ export function VersionsTab({
     startTransition(async () => {
       const result = await approveProposalAction(formData);
       if (!result.ok) {
-        setError("Не вдалося погодити пропозицію.");
+        setError(
+          result.error === "INCOMPLETE_PROPOSAL"
+            ? "Пропозиція не покриває всі поточні позиції. Збережіть нову пропозицію після змін складу."
+            : "Не вдалося погодити пропозицію.",
+        );
         return;
       }
       setApproveTarget(null);
@@ -307,7 +311,14 @@ export function VersionsTab({
                       ? proposal.lines.map((line) => (
                           <TR key={`${proposal.key}-${line.id}`} className="bg-[var(--color-surface-subtle)]/50">
                             <TD colSpan={2} className="pl-10 text-[var(--color-text-secondary)]">
-                              {line.itemNameUk}
+                              <p className="font-medium text-[var(--color-text-primary)]">
+                                {line.itemNameUk}
+                              </p>
+                              {line.sizeRun ? (
+                                <p className="type-caption mt-0.5 tabular text-[var(--color-text-secondary)]">
+                                  {line.sizeRun}
+                                </p>
+                              ) : null}
                             </TD>
                             <TD numeric className="tabular">
                               {line.totalQuantity} шт

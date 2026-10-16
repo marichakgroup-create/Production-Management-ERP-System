@@ -97,19 +97,18 @@ export function SpecColorPicker({
 
   const managed = Boolean(onMaterialColorsChange);
   const catalogLabels = materialColors ?? [];
-  const presetLabels =
-    catalogLabels.length > 0
-      ? catalogLabels
-      : DEFAULT_SPEC_COLORS.slice(0, 8).map((color) => color.label);
-  const paletteLabels = mergeColorLists(
-    presetLabels,
-    customColors.map((color) => color.label),
-  );
+  const restrictToCatalog = catalogLabels.length > 0;
+  const presetLabels = restrictToCatalog
+    ? catalogLabels
+    : DEFAULT_SPEC_COLORS.slice(0, 8).map((color) => color.label);
+  const paletteLabels = restrictToCatalog
+    ? mergeColorLists(presetLabels)
+    : mergeColorLists(
+        presetLabels,
+        customColors.map((color) => color.label),
+      );
   const palette = paletteLabels.map(toOption);
   const selected = value?.trim() || null;
-  const selectedInPalette = selected
-    ? palette.find((color) => labelsMatch(color.label, selected))
-    : null;
 
   function selectColor(label: string) {
     onChange(normalizeColorLabel(label) ?? label);
@@ -169,12 +168,6 @@ export function SpecColorPicker({
   return (
     <div className={cn("space-y-2", !compact && "space-y-3")}>
       {hint ? <p className="type-caption">{hint}</p> : null}
-
-      {catalogLabels.length > 0 ? (
-        <p className="text-[10.5px] font-medium uppercase tracking-wide text-[var(--color-text-tertiary)]">
-          {compact ? "Палітра постачальника" : "Варіанти з каталогу"}
-        </p>
-      ) : null}
 
       <div className={cn("flex flex-wrap", compact ? "gap-x-2 gap-y-2" : "gap-x-3 gap-y-3")}>
         {palette.map((color) => {
@@ -244,7 +237,7 @@ export function SpecColorPicker({
           );
         })}
 
-        {managed || !compact ? (
+        {!restrictToCatalog && (managed || !compact) ? (
           <button
             type="button"
             onClick={() => {
@@ -278,16 +271,8 @@ export function SpecColorPicker({
         ) : null}
       </div>
 
-      {selected && !selectedInPalette ? (
-        <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-2">
-          <span
-            className="size-6 shrink-0 rounded-full border border-[var(--color-border-strong)]"
-            style={{ backgroundColor: swatchForColorLabel(selected).swatch }}
-            aria-hidden
-          />
-          <p className="min-w-0 flex-1 text-[13px]">
-            Обрано: <span className="font-semibold">{selected}</span>
-          </p>
+      {selected ? (
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={clearColor}
@@ -296,34 +281,10 @@ export function SpecColorPicker({
             Скинути
           </button>
         </div>
-      ) : selected ? (
-        <div className="flex items-center justify-between gap-2">
-          <p className="type-caption">
-            Для специфікації:{" "}
-            <span className="font-medium text-[var(--color-text-primary)]">{selected}</span>
-          </p>
-          <button
-            type="button"
-            onClick={clearColor}
-            className="text-[12px] font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-          >
-            Скинути
-          </button>
-        </div>
-      ) : (
-        <p className="type-caption text-[var(--color-text-tertiary)]">
-          {palette.length === 0 ? "Додайте колір через «Інший»" : "Колір ще не обрано"}
-        </p>
-      )}
+      ) : null}
 
       {adding ? (
         <div className="space-y-2.5 rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-card)]">
-          <p className="text-[13px] font-semibold">Новий колір</p>
-          <p className="type-caption">
-            {managed
-              ? "Збережеться в палітрі цієї фурнітури."
-              : "Збережеться локально для швидкого вибору."}
-          </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1">
               <span className="type-caption">Зразок</span>

@@ -68,6 +68,23 @@ export function canEditOrderComposition(
 }
 
 /**
+ * Tirage / size grid — editable for anyone with manageOrders until production.
+ * Independent from BOM composition rights.
+ */
+export function canEditOrderQuantities(
+  access: UserAccess | null,
+  orderStatus: string,
+): boolean {
+  if (!access) return false;
+  if (!accessHas(access, "manageOrders")) return false;
+  return (
+    orderStatus !== "HANDED_TO_PRODUCTION" &&
+    orderStatus !== "CLOSED" &&
+    orderStatus !== "CANCELLED"
+  );
+}
+
+/**
  * Add / remove products in «Позиції замовлення».
  * Allowed in Чернетка and Розрахунок (same as assembling the line list);
  * later statuses follow composition rights (admin).

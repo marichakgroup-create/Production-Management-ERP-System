@@ -387,13 +387,6 @@ export function DraftMaterialLinePanel({
             <AttentionHeading attention={supplierMissing || colorMissing}>
               Постачальник і колір
             </AttentionHeading>
-            <p className="type-caption">
-              {supplierMissing
-                ? "Спочатку оберіть постачальника — палітра кольорів залежить від нього."
-                : colorMissing
-                  ? "Оберіть колір з палітри обраного постачальника."
-                  : "Палітра береться з умов постачальника в картці матеріалу."}
-            </p>
             <SupplierColorFields
               supplierId={row.supplierId}
               color={row.lineColor}

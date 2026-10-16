@@ -1,8 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import {
+  filterUnusedCatalogColors,
+  paletteCatalogForSupplier,
+} from "@/lib/supplier-palettes";
 import {
   mergeColorLists,
   normalizeColorLabel,
@@ -17,36 +22,72 @@ function labelsMatch(a: string, b: string) {
 }
 
 /**
- * Mini palette table for supplier offers: swatch circle + name.
- * Labels are what product/order color pickers consume.
+ * Compact supplier palette: selected chips with ×, add via searchable dropdown + custom.
  */
 export function SupplierPaletteEditor({
   value,
   onChange,
+  supplierNameUk,
 }: {
   /** Comma-separated labels (same wire format as before). */
   value: string;
   onChange: (nextCsv: string) => void;
+  /** When set, locked suppliers get a preferred searchable catalog. */
+  supplierNameUk?: string | null;
 }) {
   const colors = useMemo(() => mergeColorLists(value.split(",")), [value]);
   const [draftName, setDraftName] = useState("");
   const [draftSwatch, setDraftSwatch] = useState("#4B5563");
+  const [pickKey, setPickKey] = useState(0);
+  /** Custom colors created in this editor — stay in the dropdown after remove. */
+  const [extras, setExtras] = useState<string[]>([]);
+
+  const { colors: baseCatalog } = useMemo(
+    () =>
+      paletteCatalogForSupplier(
+        supplierNameUk,
+        TRIM_COLOR_SWATCHES.map((row) => row.label),
+      ),
+    [supplierNameUk],
+  );
+
+  // Keep previously saved custom colors in the pick list after × remove.
+  useEffect(() => {
+    const custom = colors.filter(
+      (label) => !baseCatalog.some((row) => labelsMatch(row, label)),
+    );
+    if (custom.length === 0) return;
+    setExtras((prev) => mergeColorLists(prev, custom));
+  }, [colors, baseCatalog]);
+
+  const pool = useMemo(
+    () => mergeColorLists(baseCatalog, extras, colors),
+    [baseCatalog, extras, colors],
+  );
+
+  const unused = useMemo(
+    () => filterUnusedCatalogColors(pool, colors),
+    [pool, colors],
+  );
+
+  const selectOptions = useMemo(
+    () => [
+      { value: "", label: "Додати колір…" },
+      ...unused.map((label) => {
+        const swatch = swatchForColorLabel(label);
+        return {
+          value: label,
+          label,
+          swatch: swatch.swatch,
+          swatchBordered: swatch.bordered,
+        };
+      }),
+    ],
+    [unused],
+  );
 
   function commit(next: string[]) {
     onChange(next.join(", "));
-  }
-
-  function renameAt(index: number, raw: string) {
-    const label = normalizeColorLabel(raw) ?? raw.trim();
-    const next = [...colors];
-    if (!label) {
-      next.splice(index, 1);
-      commit(next);
-      return;
-    }
-    if (next.some((row, i) => i !== index && labelsMatch(row, label))) return;
-    next[index] = label;
-    commit(next);
   }
 
   function removeAt(index: number) {
@@ -58,131 +99,119 @@ export function SupplierPaletteEditor({
     if (!label) return;
     if (colors.some((row) => labelsMatch(row, label))) return;
     if (swatch) rememberCustomColorSwatch(label, swatch);
+    if (!baseCatalog.some((row) => labelsMatch(row, label))) {
+      setExtras((prev) => mergeColorLists(prev, [label]));
+    }
     commit(mergeColorLists(colors, [label]));
     setDraftName("");
     setDraftSwatch("#4B5563");
+    setPickKey((key) => key + 1);
   }
 
-  const unusedPresets = TRIM_COLOR_SWATCHES.filter(
-    (row) => !colors.some((c) => labelsMatch(c, row.label)),
-  ).slice(0, 10);
+  function applyFullCatalog() {
+    commit(mergeColorLists(baseCatalog, colors));
+    setPickKey((key) => key + 1);
+  }
 
   return (
-    <div className="sm:col-span-full space-y-2">
+    <div className="sm:col-span-full space-y-2.5">
       {colors.length > 0 ? (
-        <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--color-border)]">
-          <table className="w-full text-left text-[13px]">
-            <tbody>
-              {colors.map((label, index) => {
-                const swatch = swatchForColorLabel(label);
-                return (
-                  <tr
-                    key={`${label}-${index}`}
-                    className="group/color border-t border-[var(--color-divider)] first:border-t-0"
-                  >
-                    <td className="w-12 px-2.5 py-1.5 align-middle">
-                      <span
-                        className={cn(
-                          "block size-6 rounded-full ring-1 ring-black/15",
-                          swatch.bordered && "border border-[var(--color-border-strong)]",
-                        )}
-                        style={{ backgroundColor: swatch.swatch }}
-                        title={swatch.swatch}
-                        aria-hidden
-                      />
-                    </td>
-                    <td className="px-2.5 py-1.5 align-middle">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          className="h-8 min-w-0 flex-1 rounded-[6px] border border-transparent bg-transparent px-1.5 text-[13px] outline-none hover:border-[var(--color-border)] focus:border-[var(--color-primary-500)] focus:ring-1 focus:ring-[var(--color-focus-ring)]"
-                          value={label}
-                          onChange={(event) => {
-                            const next = [...colors];
-                            next[index] = event.target.value;
-                            commit(next);
-                          }}
-                          onBlur={(event) => renameAt(index, event.target.value)}
-                          aria-label={`Назва кольору ${index + 1}`}
-                        />
-                        <button
-                          type="button"
-                          className="inline-flex size-7 shrink-0 items-center justify-center rounded-[6px] text-[14px] text-[var(--color-text-tertiary)] opacity-0 transition-opacity hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger-text)] focus-visible:opacity-100 group-hover/color:opacity-100"
-                          onClick={() => removeAt(index)}
-                          aria-label={`Прибрати ${label}`}
-                          title="Прибрати колір"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
-      {unusedPresets.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
-          {unusedPresets.map((row) => (
-            <button
-              key={row.label}
-              type="button"
-              onClick={() => addColor(row.label, row.swatch)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[11.5px] hover:border-[var(--color-primary-400)]"
-              title={`Додати ${row.label}`}
-            >
+          {colors.map((label, index) => {
+            const swatch = swatchForColorLabel(label);
+            return (
               <span
-                className={cn(
-                  "size-3.5 rounded-full ring-1 ring-black/10",
-                  row.bordered && "border border-[var(--color-border-strong)]",
-                )}
-                style={{ backgroundColor: row.swatch }}
-                aria-hidden
-              />
-              {row.label}
-            </button>
-          ))}
+                key={`${label}-${index}`}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-0.5 pl-1.5 pr-1 text-[11.5px] font-medium text-[var(--color-text-primary)]"
+              >
+                <span
+                  className={cn(
+                    "size-3.5 shrink-0 rounded-full ring-1 ring-black/12",
+                    swatch.bordered && "border border-[var(--color-border-strong)]",
+                  )}
+                  style={{ backgroundColor: swatch.swatch }}
+                  aria-hidden
+                />
+                <span className="min-w-0 truncate" title={label}>
+                  {label}
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[13px] leading-none text-[var(--color-text-tertiary)] hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger-text)]"
+                  onClick={() => removeAt(index)}
+                  aria-label={`Прибрати ${label}`}
+                  title="Прибрати"
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
         </div>
       ) : null}
 
-      <div className="rounded-[var(--radius-control)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-2">
-        <p className="mb-1.5 text-[12px] font-medium text-[var(--color-text-primary)]">
-          Новий колір
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="color"
-            value={draftSwatch}
-            onChange={(event) => setDraftSwatch(event.target.value)}
-            className="h-10 w-12 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-1"
-            aria-label="Колір зразка"
-            title="Колір"
-          />
-          <Input
-            className="min-w-[10rem] flex-1"
-            value={draftName}
-            onChange={(event) => setDraftName(event.target.value)}
-            placeholder="Олива"
-            aria-label="Назва кольору"
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addColor(draftName, draftSwatch);
-              }
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[14rem] flex-1 basis-[16rem]">
+          <Select
+            key={pickKey}
+            size="sm"
+            searchable
+            value=""
+            aria-label="Додати колір"
+            placeholder="Додати колір…"
+            options={selectOptions}
+            disabled={unused.length === 0}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (!next) return;
+              addColor(next);
             }}
           />
+        </div>
+        {baseCatalog.length > 20 && unused.length > 0 ? (
           <Button
             type="button"
             size="sm"
             variant="secondary"
-            disabled={!draftName.trim()}
-            onClick={() => addColor(draftName, draftSwatch)}
+            onClick={applyFullCatalog}
+            title="Додати всі з каталогу постачальника"
           >
-            Додати колір
+            Усі
           </Button>
-        </div>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="color"
+          value={draftSwatch}
+          onChange={(event) => setDraftSwatch(event.target.value)}
+          className="h-8 w-10 shrink-0 cursor-pointer rounded-[6px] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-0.5"
+          aria-label="Зразок кольору"
+          title="Зразок"
+        />
+        <Input
+          className="min-w-[8rem] flex-1"
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          placeholder="Новий колір…"
+          aria-label="Назва кольору"
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addColor(draftName, draftSwatch);
+            }
+          }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={!draftName.trim()}
+          onClick={() => addColor(draftName, draftSwatch)}
+        >
+          Додати
+        </Button>
       </div>
     </div>
   );

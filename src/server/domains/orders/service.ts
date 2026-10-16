@@ -1235,8 +1235,10 @@ export async function removeOrderItem(input: { orderItemId: string; userId?: str
   if (!item || item.superseded) throw new Error("NOT_FOUND");
   assertOrderEditable(item.order.status);
   const workingCount = item.order.items.length;
-  // Empty order is allowed only on draft / calculation.
-  if (workingCount <= 1 && !STAGES_ALLOWING_EMPTY.includes(item.order.status)) {
+  const reopen =
+    item.order.status === "APPROVED" || item.order.status === "PENDING_APPROVAL";
+  // Empty order is allowed only on draft / calculation (reopen lands on CALCULATION).
+  if (workingCount <= 1 && !STAGES_ALLOWING_EMPTY.includes(item.order.status) && !reopen) {
     throw new Error("EMPTY_ORDER_NOT_ALLOWED");
   }
 
@@ -1247,13 +1249,20 @@ export async function removeOrderItem(input: { orderItemId: string; userId?: str
         where: { id: item.id },
         data: { superseded: true },
       });
-      return;
+    } else {
+      await tx.quotation.deleteMany({
+        where: { calculationVersion: { orderItemId: item.id } },
+      });
+      await tx.productionSpecification.deleteMany({ where: { orderItemId: item.id } });
+      await tx.orderItem.delete({ where: { id: item.id } });
     }
-    await tx.quotation.deleteMany({
-      where: { calculationVersion: { orderItemId: item.id } },
-    });
-    await tx.productionSpecification.deleteMany({ where: { orderItemId: item.id } });
-    await tx.orderItem.delete({ where: { id: item.id } });
+
+    if (reopen) {
+      await tx.order.update({
+        where: { id: item.orderId },
+        data: { status: "CALCULATION", approvedDate: null },
+      });
+    }
   });
 
   await recordActivity({
@@ -1263,6 +1272,21 @@ export async function removeOrderItem(input: { orderItemId: string; userId?: str
     userId: input.userId ?? null,
     payload: { removedItem: item.nameUk, itemId: item.id },
   });
+
+  if (reopen) {
+    await recordActivity({
+      entityType: "order",
+      entityId: item.orderId,
+      action: "status_changed",
+      userId: input.userId ?? null,
+      payload: {
+        from: item.order.status,
+        to: "CALCULATION",
+        fromLabel: orderStatusLabel[item.order.status] ?? item.order.status,
+        toLabel: orderStatusLabel.CALCULATION,
+      },
+    });
+  }
 
   return { orderId: item.orderId };
 }
@@ -2037,18 +2061,30 @@ export async function updateOrderItemSizes(
   sizes: Array<{ sizeCode: string; sizeNameUk: string; quantity: number }>,
 ) {
   await assertOrderItemEditable(orderItemId);
+  const previous = await prisma.orderItemSize.findMany({
+    where: { orderItemId },
+    select: { sizeCode: true, quantity: true },
+  });
+  const previousCodes = new Set(
+    previous.filter((row) => row.quantity > 0 && isRealSizeCode(row.sizeCode)).map((row) => row.sizeCode),
+  );
+  const nextPositive = sizes.filter(
+    (row) => row.quantity > 0 && isRealSizeCode(row.sizeCode.trim()),
+  );
+  const newCodes = nextPositive
+    .map((row) => row.sizeCode.trim())
+    .filter((code) => !previousCodes.has(code));
   const totalQuantity = sizes.reduce((s, x) => s + x.quantity, 0);
+
   await prisma.$transaction(async (tx) => {
     await tx.orderItemSize.deleteMany({ where: { orderItemId } });
     await tx.orderItemSize.createMany({
-      data: sizes
-        .filter((s) => s.quantity > 0)
-        .map((s) => ({
-          orderItemId,
-          sizeCode: s.sizeCode,
-          sizeNameUk: s.sizeNameUk,
-          quantity: s.quantity,
-        })),
+      data: nextPositive.map((s) => ({
+        orderItemId,
+        sizeCode: s.sizeCode.trim(),
+        sizeNameUk: s.sizeNameUk,
+        quantity: s.quantity,
+      })),
     });
     await tx.orderItem.update({
       where: { id: orderItemId },
@@ -2058,6 +2094,20 @@ export async function updateOrderItemSizes(
     await syncDecorationFormatRatesForOrderItem(orderItemId, totalQuantity, tx);
     await syncOrderItemFabricPricing(orderItemId, tx);
   });
+
+  // Expand per-size BOM for newly introduced size codes (from an existing donor size).
+  if (newCodes.length > 0) {
+    const donor =
+      [...previousCodes].find((code) => isRealSizeCode(code)) ??
+      nextPositive.find((row) => !newCodes.includes(row.sizeCode.trim()))?.sizeCode;
+    if (donor) {
+      await copyOrderItemSizeSpec({
+        orderItemId,
+        fromSizeCode: donor,
+        toSizeCodes: newCodes,
+      });
+    }
+  }
 }
 
 export type OrderItemSizeReadiness = {
@@ -2508,6 +2558,18 @@ export async function copyOrderItemSizeSpec(input: {
   const targets = input.toSizeCodes.filter((code) => code !== input.fromSizeCode);
   if (targets.length === 0) return;
 
+  const pricingDefaults = await getPricingDefaults();
+  const sizeRules = pricingDefaults.sizeRules;
+  const sourceIsOversize = isOversizeCode(input.fromSizeCode);
+
+  /** Per-size oversize lines store baked norms; shared (null) lines get coeff at calc time. */
+  function consumptionForTarget(base: number, targetSize: string): number {
+    const targetOversize = isOversizeCode(targetSize);
+    if (!targetOversize || sourceIsOversize) return Number(base);
+    const { materialCoeff } = resolveSizeCoeffs(targetSize, sizeRules);
+    return effectiveOversizeConsumption(Number(base), materialCoeff);
+  }
+
   const materialApplies = (row: (typeof item.materials)[number], sizeCode: string) =>
     row.sizeCode == null || row.sizeCode === sizeCode;
   const operationApplies = (row: (typeof item.operations)[number], sizeCode: string) =>
@@ -2528,10 +2590,11 @@ export async function copyOrderItemSizeSpec(input: {
             (row.materialId ?? row.nameSnapshot) === (source.materialId ?? source.nameSnapshot) &&
             row.sizeCode === sizeCode,
         );
+        const consumption = consumptionForTarget(Number(source.consumptionPerUnit), sizeCode);
         if (existing) {
           await tx.orderItemMaterial.update({
             where: { id: existing.id },
-            data: { consumptionPerUnit: source.consumptionPerUnit },
+            data: { consumptionPerUnit: consumption },
           });
           continue;
         }
@@ -2544,7 +2607,7 @@ export async function copyOrderItemSizeSpec(input: {
             materialId: source.materialId,
             nameSnapshot: source.nameSnapshot,
             unitCodeSnapshot: source.unitCodeSnapshot,
-            consumptionPerUnit: source.consumptionPerUnit,
+            consumptionPerUnit: consumption,
             wastePercent: source.wastePercent,
             purchasePrice: source.purchasePrice,
             supplierId: source.supplierId,

@@ -6,6 +6,7 @@ import {
   assertSessionPermission,
   getCurrentUserAccess,
   canEditOrderComposition,
+  canEditOrderQuantities,
   canEditOrderPricing,
   canManageOrderItems,
   canViewOrderCosts,
@@ -76,6 +77,20 @@ async function assertCanEditOrderComposition(orderId: string) {
   });
   if (!order) throw new Error("NOT_FOUND");
   if (!canEditOrderComposition(access, order.status)) {
+    throw new Error("FORBIDDEN");
+  }
+  return { access, order };
+}
+
+async function assertCanEditOrderQuantities(orderId: string) {
+  const access = await getCurrentUserAccess();
+  if (!access) throw new Error("UNAUTHORIZED");
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true },
+  });
+  if (!order) throw new Error("NOT_FOUND");
+  if (!canEditOrderQuantities(access, order.status)) {
     throw new Error("FORBIDDEN");
   }
   return { access, order };
@@ -325,19 +340,33 @@ export async function updateOrderSizesAction(formData: FormData) {
 
   const orderId = String(formData.get("orderId") ?? "");
   const orderItemId = String(formData.get("orderItemId") ?? "");
-  await assertCanEditOrderComposition(orderId);
+  try {
+    await assertCanEditOrderQuantities(orderId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    return { ok: false as const, error: message };
+  }
   const sizeCodes = formData.getAll("sizeCode").map(String);
   const sizeNames = formData.getAll("sizeNameUk").map(String);
   const sizeQtys = formData.getAll("sizeQty").map((v) => Number(v));
 
-  await updateOrderItemSizes(
-    orderItemId,
-    sizeCodes.map((code, i) => ({
-      sizeCode: code,
-      sizeNameUk: sizeNames[i] || code,
-      quantity: Number.isFinite(sizeQtys[i]) ? Math.max(0, sizeQtys[i]) : 0,
-    })),
-  );
+  try {
+    await updateOrderItemSizes(
+      orderItemId,
+      sizeCodes.map((code, i) => ({
+        sizeCode: code,
+        sizeNameUk: sizeNames[i] || code,
+        quantity: Number.isFinite(sizeQtys[i]) ? Math.max(0, sizeQtys[i]) : 0,
+      })),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "ORDER_LOCKED" || message === "ORDER_ITEM_LOCKED") {
+      return { ok: false as const, error: message };
+    }
+    console.error("[updateOrderSizesAction] failed:", error);
+    return { ok: false as const, error: "FAILED" as const };
+  }
 
   revalidatePath(`/orders/${orderId}`);
   return { ok: true as const };
@@ -353,7 +382,12 @@ export async function applyOrderItemSizeBreakdownAction(formData: FormData) {
   if (!orderId || !orderItemId) {
     return { ok: false as const, error: "VALIDATION" as const };
   }
-  await assertCanEditOrderComposition(orderId);
+  try {
+    await assertCanEditOrderQuantities(orderId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    return { ok: false as const, error: message };
+  }
 
   const sizeCodes = formData.getAll("sizeCode").map(String);
   const sizeNames = formData.getAll("sizeNameUk").map(String);
@@ -374,11 +408,13 @@ export async function applyOrderItemSizeBreakdownAction(formData: FormData) {
       message === "SIZES_SUM_MISMATCH" ||
       message === "SIZES_EMPTY" ||
       message === "ORDER_LOCKED" ||
-      message === "ORDER_ITEM_LOCKED"
+      message === "ORDER_ITEM_LOCKED" ||
+      message === "FORBIDDEN"
     ) {
       return { ok: false as const, error: message };
     }
-    throw error;
+    console.error("[applyOrderItemSizeBreakdownAction] failed:", error);
+    return { ok: false as const, error: "FAILED" as const };
   }
 
   revalidatePath(`/orders/${orderId}`);
@@ -1145,6 +1181,7 @@ export async function submitOrderForCalculationAction(formData: FormData) {
     select: {
       status: true,
       items: {
+        where: { superseded: false },
         select: {
           totalQuantity: true,
           _count: { select: { materials: true, operations: true } },

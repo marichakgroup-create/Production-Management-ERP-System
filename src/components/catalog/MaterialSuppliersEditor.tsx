@@ -42,6 +42,7 @@ import {
 import { materialPackLabels, materialQtyUnitShort } from "@/lib/material-pack-labels";
 import { SupplierPaletteEditor } from "@/components/catalog/SupplierPaletteEditor";
 import { DeliveryRatesFields } from "@/components/catalog/DeliveryRatesFields";
+import { lockedSupplierCatalog } from "@/lib/supplier-palettes";
 import {
   ModeSegment,
   PurchaseModeRow,
@@ -242,7 +243,16 @@ export function MaterialSuppliersEditor({
         listSupplierNamesAction().catch(() => [] as string[]),
       ]);
       if (!result.ok) return;
-      setOffers(result.offers as OfferRow[]);
+      let nextOffers = result.offers as OfferRow[];
+      // Propagate Зейджан (locked) palette from richest offer → all materials.
+      const lockedName = nextOffers.find((row) => lockedSupplierCatalog(row.supplierName))
+        ?.supplierName;
+      if (lockedName) {
+        await getSupplierPaletteAction(lockedName);
+        const refreshed = await listMaterialSupplierOffersAction(materialId);
+        if (refreshed.ok) nextOffers = refreshed.offers as OfferRow[];
+      }
+      setOffers(nextOffers);
       setUsdUahRate(result.usdUahRate);
       setUsdUahRateInput(String(result.usdUahRate));
       setKnownSuppliers(names);
@@ -769,18 +779,23 @@ export function MaterialSuppliersEditor({
                   return;
                 }
                 setDraft((prev) => ({ ...prev, supplierName: value }));
-                if (editingId === "new") {
-                  void getSupplierPaletteAction(value).then((result) => {
-                    if (!result.ok || result.colors.length === 0) return;
-                    setDraft((prev) => {
-                      if (prev.supplierName.toLowerCase() !== value.toLowerCase()) return prev;
-                      return {
-                        ...prev,
-                        availableColors: result.colors.join(", "),
-                      };
-                    });
+                void getSupplierPaletteAction(value).then((result) => {
+                  const catalog = lockedSupplierCatalog(value);
+                  const colors =
+                    result.ok && result.colors.length > 0
+                      ? result.colors
+                      : (catalog ?? []);
+                  if (colors.length === 0) return;
+                  setDraft((prev) => {
+                    if (prev.supplierName.toLowerCase() !== value.toLowerCase()) return prev;
+                    // Prefill when empty; locked supplier always gets the shared palette.
+                    if (prev.availableColors.trim() && !catalog) return prev;
+                    return {
+                      ...prev,
+                      availableColors: colors.join(", "),
+                    };
                   });
-                }
+                });
               }}
             >
               <option value="">Оберіть…</option>
@@ -810,6 +825,7 @@ export function MaterialSuppliersEditor({
           <FormGroup label="Палітра кольорів" columns={1} compact>
             <SupplierPaletteEditor
               value={draft.availableColors}
+              supplierNameUk={draft.supplierName}
               onChange={(next) => setDraft((prev) => ({ ...prev, availableColors: next }))}
             />
           </FormGroup>

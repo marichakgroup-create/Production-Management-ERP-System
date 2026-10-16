@@ -23,6 +23,9 @@ export type SelectOption = {
   disabled?: boolean;
   /** Section header in the menu (e.g. «DTF Друк» / «Шовкотрафарет»). */
   group?: string;
+  /** Optional color circle next to the label (e.g. fabric palette). */
+  swatch?: string;
+  swatchBordered?: boolean;
 };
 
 function labelFromNode(node: React.ReactNode): string {
@@ -374,20 +377,33 @@ export function Select({
                           if (!option.disabled) commit(option.value);
                         }}
                       >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{option.label}</span>
-                          {option.description ? (
+                        <span className="flex min-w-0 flex-1 items-start gap-2">
+                          {option.swatch && !isPlaceholder ? (
                             <span
                               className={cn(
-                                "mt-0.5 block truncate text-[11.5px] font-normal",
-                                isSelected
-                                  ? "text-[var(--color-primary-700)]/80"
-                                  : "text-[var(--color-text-quiet)]",
+                                "mt-0.5 size-3.5 shrink-0 rounded-full ring-1 ring-black/12",
+                                option.swatchBordered &&
+                                  "border border-[var(--color-border-strong)]",
                               )}
-                            >
-                              {option.description}
-                            </span>
+                              style={{ backgroundColor: option.swatch }}
+                              aria-hidden
+                            />
                           ) : null}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{option.label}</span>
+                            {option.description ? (
+                              <span
+                                className={cn(
+                                  "mt-0.5 block truncate text-[11.5px] font-normal",
+                                  isSelected
+                                    ? "text-[var(--color-primary-700)]/80"
+                                    : "text-[var(--color-text-quiet)]",
+                                )}
+                              >
+                                {option.description}
+                              </span>
+                            ) : null}
+                          </span>
                         </span>
                         {isSelected && !isPlaceholder ? (
                           <IconCheck size={14} className="shrink-0 text-[var(--color-primary-700)]" />

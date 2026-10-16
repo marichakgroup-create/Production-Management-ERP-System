@@ -16,6 +16,8 @@ export type ProposalDraftLine = {
   orderItemId: string;
   nameUk: string;
   totalQuantity: number;
+  /** Size breakdown under the product name, e.g. «S 2 · M 10». */
+  sizeRun?: string;
   costPerUnit: number;
   sellingPricePerUnit: number;
   marginPercent: number;
@@ -177,19 +179,21 @@ export function SaveProposalPanel({
     startTransition(async () => {
       const result = await saveProposalAction(formData);
       if (!result.ok) {
-        if (result.error === "ORDER_LOCKED") {
-          setError("Замовлення заблоковано для редагування.");
-          return;
-        }
-        if (result.error === "EMPTY_ORDER_NOT_ALLOWED") {
-          setError("Порожнє замовлення можна зберігати лише на Чернетці або Розрахунку.");
-          return;
-        }
-        if (result.error === "USE_NEW_PROPOSAL") {
-          setError("Замовлення вже погоджене. Натисніть «Нова пропозиція».");
-          return;
-        }
-        setError("Не вдалося зберегти пропозицію. Перевірте склад усіх позицій.");
+        const messages: Record<string, string> = {
+          ORDER_LOCKED: "Замовлення заблоковано для редагування.",
+          EMPTY_ORDER_NOT_ALLOWED:
+            "Порожнє замовлення можна зберігати лише на Чернетці або Розрахунку.",
+          USE_NEW_PROPOSAL: "Замовлення вже погоджене. Натисніть «Нова пропозиція».",
+          INCOMPLETE: "У кожній позиції мають бути матеріали та операції.",
+          NO_QUANTITY: "У кожній позиції кількість має бути більшою за нуль.",
+          MISSING_LINE: "Пропозиція не покриває всі позиції — оновіть список і спробуйте знову.",
+          FIXED_COSTS_INVALID: "Перевірте параметри постійних витрат у налаштуваннях.",
+        };
+        setError(
+          ("message" in result && typeof result.message === "string" && result.message) ||
+            messages[result.error] ||
+            "Не вдалося зберегти пропозицію. Перевірте склад усіх позицій.",
+        );
         return;
       }
       resetAndClose();
@@ -262,12 +266,19 @@ export function SaveProposalPanel({
                 {lines.map((line) => (
                   <tr key={line.orderItemId} className="border-b border-[var(--color-divider)]">
                     <td className="px-3 py-2 font-medium">
-                      {line.nameUk}
-                      {line.fromPriceList ? (
-                        <span className="type-caption ml-1 text-[var(--color-primary-700)]">прайс</span>
-                      ) : null}
-                      {manualOverrides.has(line.orderItemId) ? (
-                        <span className="type-caption ml-1 text-[var(--color-text-secondary)]">ручна</span>
+                      <p>
+                        {line.nameUk}
+                        {line.fromPriceList ? (
+                          <span className="type-caption ml-1 text-[var(--color-primary-700)]">прайс</span>
+                        ) : null}
+                        {manualOverrides.has(line.orderItemId) ? (
+                          <span className="type-caption ml-1 text-[var(--color-text-secondary)]">ручна</span>
+                        ) : null}
+                      </p>
+                      {line.sizeRun ? (
+                        <p className="type-caption mt-0.5 tabular font-normal text-[var(--color-text-secondary)]">
+                          {line.sizeRun}
+                        </p>
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-right tabular">{line.totalQuantity} шт</td>

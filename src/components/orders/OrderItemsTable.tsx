@@ -66,6 +66,8 @@ export function OrderItemsTable({
   const [pending, startTransition] = useTransition();
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const totalQty = rows.reduce((sum, row) => sum + row.quantity, 0);
+  const totalValue = rows.reduce((sum, row) => sum + (row.lineTotal ?? 0), 0);
+  const hasLineTotals = showPrices && rows.some((row) => row.lineTotal != null);
 
   function select(id: string) {
     const href = `/orders/${orderId}?tab=${activeTab}&item=${id}`;
@@ -233,10 +235,20 @@ export function OrderItemsTable({
             <TD colSpan={2} className="font-medium">
               Разом у замовленні
             </TD>
-            <TD numeric nowrap className="font-semibold">
+            <TD numeric nowrap className="font-semibold tabular">
               {totalQty} шт
             </TD>
-            <TD colSpan={(showPrices ? 4 : 3) + (locked ? 0 : 1)} />
+            {showPrices ? (
+              <>
+                <TD colSpan={2} />
+                <TD numeric nowrap className="font-semibold tabular">
+                  {hasLineTotals ? formatMoneyUah(totalValue) : "—"}
+                </TD>
+                <TD colSpan={1 + (locked ? 0 : 1)} />
+              </>
+            ) : (
+              <TD colSpan={3 + (locked ? 0 : 1)} />
+            )}
           </TR>
         </TFoot>
       </Table>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Field";
@@ -74,6 +74,7 @@ import {
   isDecorationFormatLineName,
   isMiscDecorationCostName,
 } from "@/lib/decoration-format-pricing";
+import { mergeOrderSizesWithCatalog } from "@/lib/order-item-sizes";
 import type { DecorationFormatCatalogRow } from "@/server/domains/decoration-formats/service";
 
 export type MaterialRow = {
@@ -145,6 +146,8 @@ export function ConfigurationTab({
   orderId,
   itemId,
   locked,
+  sizesLocked: sizesLockedProp,
+  orderLocked = false,
   productName: _productName,
   comment,
   sizes,
@@ -174,7 +177,12 @@ export function ConfigurationTab({
 }: {
   orderId: string;
   itemId: string;
+  /** BOM / materials / operations / decorations locked. */
   locked: boolean;
+  /** Tirage / size grid locked (defaults to composition lock). */
+  sizesLocked?: boolean;
+  /** Order handed to production or closed. */
+  orderLocked?: boolean;
   productName: string;
   comment?: string | null;
   sizes: SizeRow[];
@@ -219,12 +227,21 @@ export function ConfigurationTab({
     noteUk?: string | null;
   }>;
 }) {
+  const sizesLocked = sizesLockedProp ?? locked;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const sizesSignature = sizes.map((size) => `${size.sizeCode}:${size.quantity}`).join("|");
+  /** All product catalog sizes + current order qty (0 for missing). */
+  const editableSizes = useMemo(
+    () => mergeOrderSizesWithCatalog(sizes, preferredProductSizes),
+    [sizes, preferredProductSizes],
+  );
+  const sizesSignature = editableSizes
+    .map((size) => `${size.sizeCode}:${size.quantity}`)
+    .join("|");
+  const catalogSignature = preferredProductSizes.map((size) => size.code).join("|");
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
-    Object.fromEntries(sizes.map((size) => [size.sizeCode, size.quantity])),
+    Object.fromEntries(editableSizes.map((size) => [size.sizeCode, size.quantity])),
   );
   const [removeTarget, setRemoveTarget] = useState<{
     kind: "material" | "operation" | "decoration";
@@ -236,9 +253,11 @@ export function ConfigurationTab({
 
   // Keep qty state in sync after apply/refresh — otherwise SizeRun shows zeros and a save wipes DB.
   useEffect(() => {
-    setQuantities(Object.fromEntries(sizes.map((size) => [size.sizeCode, size.quantity])));
+    setQuantities(
+      Object.fromEntries(editableSizes.map((size) => [size.sizeCode, size.quantity])),
+    );
     setSizeScope(ALL_SIZES);
-  }, [itemId, sizesSignature]);
+  }, [itemId, sizesSignature, catalogSignature]);
 
   const isBusy = (key: string) => pending && busyKey === key;
 
@@ -254,18 +273,26 @@ export function ConfigurationTab({
     });
   }
 
-  const dirty = sizes.some((size) => (quantities[size.sizeCode] ?? 0) !== size.quantity);
-  useOrderUnsavedWorkspaceDirty(!locked && dirty);
-  const totalQuantity = sizes.reduce((sum, size) => sum + (quantities[size.sizeCode] ?? 0), 0);
+  const dirty = editableSizes.some(
+    (size) => (quantities[size.sizeCode] ?? 0) !== size.quantity,
+  );
+  useOrderUnsavedWorkspaceDirty(!sizesLocked && dirty);
+  const totalQuantity = editableSizes.reduce(
+    (sum, size) => sum + (quantities[size.sizeCode] ?? 0),
+    0,
+  );
   const decorationSetupTotal = decorations.reduce((sum, row) => sum + row.setupCost, 0);
   const decorationUnitRateTotal = decorations.reduce((sum, row) => sum + row.unitRate, 0);
-  const sizeRefs = sizes.map((size) => ({ code: size.sizeCode, nameUk: size.sizeNameUk }));
+  const sizeRefs = editableSizes.map((size) => ({
+    code: size.sizeCode,
+    nameUk: size.sizeNameUk,
+  }));
   const visibleMaterials =
     sizeScope === ALL_SIZES ? materials : linesForSize(materials, sizeScope);
   const visibleOperations =
     sizeScope === ALL_SIZES ? operations : linesForSize(operations, sizeScope);
   const customized = customizedSizeCodes({
-    allCodes: sizes.map((size) => size.sizeCode),
+    allCodes: editableSizes.map((size) => size.sizeCode),
     materials: materials.map((row) => ({
       sizeCodes: row.sizeCode ? [row.sizeCode] : null,
     })),
@@ -273,9 +300,9 @@ export function ConfigurationTab({
       sizeCodes: row.sizeCode ? [row.sizeCode] : null,
     })),
   });
-  const hasOversizeSizes = sizes.some((size) => isOversizeCode(size.sizeCode));
+  const hasOversizeSizes = editableSizes.some((size) => isOversizeCode(size.sizeCode));
   const scopeIsOversize = isOversizeCode(sizeScope);
-  const hasOversizeQty = sizes.some(
+  const hasOversizeQty = editableSizes.some(
     (size) => isOversizeCode(size.sizeCode) && (quantities[size.sizeCode] ?? 0) > 0,
   );
 
@@ -334,13 +361,20 @@ export function ConfigurationTab({
     const formData = new FormData();
     formData.set("orderId", orderId);
     formData.set("orderItemId", itemId);
-    sizes.forEach((size) => {
+    editableSizes.forEach((size) => {
       formData.append("sizeCode", size.sizeCode);
       formData.append("sizeNameUk", size.sizeNameUk);
       formData.append("sizeQty", String(quantities[size.sizeCode] ?? 0));
     });
     runBusy("sizes", async () => {
-      await updateOrderSizesAction(formData);
+      const result = await updateOrderSizesAction(formData);
+      if (result && "ok" in result && !result.ok) {
+        window.alert(
+          result.error === "FORBIDDEN" || result.error === "ORDER_LOCKED"
+            ? "Кількості зафіксовано — замовлення вже у виробництві."
+            : "Не вдалося зберегти кількості.",
+        );
+      }
     });
   }
 
@@ -365,7 +399,7 @@ export function ConfigurationTab({
 
   return (
     <div className="space-y-3">
-      {locked ? (
+      {orderLocked ? (
         <Banner tone="info" title="Замовлення передано у виробництво">
           Комплектація зафіксована. Зміни — через нову пропозицію калькуляції.
         </Banner>
@@ -376,7 +410,7 @@ export function ConfigurationTab({
       ) : null}
 
       <SoftBusy busy={isBusy("sizes")} label="Оновлення кількостей…">
-        {needsSizeBreakdown && !locked ? (
+        {needsSizeBreakdown && !sizesLocked ? (
           <OrderItemSizeBreakdown
             orderId={orderId}
             orderItemId={itemId}
@@ -387,31 +421,40 @@ export function ConfigurationTab({
           />
         ) : (
           <div className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
-            {sizes.length === 0 ? (
+            {editableSizes.length === 0 ? (
               <p className="type-caption">Розміри не задані.</p>
             ) : (
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="type-caption tabular">
                     {totalQuantity} шт
-                    {locked ? " · зафіксовано" : ""}
+                    {sizesLocked ? " · зафіксовано" : ""}
+                    {preferredProductSizes.length > sizes.length ? (
+                      <span className="text-[var(--color-text-quiet)]">
+                        {" "}
+                        · усі {editableSizes.length} розм. виробу
+                      </span>
+                    ) : null}
                   </p>
-                  {!locked && dirty ? (
+                  {!sizesLocked && dirty ? (
                     <Button size="sm" onClick={saveSizes} disabled={pending} loading={isBusy("sizes")}>
                       Зберегти к-сть
                     </Button>
                   ) : null}
                 </div>
                 <SizeRun
-                  sizes={sizes.map((size) => ({ code: size.sizeCode, nameUk: size.sizeNameUk }))}
+                  sizes={editableSizes.map((size) => ({
+                    code: size.sizeCode,
+                    nameUk: size.sizeNameUk,
+                  }))}
                   quantities={quantities}
-                  disabled={locked || isBusy("sizes")}
+                  disabled={sizesLocked || isBusy("sizes")}
                   quiet
                   onChange={(code, quantity) =>
                     setQuantities((prev) => ({ ...prev, [code]: quantity }))
                   }
                 />
-                {dirty && !locked ? (
+                {dirty && !sizesLocked ? (
                   <p className="type-caption text-[var(--color-warning-text)]">
                     К-сть змінено — збережіть, щоб перерахувати калькуляцію.
                   </p>

@@ -58,3 +58,52 @@ export function itemSizeBreakdownReady(
   const realSum = realSizesQuantitySum(sizes);
   return realSum > 0 && realSum === totalQuantity;
 }
+
+/**
+ * Full editable size grid for an order line: all product catalog sizes
+ * (qty 0 if not yet on the line) plus any extra order-only codes.
+ * Catalog order is preserved for display.
+ */
+export function mergeOrderSizesWithCatalog(
+  orderSizes: Array<{ sizeCode: string; sizeNameUk: string; quantity: number }>,
+  catalogSizes: Array<{ code: string; nameUk: string }> | null | undefined,
+): OrderSizeLine[] {
+  if (!catalogSizes?.length) {
+    return orderSizes.map((row) => ({
+      sizeCode: row.sizeCode,
+      sizeNameUk: row.sizeNameUk,
+      quantity: row.quantity,
+    }));
+  }
+
+  const qtyByCode = new Map<string, number>();
+  const nameByCode = new Map<string, string>();
+  for (const row of orderSizes) {
+    if (!isRealSizeCode(row.sizeCode)) continue;
+    qtyByCode.set(row.sizeCode, row.quantity);
+    nameByCode.set(row.sizeCode, row.sizeNameUk);
+  }
+
+  const result: OrderSizeLine[] = [];
+  const seen = new Set<string>();
+  for (const cat of catalogSizes) {
+    const code = cat.code.trim();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    result.push({
+      sizeCode: code,
+      sizeNameUk: nameByCode.get(code) ?? cat.nameUk,
+      quantity: qtyByCode.get(code) ?? 0,
+    });
+  }
+  for (const row of orderSizes) {
+    if (!isRealSizeCode(row.sizeCode) || seen.has(row.sizeCode)) continue;
+    seen.add(row.sizeCode);
+    result.push({
+      sizeCode: row.sizeCode,
+      sizeNameUk: row.sizeNameUk,
+      quantity: row.quantity,
+    });
+  }
+  return result;
+}
