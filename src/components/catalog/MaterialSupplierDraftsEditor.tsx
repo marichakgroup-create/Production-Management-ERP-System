@@ -43,7 +43,6 @@ import { resolveSupplierDeliveryRate } from "@/lib/supplier-delivery-rates";
 import { formatMoneyUah, cn } from "@/lib/utils";
 import { swatchForColorLabel } from "@/lib/trim-colors";
 import { getSupplierPaletteAction } from "@/server/domains/catalog/actions";
-import { lockedSupplierCatalog } from "@/lib/supplier-palettes";
 import {
   deriveTrimUnitPriceFromSupplier,
   hasTrimKgQuote,
@@ -726,18 +725,13 @@ export function MaterialSupplierDraftsEditor({
                 }
                 setDraft((prev) => ({ ...prev, supplierName: value }));
                 void getSupplierPaletteAction(value).then((result) => {
-                  const catalog = lockedSupplierCatalog(value);
-                  const colors =
-                    result.ok && result.colors.length > 0
-                      ? result.colors
-                      : (catalog ?? []);
-                  if (colors.length === 0) return;
+                  if (!result.ok || result.colors.length === 0) return;
                   setDraft((prev) => {
                     if (prev.supplierName.toLowerCase() !== value.toLowerCase()) return prev;
-                    if (prev.availableColors.trim() && !catalog) return prev;
+                    if (prev.availableColors.trim()) return prev;
                     return {
                       ...prev,
-                      availableColors: colors.join(", "),
+                      availableColors: result.colors.join(", "),
                     };
                   });
                 });

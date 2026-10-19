@@ -42,7 +42,6 @@ import {
 import { materialPackLabels, materialQtyUnitShort } from "@/lib/material-pack-labels";
 import { SupplierPaletteEditor } from "@/components/catalog/SupplierPaletteEditor";
 import { DeliveryRatesFields } from "@/components/catalog/DeliveryRatesFields";
-import { lockedSupplierCatalog } from "@/lib/supplier-palettes";
 import {
   ModeSegment,
   PurchaseModeRow,
@@ -243,16 +242,7 @@ export function MaterialSuppliersEditor({
         listSupplierNamesAction().catch(() => [] as string[]),
       ]);
       if (!result.ok) return;
-      let nextOffers = result.offers as OfferRow[];
-      // Propagate Зейджан (locked) palette from richest offer → all materials.
-      const lockedName = nextOffers.find((row) => lockedSupplierCatalog(row.supplierName))
-        ?.supplierName;
-      if (lockedName) {
-        await getSupplierPaletteAction(lockedName);
-        const refreshed = await listMaterialSupplierOffersAction(materialId);
-        if (refreshed.ok) nextOffers = refreshed.offers as OfferRow[];
-      }
-      setOffers(nextOffers);
+      setOffers(result.offers as OfferRow[]);
       setUsdUahRate(result.usdUahRate);
       setUsdUahRateInput(String(result.usdUahRate));
       setKnownSuppliers(names);
@@ -780,19 +770,14 @@ export function MaterialSuppliersEditor({
                 }
                 setDraft((prev) => ({ ...prev, supplierName: value }));
                 void getSupplierPaletteAction(value).then((result) => {
-                  const catalog = lockedSupplierCatalog(value);
-                  const colors =
-                    result.ok && result.colors.length > 0
-                      ? result.colors
-                      : (catalog ?? []);
-                  if (colors.length === 0) return;
+                  if (!result.ok || result.colors.length === 0) return;
                   setDraft((prev) => {
                     if (prev.supplierName.toLowerCase() !== value.toLowerCase()) return prev;
-                    // Prefill when empty; locked supplier always gets the shared palette.
-                    if (prev.availableColors.trim() && !catalog) return prev;
+                    // Keep this material’s own palette; only prefill empty offers.
+                    if (prev.availableColors.trim()) return prev;
                     return {
                       ...prev,
-                      availableColors: colors.join(", "),
+                      availableColors: result.colors.join(", "),
                     };
                   });
                 });

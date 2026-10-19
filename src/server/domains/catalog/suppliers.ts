@@ -5,7 +5,6 @@ import {
 } from "@/lib/fabric-pricing";
 import { getFabricPricingGlobals } from "@/server/domains/catalog/materials";
 import { mergeColorLists } from "@/lib/trim-colors";
-import { lockedSupplierCatalog } from "@/lib/supplier-palettes";
 import { normalizeFabricDeliveryType } from "@/lib/fabric-delivery-types";
 import { resolveSupplierDeliveryRate } from "@/lib/supplier-delivery-rates";
 import {
@@ -543,97 +542,29 @@ export async function upsertMaterialSupplierOffer(
   }
 
   if (offer.availableColors !== undefined) {
-    const locked = lockedSupplierCatalog(supplier.nameUk);
-    const selected = mergeColorLists(offer.availableColors ?? []);
-    if (locked) {
-      // Keep catalog + any custom colors the user added; empty → full catalog.
-      const next = selected.length > 0 ? selected : locked;
-      await rememberSupplierPalette(supplier.id, next);
-      await syncSupplierPaletteToOffers(supplier.id, next);
-    } else {
-      await rememberSupplierPalette(supplier.id, selected);
-    }
+    // Per-material palette only — never copy onto other SKUs of the same supplier.
+    await rememberSupplierPalette(
+      supplier.id,
+      mergeColorLists(offer.availableColors ?? []),
+    );
   }
 
   return row;
 }
 
-/** Push a palette onto every material offer for the supplier. */
-async function syncSupplierPaletteToOffers(supplierId: string, colors: string[]) {
-  const next = mergeColorLists(colors);
-  if (next.length === 0) return;
-  await prisma.supplier.update({
-    where: { id: supplierId },
-    data: { defaultAvailableColors: next },
-  });
-  await prisma.materialSupplier.updateMany({
-    where: { supplierId },
-    data: { availableColors: next },
-  });
-}
-
-/** Palette remembered for a supplier (default, else union from past material offers). */
+/**
+ * Optional prefill for a new offer from this supplier’s last saved palette.
+ * Full pick-list lives in the UI (sharedColorPickList); never mutates other materials.
+ */
 export async function getSupplierRememberedPalette(supplierNameUk: string) {
   const nameUk = supplierNameUk.replace(/\s+/g, " ").trim();
   if (!nameUk) return [] as string[];
 
-  const locked = lockedSupplierCatalog(nameUk);
-
   const supplier = await prisma.supplier.findFirst({
     where: { nameUk: { equals: nameUk, mode: "insensitive" } },
-    select: { id: true, defaultAvailableColors: true, nameUk: true },
+    select: { id: true, defaultAvailableColors: true },
   });
-  if (!supplier) return locked ?? [];
-
-  if (locked) {
-    const offers = await prisma.materialSupplier.findMany({
-      where: { supplierId: supplier.id },
-      select: { id: true, availableColors: true },
-    });
-
-    const fromDefault = mergeColorLists(supplier.defaultAvailableColors ?? []);
-    const fromOffers = mergeColorLists(
-      ...offers.map((row) => row.availableColors ?? []),
-    );
-    // Prefer the richest configured offer (e.g. already filled «Бавовна з еластаном»).
-    let richest: string[] = [];
-    for (const offer of offers) {
-      const colors = mergeColorLists(offer.availableColors ?? []);
-      if (colors.length > richest.length) richest = colors;
-    }
-
-    let palette =
-      richest.length >= 40
-        ? richest
-        : fromDefault.length > 0
-          ? fromDefault
-          : fromOffers.length > 0
-            ? fromOffers
-            : locked;
-
-    // Large configured palette → same selection on every Zeydjan material offer.
-    if (palette.length >= 40) {
-      await syncSupplierPaletteToOffers(supplier.id, palette);
-      return palette;
-    }
-
-    await prisma.supplier.update({
-      where: { id: supplier.id },
-      data: { defaultAvailableColors: palette },
-    });
-
-    const emptyIds = offers
-      .filter((row) => (row.availableColors?.length ?? 0) === 0)
-      .map((row) => row.id);
-    if (emptyIds.length > 0) {
-      await prisma.materialSupplier.updateMany({
-        where: { id: { in: emptyIds } },
-        data: { availableColors: palette },
-      });
-    }
-
-    return palette;
-  }
+  if (!supplier) return [];
 
   if ((supplier.defaultAvailableColors?.length ?? 0) > 0) {
     return mergeColorLists(supplier.defaultAvailableColors);

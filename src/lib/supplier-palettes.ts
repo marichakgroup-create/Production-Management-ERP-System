@@ -1,11 +1,12 @@
 /**
- * Locked supplier color catalogs — pick only from these labels in settings / BOM.
+ * Shared fabric/trim color pick-list for every supplier offer.
+ * Each material keeps its own selected subset in MaterialSupplier.availableColors.
  */
 
-import { mergeColorLists, normalizeColorLabel } from "@/lib/trim-colors";
+import { mergeColorLists, normalizeColorLabel, TRIM_COLOR_SWATCHES } from "@/lib/trim-colors";
 
-/** Full Зейджан fabric palette (source of truth for all Zeydjan material offers). */
-export const ZEYDJAN_COLOR_CATALOG: string[] = [
+/** Full fabric palette (originally Зейджан) — available to all suppliers. */
+export const FABRIC_COLOR_CATALOG: string[] = [
   "Чорний",
   "Білий",
   "Шампань",
@@ -87,32 +88,37 @@ export const ZEYDJAN_COLOR_CATALOG: string[] = [
   "Темна оболонь",
 ];
 
-const LOCKED_SUPPLIER_CATALOGS: Array<{
-  match: RegExp;
-  catalog: string[];
-}> = [{ match: /^зейдж/i, catalog: ZEYDJAN_COLOR_CATALOG }];
+/** @deprecated Use FABRIC_COLOR_CATALOG — kept for older imports. */
+export const ZEYDJAN_COLOR_CATALOG = FABRIC_COLOR_CATALOG;
 
-export function lockedSupplierCatalog(supplierNameUk: string | null | undefined): string[] | null {
-  const name = (supplierNameUk ?? "").replace(/\s+/g, " ").trim();
-  if (!name) return null;
-  for (const row of LOCKED_SUPPLIER_CATALOGS) {
-    if (row.match.test(name)) return mergeColorLists(row.catalog);
-  }
+/** Universal pick-list: fabric catalog + trim presets (Navy, нікель, …). */
+export function sharedColorPickList(extraPresets: string[] = []): string[] {
+  return mergeColorLists(
+    FABRIC_COLOR_CATALOG,
+    TRIM_COLOR_SWATCHES.map((row) => row.label),
+    extraPresets,
+  );
+}
+
+/**
+ * Catalog pool for the palette editor — same list for every supplier (incl. new ones).
+ * `locked` is always false: selection is per-material, not forced.
+ */
+export function paletteCatalogForSupplier(
+  _supplierNameUk?: string | null,
+  freePresets: string[] = [],
+): { colors: string[]; locked: boolean } {
+  return { colors: sharedColorPickList(freePresets), locked: false };
+}
+
+/** @deprecated No supplier is palette-locked anymore; kept for call-site compatibility. */
+export function lockedSupplierCatalog(_supplierNameUk?: string | null): string[] | null {
   return null;
 }
 
-export function isLockedSupplierPalette(supplierNameUk: string | null | undefined): boolean {
-  return lockedSupplierCatalog(supplierNameUk) != null;
-}
-
-/** Catalog pool for the editor: locked supplier → fixed list; else free presets. */
-export function paletteCatalogForSupplier(
-  supplierNameUk: string | null | undefined,
-  freePresets: string[],
-): { colors: string[]; locked: boolean } {
-  const locked = lockedSupplierCatalog(supplierNameUk);
-  if (locked) return { colors: locked, locked: true };
-  return { colors: mergeColorLists(freePresets), locked: false };
+/** @deprecated Always false — full catalog is shared, selection is per material. */
+export function isLockedSupplierPalette(_supplierNameUk?: string | null): boolean {
+  return false;
 }
 
 export function filterUnusedCatalogColors(catalog: string[], selected: string[]): string[] {
