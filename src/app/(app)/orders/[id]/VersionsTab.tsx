@@ -152,7 +152,8 @@ export function VersionsTab({
 
       {draftDrift && !handedOver && !isApprovedStatus ? (
         <Banner tone="warning" title="Поточний розрахунок відрізняється від останньої пропозиції">
-          Чернетка змінилась після збереження. Збережіть нову пропозицію, щоб оновити КП для клієнта.
+          Чернетка змінилась після збереження. КП уже показує поточні ціни; збережіть нову пропозицію
+          для погодження.
         </Banner>
       ) : null}
 
@@ -200,7 +201,7 @@ export function VersionsTab({
               <TableEmpty
                 colSpan={6}
                 title="Збережених пропозицій ще немає"
-                description="Пропозиція фіксує ціни всіх позицій — саме її побачить клієнт у КП."
+                description="Пропозиція фіксує ціни для погодження. КП до виробництва завжди з поточного складу."
               />
             ) : (
               proposals.map((proposal) => {
@@ -401,7 +402,7 @@ export function VersionsTab({
         open={Boolean(approveTarget)}
         onClose={() => setApproveTarget(null)}
         title={`Погодити пропозицію v${approveTarget?.revision ?? ""}?`}
-        description="Погоджена пропозиція стає основою для КП та специфікації по всіх позиціях"
+        description="Погоджена пропозиція — основа для передачі у виробництво; КП до цього з поточного складу"
         width="md"
         footer={
           <>

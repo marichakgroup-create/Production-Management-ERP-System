@@ -13,6 +13,8 @@
  * Formula: PV/unit = sewing/unit ÷ coefficient, then added into unit cost.
  */
 
+import { roundMoneyUah } from "@/lib/utils";
+
 export const FIXED_COST_ADDITIONAL_ID = "fixed-overhead";
 export const FIXED_COST_LINE_NAME_UK = "Постійні витрати";
 
@@ -52,7 +54,7 @@ function round1(value: number): number {
 }
 
 function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
+  return roundMoneyUah(value);
 }
 
 export function validateFixedCostParams(
@@ -125,7 +127,8 @@ export type FixedCostAllocation = {
 };
 
 /**
- * Allocate PV across sizes: each size uses its own sewing/unit ÷ coefficient.
+ * Allocate PV as a flat ₴/шт for the whole run (does not vary by size).
+ * PV/unit = weighted-average sewing/unit ÷ directory coefficient.
  */
 export function allocateFixedCosts(args: {
   metrics: FixedCostMetrics;
@@ -136,30 +139,32 @@ export function allocateFixedCosts(args: {
   const { metrics, sewerCountUsed, usedOrderOverride } = args;
   const bySize: SewingBySizeRow[] = [];
   let sewingTotal = 0;
-  let fixedCostTotal = 0;
   let qtyTotal = 0;
 
   for (const size of args.sizes) {
     const quantity = Math.max(0, Math.floor(size.quantity));
     if (quantity <= 0) continue;
     const sewingPerUnit = Math.max(0, size.sewingPerUnit);
-    const fixedCostPerUnit = fixedCostPerUnitFromSewing(sewingPerUnit, metrics.coefficient);
-    const fixedCostRow = roundMoney(fixedCostPerUnit * quantity);
-    const sewingRow = roundMoney(sewingPerUnit * quantity);
-    bySize.push({
-      sizeCode: size.sizeCode,
-      quantity,
-      sewingPerUnit: roundMoney(sewingPerUnit),
-      fixedCostPerUnit,
-      fixedCostTotal: fixedCostRow,
-    });
-    sewingTotal += sewingRow;
-    fixedCostTotal += fixedCostRow;
+    sewingTotal += sewingPerUnit * quantity;
     qtyTotal += quantity;
   }
 
   sewingTotal = roundMoney(sewingTotal);
-  fixedCostTotal = roundMoney(fixedCostTotal);
+  const sewingPerUnitAvg = qtyTotal > 0 ? roundMoney(sewingTotal / qtyTotal) : 0;
+  const fixedCostPerUnit = fixedCostPerUnitFromSewing(sewingPerUnitAvg, metrics.coefficient);
+  const fixedCostTotal = roundMoney(fixedCostPerUnit * qtyTotal);
+
+  for (const size of args.sizes) {
+    const quantity = Math.max(0, Math.floor(size.quantity));
+    if (quantity <= 0) continue;
+    bySize.push({
+      sizeCode: size.sizeCode,
+      quantity,
+      sewingPerUnit: roundMoney(Math.max(0, size.sewingPerUnit)),
+      fixedCostPerUnit,
+      fixedCostTotal: roundMoney(fixedCostPerUnit * quantity),
+    });
+  }
 
   return {
     metrics,
@@ -167,9 +172,9 @@ export function allocateFixedCosts(args: {
     usedOrderOverride,
     bySize,
     sewingTotal,
-    sewingPerUnit: qtyTotal > 0 ? roundMoney(sewingTotal / qtyTotal) : 0,
+    sewingPerUnit: sewingPerUnitAvg,
     fixedCostTotal,
-    fixedCostPerUnit: qtyTotal > 0 ? roundMoney(fixedCostTotal / qtyTotal) : 0,
+    fixedCostPerUnit,
   };
 }
 

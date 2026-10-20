@@ -177,7 +177,7 @@ export async function getPricingDefaults() {
     pricingMethod: "MARKUP" as const,
     targetRatePercent: 0,
     minimumMarginPercent: Number(pricing?.minimumMarginPercent ?? 15),
-    roundingDecimals: 2,
+    roundingDecimals: 1,
     materialCostVatMode: (pricing?.materialCostVatMode ?? "NET") as MaterialCostVatMode,
     usdUahRate: Number(pricing?.usdUahRate ?? DEFAULT_FABRIC_PRICING_GLOBALS.usdUahRate),
     fabricCargoUsdPerKg: Number(

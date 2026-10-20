@@ -128,8 +128,8 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
     input.items,
     orderFlags,
   );
-  // КП available once a complete proposal exists (Розрахунок), not only after approve.
-  const quotationReady = Boolean(input.hasCompleteProposal) || approved;
+  // КП is live from current order composition until production freeze.
+  const quotationReady = input.items.some((item) => item.totalQuantity > 0);
   const specificationReady = specLocked || input.status === "HANDED_TO_PRODUCTION";
   const focusItemId = blocking?.id;
 
@@ -220,7 +220,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       ),
       tab: "configuration",
       focusItemId,
-      quotationReady: false,
+      quotationReady,
       specificationReady: false,
     };
   }
@@ -239,7 +239,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       ),
       tab: "configuration",
       focusItemId,
-      quotationReady: false,
+      quotationReady,
       specificationReady: false,
     };
   }
@@ -252,12 +252,12 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       label: "Розрахунок",
       title: "Розрахунок і пропозиція",
       detail: many
-        ? "Порахуйте собівартість і збережіть пропозицію по всіх позиціях. КП уже можна друкувати (база XS–XXL). Розкладку розмірів — перед цехом."
-        : "Порахуйте собівартість і збережіть пропозицію. КП доступне для базових розмірів XS–XXL. Розкладку 3XL+ зробите перед виробництвом.",
+        ? "Порахуйте собівартість і збережіть пропозицію по всіх позиціях. КП завжди з поточного складу. Розкладку розмірів — перед цехом."
+        : "Порахуйте собівартість і збережіть пропозицію. КП оновлюється з поточним складом; фіксується при передачі у виробництво.",
       tab: "versions",
       hrefQuery: "action=save",
       focusItemId,
-      quotationReady: Boolean(input.hasCompleteProposal),
+      quotationReady,
       specificationReady: false,
     };
   }

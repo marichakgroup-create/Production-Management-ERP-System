@@ -18,14 +18,12 @@ import type { CalculationResult } from "@/server/domains/calculation/engine";
 import type { DecorationRow, FabricDeliveryRow, MaterialRow, OperationRow } from "./ConfigurationTab";
 import {
   isOversizeCode,
-  OVERSIZE_RANGE_LABEL,
-  oversizeMaterialPct,
-  oversizeOperationPct,
-  oversizeTirageSizesCaption,
-  oversizeUpliftCaption,
   resolveSizeCoeffs,
   type SizeCoeffRule,
 } from "@/lib/size-coeffs";
+import { lineCostOnSizes, linesForSize } from "@/lib/size-bom";
+import { isCutOperationName } from "@/lib/cut-rate";
+import { isDeliveryOperationName } from "@/lib/quantity-tiers";
 import {
   FIXED_COST_LINE_NAME_UK,
   fixedCostValidationMessage,
@@ -35,6 +33,22 @@ import {
 import {
   OrderFixedCostError,
 } from "@/components/orders/OrderSewerCountControl";
+
+/** Orange uplift chip, same tone as «+» on oversize size tabs. */
+function OversizeUpliftChip({
+  amount,
+  sizesLabel,
+}: {
+  amount: number;
+  sizesLabel: string;
+}) {
+  if (!(amount > 0.05) || !sizesLabel) return null;
+  return (
+    <span className="mt-0.5 block text-[11px] font-semibold tabular text-[var(--color-warning-text)]">
+      +{formatMoneyUah(amount)} ({sizesLabel})
+    </span>
+  );
+}
 
 /**
  * Line-item breakdown for the calculation tab.
@@ -56,6 +70,8 @@ export function CalculationTab({
   corridorHint,
   hasCommercialPriceList = false,
   commercialSellingPricePerUnit,
+  commercialBasePricePerUnit,
+  commercialDecorationPerUnit,
   commercialTotalValue,
   commercialMarginPercent,
   commercialProfitPerUnit,
@@ -83,6 +99,10 @@ export function CalculationTab({
   corridorHint?: { title: string; detail: string; href?: string; label?: string } | null;
   hasCommercialPriceList?: boolean;
   commercialSellingPricePerUnit?: number;
+  /** Product (garment) price per unit, without branding. */
+  commercialBasePricePerUnit?: number | null;
+  /** Branding / нанесення price per unit. */
+  commercialDecorationPerUnit?: number | null;
   commercialTotalValue?: number;
   commercialMarginPercent?: number;
   commercialProfitPerUnit?: number;
@@ -96,6 +116,14 @@ export function CalculationTab({
   const costTotal = Number(calc.totalCost);
   const sellingPerUnit = commercialSellingPricePerUnit ?? Number(calc.sellingPricePerUnit);
   const sellingTotal = commercialTotalValue ?? Number(calc.totalSellingValue);
+  const decorationPerUnit =
+    commercialDecorationPerUnit != null
+      ? commercialDecorationPerUnit
+      : perUnit(Number(calc.decorationsSubtotal));
+  const productPerUnit =
+    commercialBasePricePerUnit != null
+      ? commercialBasePricePerUnit
+      : Math.max(0, sellingPerUnit - decorationPerUnit);
   const profitPerUnit =
     commercialProfitPerUnit ?? sellingPerUnit - costPerUnit;
   const profitTotal = commercialProfitTotal ?? sellingTotal - costTotal;
@@ -108,15 +136,56 @@ export function CalculationTab({
       : priceSource === "sewing_markup"
         ? "націнка на пошив"
         : "як собівартість";
-  const oversizeRows = sizeQuantities
-    .filter((row) => row.quantity > 0 && isOversizeCode(row.sizeCode))
-    .map((row) => ({
-      ...row,
-      ...resolveSizeCoeffs(row.sizeCode, sizeRules),
-    }));
-  const oversizeSizesLabel = oversizeTirageSizesCaption(oversizeRows);
-  const matPct = oversizeMaterialPct(sizeRules);
-  const opPct = oversizeOperationPct(sizeRules);
+  const oversizeRows = sizeQuantities.filter(
+    (row) => row.quantity > 0 && isOversizeCode(row.sizeCode),
+  );
+  const oversizeSizesLabel = oversizeRows.map((row) => row.sizeCode).join(" ");
+
+  const materialSiblings = materials.map((row) => ({
+    id: row.id,
+    groupKey: row.groupKey,
+    sizeCode: row.sizeCode,
+  }));
+  const materialsOversizeUplift = materials.reduce((sum, row) => {
+    const base = lineCostOnSizes(
+      {
+        id: row.id,
+        groupKey: row.groupKey,
+        sizeCode: row.sizeCode,
+        consumption: row.consumption,
+        waste: row.waste,
+        price: row.price,
+        applySizeCoeff: false,
+      },
+      materialSiblings,
+      sizeQuantities,
+      sizeRules,
+    );
+    return sum + Math.max(0, row.totalCost - base);
+  }, 0);
+
+  const operationSiblings = operations.map((row) => ({
+    id: row.id,
+    groupKey: row.groupKey,
+    sizeCode: row.sizeCode,
+  }));
+  const operationsOversizeUplift = operations.reduce((sum, row) => {
+    if (isCutOperationName(row.name) || isDeliveryOperationName(row.name)) return sum;
+    let uplift = 0;
+    for (const size of sizeQuantities) {
+      if (size.quantity <= 0 || !isOversizeCode(size.sizeCode)) continue;
+      if (!linesForSize(operationSiblings, size.sizeCode).some((line) => line.id === row.id)) {
+        continue;
+      }
+      const coeff = resolveSizeCoeffs(size.sizeCode, sizeRules).operationCoeff;
+      if (coeff <= 1) continue;
+      uplift += row.unitCost * size.quantity * (coeff - 1);
+    }
+    return sum + uplift;
+  }, 0);
+
+  const costOversizeUplift = materialsOversizeUplift + operationsOversizeUplift;
+
   const fixedCostTotal = fixedCostAllocation?.fixedCostTotal ?? 0;
   const otherAdditionalCosts = Math.max(
     0,
@@ -135,7 +204,7 @@ export function CalculationTab({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-3 sm:grid-cols-4">
+      <div className="grid gap-2 rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-3 sm:grid-cols-2 lg:grid-cols-5">
         <div>
           <p className="type-caption">Собівартість / од.</p>
           <p className="mt-0.5 text-[15px] font-semibold tabular">{formatMoneyUah(costPerUnit)}</p>
@@ -144,11 +213,18 @@ export function CalculationTab({
           ) : null}
         </div>
         <div>
-          <p className="type-caption">Націнка / од.</p>
-          <p className="mt-0.5 text-[15px] font-semibold tabular text-[var(--color-success-text)]">
-            {formatMoneyUah(profitPerUnit)}
-          </p>
-          <p className="type-caption mt-0.5">маржа {marginPct.toFixed(1)}%</p>
+          <p className="type-caption">Ціна продукту / од.</p>
+          <p className="mt-0.5 text-[15px] font-semibold tabular">{formatMoneyUah(productPerUnit)}</p>
+          <p className="type-caption mt-0.5">без нанесення</p>
+        </div>
+        <div>
+          <p className="type-caption">Нанесення / од.</p>
+          <p className="mt-0.5 text-[15px] font-semibold tabular">{formatMoneyUah(decorationPerUnit)}</p>
+          {totalQuantity > 1 ? (
+            <p className="type-caption mt-0.5">
+              разом {formatMoneyUah(decorationPerUnit * totalQuantity)}
+            </p>
+          ) : null}
         </div>
         <div>
           <p className="type-caption">Ціна клієнту / од.</p>
@@ -163,9 +239,7 @@ export function CalculationTab({
           <p className="mt-0.5 text-[15px] font-semibold tabular text-[var(--color-success-text)]">
             {formatMoneyUah(profitTotal)}
           </p>
-          {totalQuantity > 1 ? (
-            <p className="type-caption mt-0.5">продаж {formatMoneyUah(sellingTotal)}</p>
-          ) : null}
+          <p className="type-caption mt-0.5">маржа {marginPct.toFixed(1)}%</p>
         </div>
       </div>
 
@@ -201,11 +275,7 @@ export function CalculationTab({
       <TableCard>
         <TableToolbar
           left={<span className="type-subsection">Деталі статей</span>}
-          right={
-            <span className="type-caption tabular">
-              на {totalQuantity} шт · таблиця = статті собівартості
-            </span>
-          }
+          right={<span className="type-caption tabular">{totalQuantity} шт</span>}
         />
         <Table>
           <THead>
@@ -216,14 +286,6 @@ export function CalculationTab({
           </THead>
           <TBody>
             <TableSectionHeader title="Матеріали" first />
-            {oversizeRows.length > 0 ? (
-              <TR muted>
-                <TD colSpan={4} className="type-caption">
-                  У сумах нижче вже враховано націнку за розмір ({oversizeUpliftCaption(sizeRules)})
-                  для: {oversizeSizesLabel}. Решта розмірів — без цієї надбавки.
-                </TD>
-              </TR>
-            ) : null}
             {materials.length === 0 ? (
               <TR muted>
                 <TD colSpan={4}>Матеріалів немає</TD>
@@ -240,9 +302,6 @@ export function CalculationTab({
                   <TD className="type-caption">
                     {row.consumption} {row.unit} × (1 + {row.waste}%) × {formatMoneyUah(row.price)}
                     {row.sizeCode ? ` · ${row.sizeCode}` : ""}
-                    {oversizeRows.length > 0 && !row.sizeCode
-                      ? ` · для ${oversizeSizesLabel} ще ×${(1 + matPct / 100).toFixed(2)}`
-                      : ""}
                   </TD>
                   <TD numeric className="text-[var(--color-text-secondary)]">
                     {formatMoneyUah(row.unitCost)}
@@ -255,19 +314,19 @@ export function CalculationTab({
               <TableSectionSubtotal
                 label="Разом матеріали"
                 perUnit={formatMoneyUah(perUnit(materialsSubtotal))}
-                total={formatMoneyUah(materialsSubtotal)}
+                total={
+                  <>
+                    {formatMoneyUah(materialsSubtotal)}
+                    <OversizeUpliftChip
+                      amount={materialsOversizeUplift}
+                      sizesLabel={oversizeSizesLabel}
+                    />
+                  </>
+                }
               />
             ) : null}
 
             <TableSectionHeader title="Операції" />
-            {oversizeRows.length > 0 ? (
-              <TR muted>
-                <TD colSpan={4} className="type-caption">
-                  Для {oversizeSizesLabel} ставка операцій ×{(1 + opPct / 100).toFixed(2)} вже в
-                  підсумку ({OVERSIZE_RANGE_LABEL}).
-                </TD>
-              </TR>
-            ) : null}
             {operations.length === 0 ? (
               <TR muted>
                 <TD colSpan={4}>Операцій немає</TD>
@@ -290,7 +349,15 @@ export function CalculationTab({
               <TableSectionSubtotal
                 label="Разом операції"
                 perUnit={formatMoneyUah(perUnit(operationsSubtotal))}
-                total={formatMoneyUah(operationsSubtotal)}
+                total={
+                  <>
+                    {formatMoneyUah(operationsSubtotal)}
+                    <OversizeUpliftChip
+                      amount={operationsOversizeUplift}
+                      sizesLabel={oversizeSizesLabel}
+                    />
+                  </>
+                }
               />
             ) : null}
 
@@ -308,32 +375,16 @@ export function CalculationTab({
             </TR>
             {fixedCostAllocation && fixedCostAllocation.fixedCostTotal > 0 ? (
               <>
-                {fixedCostAllocation.bySize.length > 1 ? (
-                  fixedCostAllocation.bySize.map((row) => (
-                    <TR key={`pv-${row.sizeCode}`}>
-                      <TD className="font-medium">{FIXED_COST_LINE_NAME_UK}</TD>
-                      <TD className="text-[var(--color-text-secondary)]">
-                        Коеф. {fixedCostAllocation.metrics.coefficient.toFixed(1)}
-                        <span className="type-caption ml-1.5">{row.sizeCode}</span>
-                      </TD>
-                      <TD numeric className="text-[var(--color-text-secondary)]">
-                        {formatMoneyUah(row.fixedCostPerUnit)}
-                      </TD>
-                      <TD numeric>{formatMoneyUah(row.fixedCostTotal)}</TD>
-                    </TR>
-                  ))
-                ) : (
-                  <TR>
-                    <TD className="font-medium">{FIXED_COST_LINE_NAME_UK}</TD>
-                    <TD className="text-[var(--color-text-secondary)]">
-                      Коеф. {fixedCostAllocation.metrics.coefficient.toFixed(1)}
-                    </TD>
-                    <TD numeric className="text-[var(--color-text-secondary)]">
-                      {formatMoneyUah(fixedCostAllocation.fixedCostPerUnit)}
-                    </TD>
-                    <TD numeric>{formatMoneyUah(fixedCostAllocation.fixedCostTotal)}</TD>
-                  </TR>
-                )}
+                <TR>
+                  <TD className="font-medium">{FIXED_COST_LINE_NAME_UK}</TD>
+                  <TD className="text-[var(--color-text-secondary)]">
+                    Коеф. {fixedCostAllocation.metrics.coefficient.toFixed(1)}
+                  </TD>
+                  <TD numeric className="text-[var(--color-text-secondary)]">
+                    {formatMoneyUah(fixedCostAllocation.fixedCostPerUnit)}
+                  </TD>
+                  <TD numeric>{formatMoneyUah(fixedCostAllocation.fixedCostTotal)}</TD>
+                </TR>
                 <TableSectionSubtotal
                   label="Разом постійні витрати"
                   perUnit={formatMoneyUah(fixedCostAllocation.fixedCostPerUnit)}
@@ -425,7 +476,13 @@ export function CalculationTab({
               <TD numeric className="text-[var(--color-text-secondary)]">
                 {formatMoneyUah(costPerUnit)}
               </TD>
-              <TD numeric>{formatMoneyUah(costTotal)}</TD>
+              <TD numeric>
+                {formatMoneyUah(costTotal)}
+                <OversizeUpliftChip
+                  amount={costOversizeUplift}
+                  sizesLabel={oversizeSizesLabel}
+                />
+              </TD>
             </tr>
             <tr>
               <TD colSpan={2} className="text-[var(--color-text-secondary)]">
@@ -437,6 +494,28 @@ export function CalculationTab({
               </TD>
               <TD numeric className="text-[var(--color-success-text)]">
                 {formatMoneyUah(profitTotal)}
+              </TD>
+            </tr>
+            <tr>
+              <TD colSpan={2} className="text-[var(--color-text-secondary)]">
+                Ціна продукту (без нанесення)
+              </TD>
+              <TD numeric className="text-[var(--color-text-secondary)]">
+                {formatMoneyUah(productPerUnit)}
+              </TD>
+              <TD numeric className="text-[var(--color-text-secondary)]">
+                {formatMoneyUah(productPerUnit * totalQuantity)}
+              </TD>
+            </tr>
+            <tr>
+              <TD colSpan={2} className="text-[var(--color-text-secondary)]">
+                Нанесення
+              </TD>
+              <TD numeric className="text-[var(--color-text-secondary)]">
+                {formatMoneyUah(decorationPerUnit)}
+              </TD>
+              <TD numeric className="text-[var(--color-text-secondary)]">
+                {formatMoneyUah(decorationPerUnit * totalQuantity)}
               </TD>
             </tr>
             <tr className="border-t border-[var(--color-divider)]">

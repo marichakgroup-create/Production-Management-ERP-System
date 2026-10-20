@@ -1,7 +1,12 @@
 import { notFound } from "next/navigation";
 import { getOrder } from "@/server/domains/orders/service";
 import { prisma } from "@/server/db/client";
-import { getPricingForOrder } from "@/server/domains/calculation/from-entities";
+import {
+  buildCalcFromOrderItem,
+  calcOptionsFromProduct,
+  getPricingForOrder,
+} from "@/server/domains/calculation/from-entities";
+import { fixedCostOptionsFromDb } from "@/server/domains/fixed-costs/service";
 import { PrintToolbar } from "@/components/print/PrintToolbar";
 import {
   PrintDocFooter,
@@ -15,12 +20,17 @@ import {
 } from "@/components/print/PrintDocument";
 import { formatDateUk, formatMoneyUah } from "@/lib/utils";
 import { quotationProposal } from "@/lib/order-proposals";
+import { draftLineFromItem } from "@/lib/order-item-commercial";
 import {
   buildQuotationSizeRows,
-  quotationGrandTotal,
   quotationNeedsBaseSizeDisclaimer,
   type QuotationSnapshot,
 } from "@/lib/quotation-lines";
+
+/** After handover, КП is a frozen snapshot; before that — always live from the order. */
+function isQuotationFrozen(status: string) {
+  return status === "HANDED_TO_PRODUCTION" || status === "CLOSED";
+}
 
 export default async function QuotationPage({
   params,
@@ -31,56 +41,125 @@ export default async function QuotationPage({
 }) {
   const { id } = await params;
   const { item: itemParam } = await searchParams;
-  const [order, company, pricing] = await Promise.all([
+  const [order, company, pricing, fixedCosts] = await Promise.all([
     getOrder(id),
     prisma.companySettings.findFirst(),
     getPricingForOrder(id),
+    fixedCostOptionsFromDb(),
   ]);
   if (!order) notFound();
 
   const workingItems = order.items.filter((row) => !row.superseded);
+  const scopedItems = itemParam
+    ? workingItems.filter((row) => row.id === itemParam)
+    : workingItems;
+  if (scopedItems.length === 0) notFound();
 
-  const proposalItems = order.items.map((row) => ({
-    id: row.id,
-    nameUk: row.nameUk,
-    totalQuantity: row.totalQuantity,
-    superseded: row.superseded,
-    versions: row.versions.map((version) => ({
-      id: version.id,
-      orderItemId: row.id,
-      versionNumber: version.versionNumber,
-      label: version.label,
-      comment: version.comment,
-      isApproved: version.isApproved,
-      createdAt: version.createdAt,
-      proposalRevision: version.proposalRevision,
-      proposalLabel: version.proposalLabel,
-      sellingPricePerUnit: version.sellingPricePerUnit,
-      totalSellingValue: version.totalSellingValue,
-      marginPercent: version.marginPercent,
-      costPerUnit: version.costPerUnit,
-      author: version.author,
-    })),
-  }));
+  const frozen = isQuotationFrozen(order.status);
 
-  const proposal = quotationProposal(proposalItems);
-  if (!proposal) notFound();
+  type PricedLine = {
+    item: (typeof scopedItems)[number];
+    unitPrice: number;
+    totalSellingValue: number;
+    snapshot: QuotationSnapshot;
+  };
 
-  const lines = proposal.lines
-    .map((line) => {
-      const item = workingItems.find((row) => row.id === line.orderItemId);
-      if (!item) return null;
-      if (itemParam && item.id !== itemParam) return null;
-      const version = item.versions.find((row) => row.id === line.id);
-      if (!version) return null;
-      return { item, version };
-    })
-    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  let pricedLines: PricedLine[] = [];
+  let notes = "";
+  let docMeta: string[] = [];
 
-  if (lines.length === 0) notFound();
+  if (frozen) {
+    const proposalItems = order.items.map((row) => ({
+      id: row.id,
+      nameUk: row.nameUk,
+      totalQuantity: row.totalQuantity,
+      superseded: row.superseded,
+      versions: row.versions.map((version) => ({
+        id: version.id,
+        orderItemId: row.id,
+        versionNumber: version.versionNumber,
+        label: version.label,
+        comment: version.comment,
+        isApproved: version.isApproved,
+        createdAt: version.createdAt,
+        proposalRevision: version.proposalRevision,
+        proposalLabel: version.proposalLabel,
+        sellingPricePerUnit: version.sellingPricePerUnit,
+        totalSellingValue: version.totalSellingValue,
+        marginPercent: version.marginPercent,
+        costPerUnit: version.costPerUnit,
+        author: version.author,
+        snapshotJson: version.snapshotJson,
+      })),
+    }));
+
+    const proposal = quotationProposal(proposalItems);
+    if (!proposal) notFound();
+
+    pricedLines = proposal.lines
+      .map((line) => {
+        const item = scopedItems.find((row) => row.id === line.orderItemId);
+        if (!item) return null;
+        const version = item.versions.find((row) => row.id === line.id);
+        if (!version) return null;
+        return {
+          item,
+          unitPrice: Number(version.sellingPricePerUnit),
+          totalSellingValue: Number(version.totalSellingValue),
+          snapshot: (version.snapshotJson ?? {}) as QuotationSnapshot,
+        };
+      })
+      .filter((row): row is PricedLine => Boolean(row));
+
+    if (pricedLines.length === 0) notFound();
+
+    notes = proposal.comment ?? "";
+    docMeta = [
+      `від ${formatDateUk(proposal.createdAt)}`,
+      proposal.revision != null
+        ? `пропозиція v${proposal.revision}${proposal.isApproved ? " · погоджено" : ""} · зафіксовано`
+        : "зафіксовано",
+    ];
+  } else {
+    pricedLines = scopedItems
+      .filter((item) => item.totalQuantity > 0)
+      .map((item) => {
+        const lineCalc = buildCalcFromOrderItem(item, pricing, {
+          ...calcOptionsFromProduct(item.product),
+          fixedCosts,
+        });
+        const draft = draftLineFromItem(item, lineCalc);
+        return {
+          item,
+          unitPrice: draft.sellingPricePerUnit,
+          totalSellingValue: draft.totalSellingValue,
+          snapshot: {
+            item: {
+              nameUk: item.nameUk,
+              totalQuantity: item.totalQuantity,
+              sizes: item.sizes.map((size) => ({
+                sizeCode: size.sizeCode,
+                sizeNameUk: size.sizeNameUk,
+                quantity: size.quantity,
+              })),
+              decorations: item.decorations.map((row) => ({
+                nameSnapshot: row.nameSnapshot,
+              })),
+            },
+          },
+        };
+      });
+
+    if (pricedLines.length === 0) notFound();
+
+    docMeta = [
+      `на ${formatDateUk(new Date())}`,
+      "за поточним складом замовлення",
+    ];
+  }
 
   const showBaseSizeDisclaimer = quotationNeedsBaseSizeDisclaimer(
-    lines.map(({ item }) => ({
+    pricedLines.map(({ item }) => ({
       sizes: item.sizes.map((size) => ({
         sizeCode: size.sizeCode,
         sizeNameUk: size.sizeNameUk,
@@ -90,40 +169,21 @@ export default async function QuotationPage({
     })),
   );
 
-  const tableRows = lines.flatMap(({ item, version }) => {
-    const decorationSetup = item.decorations.reduce(
-      (sum, row) => sum + Number(row.setupCost),
-      0,
-    );
-    const decorationUnit = item.decorations.reduce(
-      (sum, row) => sum + Number(row.unitRate),
-      0,
-    );
-    const additionalPerUnit = item.additionalCosts
-      .filter((row) => row.isPerUnit)
-      .reduce((sum, row) => sum + Number(row.amount), 0);
-    const additionalFixed = item.additionalCosts
-      .filter((row) => !row.isPerUnit)
-      .reduce((sum, row) => sum + Number(row.amount), 0);
-    const fabricDelivery = Number(item.fabricDeliveryAmount ?? 0);
-    const qty = Math.max(1, item.totalQuantity);
-    const sharedPerUnit =
-      decorationUnit +
-      additionalPerUnit +
-      (decorationSetup + additionalFixed + fabricDelivery) / qty;
-
-    return buildQuotationSizeRows({
+  const tableRows = pricedLines.flatMap(({ item, unitPrice, totalSellingValue, snapshot }) =>
+    buildQuotationSizeRows({
       itemKey: item.id,
-      snapshot: (version.snapshotJson ?? {}) as QuotationSnapshot,
-      unitPrice: Number(version.sellingPricePerUnit),
-      totalSellingValue: Number(version.totalSellingValue),
+      snapshot,
+      unitPrice,
+      totalSellingValue,
       fallbackNameUk: item.nameUk,
       fallbackSizes: item.sizes.map((size) => ({
         sizeCode: size.sizeCode,
         sizeNameUk: size.sizeNameUk,
         quantity: size.quantity,
       })),
-      fallbackDecorations: item.decorations.map((row) => ({ nameSnapshot: row.nameSnapshot })),
+      fallbackDecorations: item.decorations.map((row) => ({
+        nameSnapshot: row.nameSnapshot,
+      })),
       fallbackTotalQuantity: item.totalQuantity,
       materials: item.materials.map((row) => ({
         sizeCode: row.sizeCode,
@@ -140,25 +200,16 @@ export default async function QuotationPage({
         unitRate: row.unitRate != null ? Number(row.unitRate) : null,
       })),
       sizeRules: pricing.sizeRules,
-      sharedPerUnit,
-    });
-  });
+    }),
+  );
 
-  const grandTotal = quotationGrandTotal(lines);
-  const notes = proposal.comment ?? "";
+  const grandTotal = pricedLines.reduce((sum, row) => sum + row.totalSellingValue, 0);
   const companyName = company?.legalName ?? "Виробнича компанія";
   const companyLines = [
     company?.address,
     [company?.phone, company?.email].filter(Boolean).join(" · ") || null,
     company?.taxId ? `ЄДРПОУ / ІПН: ${company.taxId}` : null,
   ].filter((line): line is string => Boolean(line));
-
-  const docMeta = [
-    `від ${formatDateUk(proposal.createdAt)}`,
-    proposal.revision != null
-      ? `пропозиція v${proposal.revision}${proposal.isApproved ? " · погоджено" : " · проєкт"}`
-      : `${tableRows.length} ряд.`,
-  ];
 
   const runningTitle = `КП ${order.number} · ${companyName}`;
 
@@ -201,7 +252,11 @@ export default async function QuotationPage({
                     Менеджер: <strong>{order.manager.name}</strong>
                   </p>
                   <p>Термін виконання: {formatDateUk(order.deadline)}</p>
-                  <PrintDocMuted>Ціни дійсні на дату формування пропозиції</PrintDocMuted>
+                  <PrintDocMuted>
+                    {frozen
+                      ? "Ціни зафіксовані при передачі у виробництво"
+                      : "Ціни з поточного складу замовлення (оновлюються при зміні тиражу / матеріалів)"}
+                  </PrintDocMuted>
                 </>
               ),
             },

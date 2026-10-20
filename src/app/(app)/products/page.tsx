@@ -52,7 +52,7 @@ export default async function ProductsPage({
       pricingMethod: "MARKUP" as const,
       targetRatePercent: 0,
       minimumMarginPercent: 15,
-      roundingDecimals: 2,
+      roundingDecimals: 1,
       sizeRules: [],
     })),
     listSizes().catch(() => []),

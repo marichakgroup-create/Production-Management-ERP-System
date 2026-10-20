@@ -72,7 +72,7 @@ function d(value: number | string | null | undefined): Decimal {
   return new Decimal(value);
 }
 
-function roundMoney(value: Decimal, decimals = 2): Decimal {
+function roundMoney(value: Decimal, decimals = 1): Decimal {
   return value.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
 }
 
@@ -90,11 +90,11 @@ function operationUnitCost(op: OperationLineInput): Decimal {
  * Size-specific coeffs are applied only to explicitly marked lines.
  */
 export function calculateCosting(input: CalculationInput): CalculationResult {
-  const decimals = input.roundingDecimals ?? 2;
+  const decimals = input.roundingDecimals ?? 1;
   const totalQuantity = input.sizes.reduce((sum, size) => sum + size.quantity, 0);
 
   if (totalQuantity <= 0) {
-    const zero = "0.00";
+    const zero = (0).toFixed(decimals);
     return {
       totalQuantity: 0,
       materialsSubtotal: zero,

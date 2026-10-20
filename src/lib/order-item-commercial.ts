@@ -5,6 +5,7 @@ import {
   calcWithClientPrice,
   resolveSewingPerUnitFromOperations,
 } from "@/lib/product-selling";
+import { roundMoneyUah } from "@/lib/utils";
 
 export type OrderItemCommercialInput = {
   totalQuantity: number;
@@ -58,11 +59,11 @@ export function mergeCommercialAndCost(
 
   return {
     fromPriceList: commercial.fromPriceList,
-    basePricePerUnit: commercial.basePricePerUnit,
-    decorationPerUnit: commercial.decorationPerUnit,
-    sellingPricePerUnit: commercial.sellingPricePerUnit,
-    totalSellingValue: commercial.totalSellingValue,
-    costPerUnit,
+    basePricePerUnit: roundMoneyUah(commercial.basePricePerUnit),
+    decorationPerUnit: roundMoneyUah(commercial.decorationPerUnit),
+    sellingPricePerUnit: roundMoneyUah(commercial.sellingPricePerUnit),
+    totalSellingValue: roundMoneyUah(commercial.totalSellingValue),
+    costPerUnit: roundMoneyUah(costPerUnit),
     marginPercent,
     discountPercent: commercial.discountPercent,
   };
@@ -104,23 +105,29 @@ export function draftLineFromItem(
 
   if (discountPercent != null && discountPercent > 0 && resolved.source !== "cost") {
     const factor = 1 - Math.min(99, discountPercent) / 100;
-    totalSellingValue = Math.round(totalSellingValue * factor * 100) / 100;
+    totalSellingValue = roundMoneyUah(totalSellingValue * factor);
     sellingPricePerUnit =
       item.totalQuantity > 0
-        ? Math.round((totalSellingValue / item.totalQuantity) * 100) / 100
+        ? roundMoneyUah(totalSellingValue / item.totalQuantity)
         : sellingPricePerUnit;
     const profit = totalSellingValue - Number(costCalc.totalCost);
     marginPercent = totalSellingValue > 0 ? (profit / totalSellingValue) * 100 : 0;
   }
 
+  const decorationPerUnit =
+    item.totalQuantity > 0
+      ? roundMoneyUah(Number(costCalc.decorationsSubtotal) / item.totalQuantity)
+      : 0;
+  const basePricePerUnit = roundMoneyUah(Math.max(0, sellingPricePerUnit - decorationPerUnit));
+
   return {
     fromPriceList: resolved.source === "pricelist",
     priceSource: resolved.source,
-    basePricePerUnit: sellingPricePerUnit,
-    decorationPerUnit: null as number | null,
-    sellingPricePerUnit,
-    totalSellingValue,
-    costPerUnit: Number(costCalc.costPerUnit),
+    basePricePerUnit,
+    decorationPerUnit,
+    sellingPricePerUnit: roundMoneyUah(sellingPricePerUnit),
+    totalSellingValue: roundMoneyUah(totalSellingValue),
+    costPerUnit: roundMoneyUah(Number(costCalc.costPerUnit)),
     marginPercent,
     discountPercent: discountPercent ?? 0,
   };

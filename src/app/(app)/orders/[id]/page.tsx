@@ -475,6 +475,7 @@ export default async function OrderDetailPage({
       totalSellingValue: draft.totalSellingValue,
       fromPriceList: draft.fromPriceList,
       basePricePerUnit: draft.basePricePerUnit,
+      decorationPerUnit: draft.decorationPerUnit,
       priceSource: draft.priceSource,
     };
   });
@@ -1029,6 +1030,8 @@ export default async function OrderDetailPage({
             <FilesTab
               orderId={order.id}
               hasApprovedVersion={false}
+              quotationReady={false}
+              quotationFrozen={false}
               specificationLockedAt={null}
               needsArtwork={false}
               locked={locked}
@@ -1180,6 +1183,8 @@ export default async function OrderDetailPage({
                 isOrderOverride={pricing.isOrderOverride}
                 hasCommercialPriceList={Boolean(activeDraft?.fromPriceList)}
                 commercialSellingPricePerUnit={clientPricePerUnit}
+                commercialBasePricePerUnit={activeDraft?.basePricePerUnit ?? null}
+                commercialDecorationPerUnit={activeDraft?.decorationPerUnit ?? null}
                 commercialTotalValue={clientTotal}
                 commercialMarginPercent={marginPct}
                 commercialProfitPerUnit={profitPerUnit}
@@ -1236,6 +1241,10 @@ export default async function OrderDetailPage({
                 orderId={order.id}
                 itemId={item.id}
                 hasApprovedVersion={hasAnyApprovedVersion}
+                quotationReady={action.quotationReady}
+                quotationFrozen={
+                  order.status === "HANDED_TO_PRODUCTION" || order.status === "CLOSED"
+                }
                 specificationLockedAt={item.specification?.lockedAt.toISOString() ?? null}
                 needsArtwork={needsArtwork}
                 locked={locked}

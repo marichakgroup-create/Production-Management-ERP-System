@@ -7,13 +7,19 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * Currency style is avoided on purpose: Node and browser ICU render UAH
  * differently ("грн" vs "₴"), which desynchronises server and client output.
+ * Prices are shown to 1 decimal (десяті гривні).
  */
+export function roundMoneyUah(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 10) / 10;
+}
+
 export function formatMoneyUah(value: number | string): string {
   const num = typeof value === "string" ? Number(value) : value;
   const amount = new Intl.NumberFormat("uk-UA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Number.isFinite(num) ? roundMoneyUah(num) : 0);
   return `${amount} ₴`;
 }
 
@@ -34,9 +40,9 @@ export function formatUnit(code: string): string {
 export function formatAmount(value: number | string): string {
   const num = typeof value === "string" ? Number(value) : value;
   return new Intl.NumberFormat("uk-UA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Number.isFinite(num) ? roundMoneyUah(num) : 0);
 }
 
 /** Whole hryvnias for dense price/cut tables (kopiykas kept in calc, hidden in UI). */

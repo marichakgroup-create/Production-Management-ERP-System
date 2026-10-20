@@ -1,17 +1,11 @@
-import { linesForSize } from "@/lib/size-bom";
 import {
   isOrientativeTirageSize,
   isRealSizeCode,
   itemNeedsSizeBreakdown,
   type OrderSizeLine,
 } from "@/lib/order-item-sizes";
-import {
-  isOversizeCode,
-  resolveSizeCoeffs,
-  type SizeCoeffRule,
-} from "@/lib/size-coeffs";
-import { isCutOperationName } from "@/lib/cut-rate";
-import { isDeliveryOperationName } from "@/lib/quantity-tiers";
+import type { SizeCoeffRule } from "@/lib/size-coeffs";
+import { roundMoneyUah } from "@/lib/utils";
 
 export type QuotationSizeRow = {
   key: string;
@@ -50,7 +44,7 @@ export type QuotationOperationLine = {
 };
 
 function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
+  return roundMoneyUah(value);
 }
 
 function decorationLabels(decorations: Array<{ nameSnapshot: string }>) {
@@ -94,58 +88,22 @@ export function quotationNeedsBaseSizeDisclaimer(
   );
 }
 
-function variableUnitCostForSize(input: {
-  sizeCode: string;
-  materials: QuotationMaterialLine[];
-  operations: QuotationOperationLine[];
-  sizeRules?: SizeCoeffRule[] | null;
-}): number {
-  const coeffs = resolveSizeCoeffs(input.sizeCode, input.sizeRules);
-  const materials = input.materials.map((row, index) => ({
-    id: `m-${index}`,
-    groupKey: row.materialId ?? row.nameSnapshot ?? `m-${index}`,
-    sizeCode: row.sizeCode ?? null,
-    consumptionPerUnit: row.consumptionPerUnit,
-    wastePercent: row.wastePercent,
-    purchasePrice: row.purchasePrice,
-    applySizeCoeff: !(row.sizeCode != null && isOversizeCode(row.sizeCode)),
-  }));
-  const operations = input.operations.map((row, index) => ({
-    id: `o-${index}`,
-    groupKey: row.operationId ?? row.nameSnapshot ?? `o-${index}`,
-    sizeCode: row.sizeCode ?? null,
-    unitRate: row.unitRate ?? 0,
-    applySizeCoeff:
-      !isCutOperationName(row.nameSnapshot) && !isDeliveryOperationName(row.nameSnapshot),
-  }));
-
-  let cost = 0;
-  for (const line of linesForSize(materials, input.sizeCode)) {
-    const coeff = line.applySizeCoeff === false ? 1 : coeffs.materialCoeff;
-    cost +=
-      line.consumptionPerUnit *
-      (1 + line.wastePercent / 100) *
-      line.purchasePrice *
-      coeff;
-  }
-  for (const line of linesForSize(operations, input.sizeCode)) {
-    const coeff = line.applySizeCoeff === false ? 1 : coeffs.operationCoeff;
-    cost += Number(line.unitRate ?? 0) * coeff;
-  }
-  return cost;
-}
-
 /**
- * Split proposal total across sizes by relative unit cost (incl. 3XL+ coeffs).
- * Sum of line totals equals `totalSellingValue`.
+ * Client КП: same ₴/од. on every size (proposal unit price).
+ * Totals still sum to `totalSellingValue` (drift fixed on last row).
+ * Cost-weighted split was confusing when the commercial price is flat.
  */
 export function allocateSellingBySize(input: {
   sizes: Array<{ sizeCode: string; sizeNameUk: string; quantity: number }>;
   totalSellingValue: number;
   fallbackUnitPrice: number;
+  /** @deprecated Kept for call-site compat; ignored (flat unit price). */
   materials?: QuotationMaterialLine[];
+  /** @deprecated Kept for call-site compat; ignored (flat unit price). */
   operations?: QuotationOperationLine[];
+  /** @deprecated Kept for call-site compat; ignored (flat unit price). */
   sizeRules?: SizeCoeffRule[] | null;
+  /** @deprecated Kept for call-site compat; ignored (flat unit price). */
   sharedPerUnit?: number;
 }): Array<{ sizeCode: string; sizeNameUk: string; quantity: number; unitPrice: number; lineTotal: number }> {
   const sizes = positiveSizes(input.sizes);
@@ -153,65 +111,24 @@ export function allocateSellingBySize(input: {
     return [];
   }
 
-  const materials = input.materials ?? [];
-  const operations = input.operations ?? [];
-  const shared = input.sharedPerUnit ?? 0;
-  const hasBom = materials.length > 0 || operations.length > 0;
+  const qtyTotal = sizes.reduce((sum, size) => sum + size.quantity, 0);
+  const unitPrice =
+    qtyTotal > 0
+      ? roundMoney(input.totalSellingValue / qtyTotal)
+      : roundMoney(input.fallbackUnitPrice);
 
-  if (!hasBom || sizes.length === 1) {
-    return sizes.map((size) => {
-      const unitPrice = input.fallbackUnitPrice;
-      return {
-        ...size,
-        unitPrice,
-        lineTotal: roundMoney(unitPrice * size.quantity),
-      };
-    });
-  }
+  const allocated = sizes.map((size) => ({
+    sizeCode: size.sizeCode,
+    sizeNameUk: size.sizeNameUk,
+    quantity: size.quantity,
+    unitPrice,
+    lineTotal: roundMoney(unitPrice * size.quantity),
+  }));
 
-  const weights = sizes.map((size) => {
-    const variable = variableUnitCostForSize({
-      sizeCode: size.sizeCode,
-      materials,
-      operations,
-      sizeRules: input.sizeRules,
-    });
-    const unitCost = Math.max(0, variable + shared);
-    return { size, unitCost, weight: unitCost * size.quantity };
-  });
-
-  const weightSum = weights.reduce((sum, row) => sum + row.weight, 0);
-  if (weightSum <= 0) {
-    return sizes.map((size) => {
-      const unitPrice = input.fallbackUnitPrice;
-      return {
-        ...size,
-        unitPrice,
-        lineTotal: roundMoney(unitPrice * size.quantity),
-      };
-    });
-  }
-
-  const allocated = weights.map((row) => {
-    const lineTotal = roundMoney(
-      (input.totalSellingValue * row.weight) / weightSum,
-    );
-    const unitPrice =
-      row.size.quantity > 0 ? roundMoney(lineTotal / row.size.quantity) : input.fallbackUnitPrice;
-    return {
-      sizeCode: row.size.sizeCode,
-      sizeNameUk: row.size.sizeNameUk,
-      quantity: row.size.quantity,
-      unitPrice,
-      lineTotal,
-    };
-  });
-
-  // Fix rounding drift on the last row so the table matches the proposal total.
   const drift =
     roundMoney(input.totalSellingValue) -
     roundMoney(allocated.reduce((sum, row) => sum + row.lineTotal, 0));
-  if (allocated.length > 0 && Math.abs(drift) >= 0.01) {
+  if (allocated.length > 0 && Math.abs(drift) >= 0.05) {
     const last = allocated[allocated.length - 1]!;
     last.lineTotal = roundMoney(last.lineTotal + drift);
     last.unitPrice =

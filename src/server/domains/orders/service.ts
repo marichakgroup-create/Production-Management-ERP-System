@@ -3037,10 +3037,10 @@ export async function saveProposal(input: {
 
       const calc = {
         ...costCalc,
-        sellingPricePerUnit: sellingPricePerUnit.toFixed(2),
-        totalSellingValue: totalSellingValue.toFixed(2),
-        marginPercent: marginPercent.toFixed(2),
-        profitAmount: profitAmount.toFixed(2),
+        sellingPricePerUnit: sellingPricePerUnit.toFixed(1),
+        totalSellingValue: totalSellingValue.toFixed(1),
+        marginPercent: marginPercent.toFixed(1),
+        profitAmount: profitAmount.toFixed(1),
       };
 
       const last = await tx.calculationVersion.findFirst({
@@ -3489,19 +3489,19 @@ export async function handOverToProduction(orderId: string, userId?: string) {
           ...costCalc,
           sellingPricePerUnit:
             approved.sellingPricePerUnit != null
-              ? Number(approved.sellingPricePerUnit).toFixed(2)
+              ? Number(approved.sellingPricePerUnit).toFixed(1)
               : (approvedSnap?.calc?.sellingPricePerUnit ?? costCalc.sellingPricePerUnit),
           totalSellingValue:
             approved.totalSellingValue != null
-              ? Number(approved.totalSellingValue).toFixed(2)
+              ? Number(approved.totalSellingValue).toFixed(1)
               : (approvedSnap?.calc?.totalSellingValue ?? costCalc.totalSellingValue),
           marginPercent:
             approved.marginPercent != null
-              ? Number(approved.marginPercent).toFixed(2)
+              ? Number(approved.marginPercent).toFixed(1)
               : (approvedSnap?.calc?.marginPercent ?? costCalc.marginPercent),
           profitAmount:
             approved.profitAmount != null
-              ? Number(approved.profitAmount).toFixed(2)
+              ? Number(approved.profitAmount).toFixed(1)
               : (approvedSnap?.calc?.profitAmount ?? costCalc.profitAmount),
         },
         pricing,

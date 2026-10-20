@@ -2,6 +2,7 @@ import {
   resolveCommercialPricePerUnit,
   type CommercialPriceTier,
 } from "@/lib/commercial-price";
+import { roundMoneyUah } from "@/lib/utils";
 
 export type OrderLineDecoration = {
   setupCost: number;
@@ -20,7 +21,7 @@ export type CommercialOrderLinePrice = {
 };
 
 function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
+  return roundMoneyUah(value);
 }
 
 /** Client price = price-list base + branding; discount optional on line total. */

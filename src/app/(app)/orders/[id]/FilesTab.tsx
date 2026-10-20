@@ -56,6 +56,8 @@ export function FilesTab({
   orderId,
   itemId,
   hasApprovedVersion,
+  quotationReady = false,
+  quotationFrozen = false,
   specificationLockedAt,
   artworkItems,
   files,
@@ -64,6 +66,10 @@ export function FilesTab({
   orderId: string;
   itemId?: string;
   hasApprovedVersion: boolean;
+  /** Live КП from current order (qty > 0). */
+  quotationReady?: boolean;
+  /** After handover — prices locked from approved proposal. */
+  quotationFrozen?: boolean;
   specificationLockedAt: string | null;
   needsArtwork?: boolean;
   artworkItems: OrderArtworkItem[];
@@ -71,6 +77,7 @@ export function FilesTab({
   locked?: boolean;
 }) {
   const itemQuery = itemId ? `?item=${itemId}` : "";
+  const kpReady = quotationReady || hasApprovedVersion || quotationFrozen;
 
   return (
     <div className="space-y-4">
@@ -87,14 +94,16 @@ export function FilesTab({
           icon={<IconQuote size={18} />}
           title="Комерційна пропозиція"
           description={
-            hasApprovedVersion
-              ? "З погодженої пропозиції"
-              : "Після погодження пропозиції"
+            quotationFrozen
+              ? "Зафіксовано при передачі у виробництво"
+              : kpReady
+                ? "За поточним складом і цінами замовлення"
+                : "З’явиться після вказання тиражу"
           }
-          status={hasApprovedVersion ? "Готово" : "Очікує"}
-          tone={hasApprovedVersion ? "success" : "warning"}
+          status={quotationFrozen ? "Зафіксовано" : kpReady ? "Актуально" : "Очікує"}
+          tone={quotationFrozen ? "success" : kpReady ? "success" : "warning"}
           href={`/orders/${orderId}/quotation`}
-          disabled={!hasApprovedVersion}
+          disabled={!kpReady}
         />
         <DocumentRow
           icon={<IconSpec size={18} />}
