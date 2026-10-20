@@ -346,9 +346,16 @@ export async function updateOrderSizesAction(formData: FormData) {
     const message = error instanceof Error ? error.message : "ERROR";
     return { ok: false as const, error: message };
   }
+  if (!orderId || !orderItemId) {
+    return { ok: false as const, error: "VALIDATION" as const };
+  }
+
   const sizeCodes = formData.getAll("sizeCode").map(String);
   const sizeNames = formData.getAll("sizeNameUk").map(String);
-  const sizeQtys = formData.getAll("sizeQty").map((v) => Number(v));
+  const sizeQtys = formData.getAll("sizeQty").map((value) => Number(value));
+  if (sizeCodes.length !== sizeNames.length || sizeCodes.length !== sizeQtys.length) {
+    return { ok: false as const, error: "VALIDATION" as const };
+  }
 
   try {
     await updateOrderItemSizes(
@@ -356,12 +363,19 @@ export async function updateOrderSizesAction(formData: FormData) {
       sizeCodes.map((code, i) => ({
         sizeCode: code,
         sizeNameUk: sizeNames[i] || code,
-        quantity: Number.isFinite(sizeQtys[i]) ? Math.max(0, sizeQtys[i]) : 0,
+        quantity: Number.isFinite(sizeQtys[i])
+          ? Math.max(0, Math.floor(sizeQtys[i]!))
+          : 0,
       })),
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "ERROR";
-    if (message === "ORDER_LOCKED" || message === "ORDER_ITEM_LOCKED") {
+    if (
+      message === "ORDER_LOCKED" ||
+      message === "ORDER_ITEM_LOCKED" ||
+      message === "FORBIDDEN" ||
+      message === "NOT_FOUND"
+    ) {
       return { ok: false as const, error: message };
     }
     console.error("[updateOrderSizesAction] failed:", error);

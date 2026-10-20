@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Field";
@@ -243,6 +243,7 @@ export function ConfigurationTab({
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     Object.fromEntries(editableSizes.map((size) => [size.sizeCode, size.quantity])),
   );
+  const [sizeSaveError, setSizeSaveError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{
     kind: "material" | "operation" | "decoration";
     id: string;
@@ -251,13 +252,37 @@ export function ConfigurationTab({
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [sizeScope, setSizeScope] = useState<SizeScope>(ALL_SIZES);
 
-  // Keep qty state in sync after apply/refresh — otherwise SizeRun shows zeros and a save wipes DB.
+  const dirty = editableSizes.some(
+    (size) => (quantities[size.sizeCode] ?? 0) !== size.quantity,
+  );
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  // Reset grid when switching line / catalog. Do NOT wipe while the user still has unsaved edits
+  // (refresh from other actions used to reset mid-edit and save zeros).
   useEffect(() => {
     setQuantities(
       Object.fromEntries(editableSizes.map((size) => [size.sizeCode, size.quantity])),
     );
     setSizeScope(ALL_SIZES);
-  }, [itemId, sizesSignature, catalogSignature]);
+    setSizeSaveError(null);
+  }, [itemId, catalogSignature]);
+
+  useEffect(() => {
+    if (dirtyRef.current) return;
+    setQuantities((prev) => {
+      const next = Object.fromEntries(
+        editableSizes.map((size) => [size.sizeCode, size.quantity]),
+      );
+      const keys = Object.keys(next);
+      const same =
+        keys.length === Object.keys(prev).length &&
+        keys.every((key) => prev[key] === next[key]);
+      return same ? prev : next;
+    });
+    // sizesSignature encodes catalog qty; editableSizes is derived from it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid reset loops on new array identity
+  }, [sizesSignature]);
 
   const isBusy = (key: string) => pending && busyKey === key;
 
@@ -273,9 +298,6 @@ export function ConfigurationTab({
     });
   }
 
-  const dirty = editableSizes.some(
-    (size) => (quantities[size.sizeCode] ?? 0) !== size.quantity,
-  );
   useOrderUnsavedWorkspaceDirty(!sizesLocked && dirty);
   const totalQuantity = editableSizes.reduce(
     (sum, size) => sum + (quantities[size.sizeCode] ?? 0),
@@ -357,26 +379,62 @@ export function ConfigurationTab({
     });
   }
 
-  function saveSizes() {
+  const saveSizes = useCallback(() => {
+    if (sizesLocked) return;
+    const snapshot = { ...quantities };
     const formData = new FormData();
     formData.set("orderId", orderId);
     formData.set("orderItemId", itemId);
     editableSizes.forEach((size) => {
       formData.append("sizeCode", size.sizeCode);
       formData.append("sizeNameUk", size.sizeNameUk);
-      formData.append("sizeQty", String(quantities[size.sizeCode] ?? 0));
+      formData.append(
+        "sizeQty",
+        String(Math.max(0, Math.floor(snapshot[size.sizeCode] ?? 0))),
+      );
     });
-    runBusy("sizes", async () => {
-      const result = await updateOrderSizesAction(formData);
-      if (result && "ok" in result && !result.ok) {
-        window.alert(
-          result.error === "FORBIDDEN" || result.error === "ORDER_LOCKED"
-            ? "Кількості зафіксовано — замовлення вже у виробництві."
-            : "Не вдалося зберегти кількості.",
-        );
+    setSizeSaveError(null);
+    setBusyKey("sizes");
+    startTransition(async () => {
+      try {
+        const result = await updateOrderSizesAction(formData);
+        if (result && "ok" in result && !result.ok) {
+          const message =
+            result.error === "FORBIDDEN" ||
+            result.error === "ORDER_LOCKED" ||
+            result.error === "ORDER_ITEM_LOCKED"
+              ? "Кількості зафіксовано — замовлення вже у виробництві."
+              : result.error === "VALIDATION"
+                ? "Некоректні дані розмірів — спробуйте ще раз."
+                : "Не вдалося зберегти кількості. Спробуйте ще раз.";
+          setSizeSaveError(message);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setSizeSaveError("Не вдалося зберегти кількості. Спробуйте ще раз.");
+      } finally {
+        setBusyKey(null);
       }
     });
-  }
+  }, [
+    sizesLocked,
+    quantities,
+    orderId,
+    itemId,
+    editableSizes,
+    startTransition,
+    router,
+  ]);
+
+  // Autosave tirage / size qty shortly after edits so the block always persists.
+  useEffect(() => {
+    if (sizesLocked || !dirty || isBusy("sizes")) return;
+    const timer = window.setTimeout(() => {
+      saveSizes();
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [quantities, dirty, sizesLocked, pending, busyKey, saveSizes]);
 
   function confirmRemove() {
     if (!removeTarget) return;
@@ -437,7 +495,12 @@ export function ConfigurationTab({
                     ) : null}
                   </p>
                   {!sizesLocked && dirty ? (
-                    <Button size="sm" onClick={saveSizes} disabled={pending} loading={isBusy("sizes")}>
+                    <Button
+                      size="sm"
+                      onClick={saveSizes}
+                      disabled={isBusy("sizes")}
+                      loading={isBusy("sizes")}
+                    >
                       Зберегти к-сть
                     </Button>
                   ) : null}
@@ -450,13 +513,19 @@ export function ConfigurationTab({
                   quantities={quantities}
                   disabled={sizesLocked || isBusy("sizes")}
                   quiet
-                  onChange={(code, quantity) =>
-                    setQuantities((prev) => ({ ...prev, [code]: quantity }))
-                  }
+                  onChange={(code, quantity) => {
+                    setSizeSaveError(null);
+                    setQuantities((prev) => ({
+                      ...prev,
+                      [code]: Math.max(0, Math.floor(quantity)),
+                    }));
+                  }}
                 />
-                {dirty && !sizesLocked ? (
+                {sizeSaveError ? (
+                  <p className="type-caption text-[var(--color-danger-text)]">{sizeSaveError}</p>
+                ) : dirty && !sizesLocked ? (
                   <p className="type-caption text-[var(--color-warning-text)]">
-                    К-сть змінено — збережіть, щоб перерахувати калькуляцію.
+                    Зберігаємо к-сть…
                   </p>
                 ) : null}
               </div>

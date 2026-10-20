@@ -73,10 +73,9 @@ export function SizeRun({
       autoComplete: "off",
       disabled,
       value: displayValue(size.code),
+      // Only onChange — onInput+onChange double-fired on some browsers and raced saves.
       onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
         handleInput(size.code, event.target.value),
-      onInput: (event: React.FormEvent<HTMLInputElement>) =>
-        handleInput(size.code, event.currentTarget.value),
     };
   }
 

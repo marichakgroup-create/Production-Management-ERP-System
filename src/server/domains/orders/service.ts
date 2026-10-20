@@ -2068,44 +2068,76 @@ export async function updateOrderItemSizes(
   const previousCodes = new Set(
     previous.filter((row) => row.quantity > 0 && isRealSizeCode(row.sizeCode)).map((row) => row.sizeCode),
   );
-  const nextPositive = sizes.filter(
-    (row) => row.quantity > 0 && isRealSizeCode(row.sizeCode.trim()),
-  );
-  const newCodes = nextPositive
-    .map((row) => row.sizeCode.trim())
-    .filter((code) => !previousCodes.has(code));
-  const totalQuantity = sizes.reduce((s, x) => s + x.quantity, 0);
 
+  // Deduplicate + floor to Int (schema quantity is Int — floats throw intermittently).
+  const byCode = new Map<string, { sizeCode: string; sizeNameUk: string; quantity: number }>();
+  for (const row of sizes) {
+    const sizeCode = String(row.sizeCode ?? "").trim();
+    if (!sizeCode || !isRealSizeCode(sizeCode)) continue;
+    const quantity = Number.isFinite(row.quantity)
+      ? Math.max(0, Math.floor(Number(row.quantity)))
+      : 0;
+    const prev = byCode.get(sizeCode);
+    if (prev) {
+      prev.quantity += quantity;
+      if (!prev.sizeNameUk && row.sizeNameUk) prev.sizeNameUk = String(row.sizeNameUk);
+    } else {
+      byCode.set(sizeCode, {
+        sizeCode,
+        sizeNameUk: String(row.sizeNameUk || sizeCode).trim() || sizeCode,
+        quantity,
+      });
+    }
+  }
+  const normalized = [...byCode.values()];
+  const nextPositive = normalized.filter((row) => row.quantity > 0);
+  const newCodes = nextPositive
+    .map((row) => row.sizeCode)
+    .filter((code) => !previousCodes.has(code));
+  const totalQuantity = normalized.reduce((sum, row) => sum + row.quantity, 0);
+
+  // Keep the write short: rate/fabric sync outside TX so size save is not lost on sync timeout.
   await prisma.$transaction(async (tx) => {
     await tx.orderItemSize.deleteMany({ where: { orderItemId } });
-    await tx.orderItemSize.createMany({
-      data: nextPositive.map((s) => ({
-        orderItemId,
-        sizeCode: s.sizeCode.trim(),
-        sizeNameUk: s.sizeNameUk,
-        quantity: s.quantity,
-      })),
-    });
+    if (nextPositive.length > 0) {
+      await tx.orderItemSize.createMany({
+        data: nextPositive.map((row) => ({
+          orderItemId,
+          sizeCode: row.sizeCode,
+          sizeNameUk: row.sizeNameUk,
+          quantity: row.quantity,
+        })),
+      });
+    }
     await tx.orderItem.update({
       where: { id: orderItemId },
       data: { totalQuantity },
     });
-    await syncCutRatesForOrderItem(orderItemId, totalQuantity, tx);
-    await syncDecorationFormatRatesForOrderItem(orderItemId, totalQuantity, tx);
-    await syncOrderItemFabricPricing(orderItemId, tx);
   });
+
+  try {
+    await syncCutRatesForOrderItem(orderItemId, totalQuantity);
+    await syncDecorationFormatRatesForOrderItem(orderItemId, totalQuantity);
+    await syncOrderItemFabricPricing(orderItemId);
+  } catch (error) {
+    console.error("[updateOrderItemSizes] post-save sync failed:", error);
+  }
 
   // Expand per-size BOM for newly introduced size codes (from an existing donor size).
   if (newCodes.length > 0) {
     const donor =
       [...previousCodes].find((code) => isRealSizeCode(code)) ??
-      nextPositive.find((row) => !newCodes.includes(row.sizeCode.trim()))?.sizeCode;
+      nextPositive.find((row) => !newCodes.includes(row.sizeCode))?.sizeCode;
     if (donor) {
-      await copyOrderItemSizeSpec({
-        orderItemId,
-        fromSizeCode: donor,
-        toSizeCodes: newCodes,
-      });
+      try {
+        await copyOrderItemSizeSpec({
+          orderItemId,
+          fromSizeCode: donor,
+          toSizeCodes: newCodes,
+        });
+      } catch (error) {
+        console.error("[updateOrderItemSizes] size-spec copy failed:", error);
+      }
     }
   }
 }
@@ -2223,10 +2255,15 @@ export async function applyOrderItemSizeBreakdown(
       where: { id: orderItemId },
       data: { totalQuantity: targetTirage },
     });
-    await syncCutRatesForOrderItem(orderItemId, targetTirage, tx);
-    await syncDecorationFormatRatesForOrderItem(orderItemId, targetTirage, tx);
-    await syncOrderItemFabricPricing(orderItemId, tx);
   });
+
+  try {
+    await syncCutRatesForOrderItem(orderItemId, targetTirage);
+    await syncDecorationFormatRatesForOrderItem(orderItemId, targetTirage);
+    await syncOrderItemFabricPricing(orderItemId);
+  } catch (error) {
+    console.error("[applyOrderItemSizeBreakdown] post-save sync failed:", error);
+  }
 
   return { targetTirage, sizes: nextSizes };
 }
