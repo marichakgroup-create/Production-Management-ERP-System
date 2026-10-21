@@ -240,9 +240,16 @@ export function ConfigurationTab({
     .map((size) => `${size.sizeCode}:${size.quantity}`)
     .join("|");
   const catalogSignature = preferredProductSizes.map((size) => size.code).join("|");
-  const [quantities, setQuantities] = useState<Record<string, number>>(() =>
-    Object.fromEntries(editableSizes.map((size) => [size.sizeCode, size.quantity])),
+  const serverQuantities = useMemo(
+    () => Object.fromEntries(editableSizes.map((size) => [size.sizeCode, size.quantity])),
+    // sizesSignature is the stable content key for editableSizes qty map
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sizesSignature],
   );
+  const [quantities, setQuantities] = useState<Record<string, number>>(() => serverQuantities);
+  /** After a successful save, treat this as clean until the user edits again (avoids autosave loop). */
+  const [committedQuantities, setCommittedQuantities] =
+    useState<Record<string, number> | null>(null);
   const [sizeSaveError, setSizeSaveError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{
     kind: "material" | "operation" | "decoration";
@@ -252,8 +259,9 @@ export function ConfigurationTab({
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [sizeScope, setSizeScope] = useState<SizeScope>(ALL_SIZES);
 
+  const baselineQuantities = committedQuantities ?? serverQuantities;
   const dirty = editableSizes.some(
-    (size) => (quantities[size.sizeCode] ?? 0) !== size.quantity,
+    (size) => (quantities[size.sizeCode] ?? 0) !== (baselineQuantities[size.sizeCode] ?? 0),
   );
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -261,28 +269,24 @@ export function ConfigurationTab({
   // Reset grid when switching line / catalog. Do NOT wipe while the user still has unsaved edits
   // (refresh from other actions used to reset mid-edit and save zeros).
   useEffect(() => {
-    setQuantities(
-      Object.fromEntries(editableSizes.map((size) => [size.sizeCode, size.quantity])),
-    );
+    setQuantities(serverQuantities);
+    setCommittedQuantities(null);
     setSizeScope(ALL_SIZES);
     setSizeSaveError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog/item switch only
   }, [itemId, catalogSignature]);
 
   useEffect(() => {
     if (dirtyRef.current) return;
+    setCommittedQuantities(null);
     setQuantities((prev) => {
-      const next = Object.fromEntries(
-        editableSizes.map((size) => [size.sizeCode, size.quantity]),
-      );
-      const keys = Object.keys(next);
+      const keys = Object.keys(serverQuantities);
       const same =
         keys.length === Object.keys(prev).length &&
-        keys.every((key) => prev[key] === next[key]);
-      return same ? prev : next;
+        keys.every((key) => prev[key] === serverQuantities[key]);
+      return same ? prev : serverQuantities;
     });
-    // sizesSignature encodes catalog qty; editableSizes is derived from it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid reset loops on new array identity
-  }, [sizesSignature]);
+  }, [sizesSignature, serverQuantities]);
 
   const isBusy = (key: string) => pending && busyKey === key;
 
@@ -381,17 +385,19 @@ export function ConfigurationTab({
 
   const saveSizes = useCallback(() => {
     if (sizesLocked) return;
-    const snapshot = { ...quantities };
+    const snapshot = Object.fromEntries(
+      editableSizes.map((size) => [
+        size.sizeCode,
+        Math.max(0, Math.floor(quantities[size.sizeCode] ?? 0)),
+      ]),
+    );
     const formData = new FormData();
     formData.set("orderId", orderId);
     formData.set("orderItemId", itemId);
     editableSizes.forEach((size) => {
       formData.append("sizeCode", size.sizeCode);
       formData.append("sizeNameUk", size.sizeNameUk);
-      formData.append(
-        "sizeQty",
-        String(Math.max(0, Math.floor(snapshot[size.sizeCode] ?? 0))),
-      );
+      formData.append("sizeQty", String(snapshot[size.sizeCode] ?? 0));
     });
     setSizeSaveError(null);
     setBusyKey("sizes");
@@ -410,6 +416,9 @@ export function ConfigurationTab({
           setSizeSaveError(message);
           return;
         }
+        // Mark clean immediately so autosave does not re-fire while refresh is in flight.
+        setCommittedQuantities(snapshot);
+        setQuantities(snapshot);
         router.refresh();
       } catch {
         setSizeSaveError("Не вдалося зберегти кількості. Спробуйте ще раз.");
@@ -417,24 +426,16 @@ export function ConfigurationTab({
         setBusyKey(null);
       }
     });
-  }, [
-    sizesLocked,
-    quantities,
-    orderId,
-    itemId,
-    editableSizes,
-    startTransition,
-    router,
-  ]);
+  }, [sizesLocked, quantities, orderId, itemId, editableSizes, startTransition, router]);
 
-  // Autosave tirage / size qty shortly after edits so the block always persists.
+  // Autosave once per dirty edit burst — stopped by committedQuantities after success.
   useEffect(() => {
-    if (sizesLocked || !dirty || isBusy("sizes")) return;
+    if (sizesLocked || !dirty || busyKey === "sizes") return;
     const timer = window.setTimeout(() => {
       saveSizes();
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [quantities, dirty, sizesLocked, pending, busyKey, saveSizes]);
+  }, [quantities, dirty, sizesLocked, busyKey, saveSizes]);
 
   function confirmRemove() {
     if (!removeTarget) return;
