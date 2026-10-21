@@ -428,15 +428,6 @@ export function ConfigurationTab({
     });
   }, [sizesLocked, quantities, orderId, itemId, editableSizes, startTransition, router]);
 
-  // Autosave once per dirty edit burst — stopped by committedQuantities after success.
-  useEffect(() => {
-    if (sizesLocked || !dirty || busyKey === "sizes") return;
-    const timer = window.setTimeout(() => {
-      saveSizes();
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, [quantities, dirty, sizesLocked, busyKey, saveSizes]);
-
   function confirmRemove() {
     if (!removeTarget) return;
     const formData = new FormData();
@@ -526,7 +517,7 @@ export function ConfigurationTab({
                   <p className="type-caption text-[var(--color-danger-text)]">{sizeSaveError}</p>
                 ) : dirty && !sizesLocked ? (
                   <p className="type-caption text-[var(--color-warning-text)]">
-                    Зберігаємо к-сть…
+                    К-сть змінено — натисніть «Зберегти к-сть».
                   </p>
                 ) : null}
               </div>
