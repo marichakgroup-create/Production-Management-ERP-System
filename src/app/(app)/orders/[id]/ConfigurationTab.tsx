@@ -35,7 +35,6 @@ import { materialOptionDescription } from "@/lib/material-catalog-options";
 import {
   addOrderMaterialAction,
   addOrderOperationAction,
-  copyOrderSizeSpecAction,
   removeOrderDecorationAction,
   removeOrderMaterialAction,
   removeOrderOperationAction,
@@ -44,20 +43,12 @@ import {
   updateOrderMaterialTermsAction,
   updateOrderSizesAction,
 } from "@/server/domains/orders/actions";
-import { CopySizeSpec, SizeScopeTabs } from "@/components/catalog/SizeScopeTabs";
-import { SizeBomScopeHint } from "@/components/catalog/SizeBomScopeHint";
 import {
   effectiveOversizeConsumption,
   isOversizeCode,
-  OVERSIZE_DEFAULT_COEFFS,
   OVERSIZE_RANGE_LABEL,
 } from "@/lib/size-coeffs";
-import {
-  ALL_SIZES,
-  customizedSizeCodes,
-  linesForSize,
-  type SizeScope,
-} from "@/lib/size-bom";
+import { ALL_SIZES } from "@/lib/size-bom";
 import { operationMethodLabel } from "@/lib/operation-labels";
 import { OrderFixedCostError } from "@/components/orders/OrderSewerCountControl";
 import { OrderDecorationFormatPicker } from "@/components/orders/OrderDecorationFormatPicker";
@@ -257,7 +248,6 @@ export function ConfigurationTab({
     name: string;
   } | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
-  const [sizeScope, setSizeScope] = useState<SizeScope>(ALL_SIZES);
 
   const baselineQuantities = committedQuantities ?? serverQuantities;
   const dirty = editableSizes.some(
@@ -271,7 +261,6 @@ export function ConfigurationTab({
   useEffect(() => {
     setQuantities(serverQuantities);
     setCommittedQuantities(null);
-    setSizeScope(ALL_SIZES);
     setSizeSaveError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog/item switch only
   }, [itemId, catalogSignature]);
@@ -309,25 +298,7 @@ export function ConfigurationTab({
   );
   const decorationSetupTotal = decorations.reduce((sum, row) => sum + row.setupCost, 0);
   const decorationUnitRateTotal = decorations.reduce((sum, row) => sum + row.unitRate, 0);
-  const sizeRefs = editableSizes.map((size) => ({
-    code: size.sizeCode,
-    nameUk: size.sizeNameUk,
-  }));
-  const visibleMaterials =
-    sizeScope === ALL_SIZES ? materials : linesForSize(materials, sizeScope);
-  const visibleOperations =
-    sizeScope === ALL_SIZES ? operations : linesForSize(operations, sizeScope);
-  const customized = customizedSizeCodes({
-    allCodes: editableSizes.map((size) => size.sizeCode),
-    materials: materials.map((row) => ({
-      sizeCodes: row.sizeCode ? [row.sizeCode] : null,
-    })),
-    operations: operations.map((row) => ({
-      sizeCodes: row.sizeCode ? [row.sizeCode] : null,
-    })),
-  });
-  const hasOversizeSizes = editableSizes.some((size) => isOversizeCode(size.sizeCode));
-  const scopeIsOversize = isOversizeCode(sizeScope);
+  /** Order BOM is always the full shared list — per-size norms live on the product card. */
   const hasOversizeQty = editableSizes.some(
     (size) => isOversizeCode(size.sizeCode) && (quantities[size.sizeCode] ?? 0) > 0,
   );
@@ -345,7 +316,7 @@ export function ConfigurationTab({
     formData.set("orderId", orderId);
     formData.set("id", id);
     formData.set("consumptionPerUnit", String(consumption));
-    formData.set("sizeCode", sizeScope);
+    formData.set("sizeCode", ALL_SIZES);
     runBusy(`material:${id}`, async () => {
       await updateOrderMaterialConsumptionAction(formData);
     });
@@ -369,17 +340,6 @@ export function ConfigurationTab({
     formData.set("unitRate", String(unitRate));
     runBusy(`decoration:${id}`, async () => {
       await updateOrderDecorationAction(formData);
-    });
-  }
-
-  function copySpecTo(toCodes: string[]) {
-    const formData = new FormData();
-    formData.set("orderId", orderId);
-    formData.set("orderItemId", itemId);
-    formData.set("fromSizeCode", sizeScope);
-    for (const code of toCodes) formData.append("toSizeCode", code);
-    runBusy("sizes-copy", async () => {
-      await copyOrderSizeSpecAction(formData);
     });
   }
 
@@ -433,7 +393,7 @@ export function ConfigurationTab({
     const formData = new FormData();
     formData.set("orderId", orderId);
     formData.set("id", removeTarget.id);
-    formData.set("sizeCode", sizeScope);
+    formData.set("sizeCode", ALL_SIZES);
     const action =
       removeTarget.kind === "material"
         ? removeOrderMaterialAction
@@ -526,32 +486,12 @@ export function ConfigurationTab({
         )}
       </SoftBusy>
 
-      <div className="flex flex-wrap items-center gap-2 px-0.5">
-        <SizeScopeTabs
-          sizes={sizeRefs}
-          value={sizeScope}
-          onChange={setSizeScope}
-          customized={customized}
-        />
-        {sizes.length > 1 && sizeScope !== ALL_SIZES ? (
-          <SizeBomScopeHint
-            sizeScope={sizeScope}
-            hasOversizeSizes={hasOversizeSizes}
-            compact
-            hideUpliftPercents={hideCosts}
-          />
-        ) : null}
-        {sizeScope !== ALL_SIZES && !locked ? (
-          <CopySizeSpec from={sizeScope} sizes={sizeRefs} onCopy={copySpecTo} disabled={pending} />
-        ) : null}
-      </div>
-
       <TableCard>
         <TableToolbar
           left={
             <span className="type-subsection">
               Матеріали
-              <span className="type-caption ml-1.5 font-normal">{visibleMaterials.length}</span>
+              <span className="type-caption ml-1.5 font-normal">{materials.length}</span>
             </span>
           }
         />
@@ -564,21 +504,18 @@ export function ConfigurationTab({
             {!hideCosts ? <TH align="right">Собівартість / од.</TH> : null}
           </THead>
           <TBody>
-            {visibleMaterials.length === 0 ? (
+            {materials.length === 0 ? (
               <TableEmpty
                 colSpan={hideCosts ? 2 : 5}
                 icon={<IconMaterials size={20} />}
-                title={sizeScope === ALL_SIZES ? "Матеріалів ще немає" : `Немає для ${sizeScope}`}
+                title="Матеріалів ще немає"
                 description="Додайте рядок знизу — як у картці виробу."
               />
             ) : (
-              visibleMaterials.map((row) => {
-                const baseUnitCost = row.unitCost;
-                const displayUnitCost = scopeIsOversize
-                  ? baseUnitCost * OVERSIZE_DEFAULT_COEFFS.materialCoeff
-                  : baseUnitCost;
+              materials.map((row) => {
+                const displayUnitCost = row.unitCost;
                 const oversizeNorm =
-                  !hideCosts && (hasOversizeSizes || scopeIsOversize)
+                  !hideCosts && hasOversizeQty
                     ? effectiveOversizeConsumption(row.consumption)
                     : null;
                 const showSupplierColor =
@@ -764,7 +701,6 @@ export function ConfigurationTab({
             itemId={itemId}
             materials={materialOptions}
             units={unitOptions}
-            sizeCode={sizeScope}
             hideCosts={hideCosts}
             canCreateCatalog={canCreateCatalog}
           />
@@ -776,7 +712,7 @@ export function ConfigurationTab({
           left={
             <span className="type-subsection">
               Операції
-              <span className="type-caption ml-1.5 font-normal">{visibleOperations.length}</span>
+              <span className="type-caption ml-1.5 font-normal">{operations.length}</span>
             </span>
           }
         />
@@ -788,15 +724,15 @@ export function ConfigurationTab({
             {!locked ? <TH width="40px" /> : null}
           </THead>
           <TBody>
-            {visibleOperations.length === 0 ? (
+            {operations.length === 0 ? (
               <TableEmpty
                 colSpan={(hideCosts ? 2 : 3) + (locked ? 0 : 1)}
                 icon={<IconOperations size={20} />}
-                title={sizeScope === ALL_SIZES ? "Порожньо" : `Немає для ${sizeScope}`}
+                title="Порожньо"
                 description="Додайте рядок знизу."
               />
             ) : (
-              visibleOperations.map((row) => {
+              operations.map((row) => {
                 const rowBusy = isBusy(`operation:${row.id}`);
                 return (
                   <TR key={row.id} className={busyRowClass(rowBusy)} aria-busy={rowBusy || undefined}>
@@ -865,7 +801,6 @@ export function ConfigurationTab({
             orderId={orderId}
             itemId={itemId}
             operations={operationOptions}
-            sizeCode={sizeScope}
             canCreateCatalog={canCreateCatalog}
           />
         ) : null}
@@ -1144,7 +1079,6 @@ function InlineAddOrderMaterial({
   itemId,
   materials,
   units,
-  sizeCode,
   hideCosts = false,
   canCreateCatalog = false,
 }: {
@@ -1158,7 +1092,6 @@ function InlineAddOrderMaterial({
     supplierNames?: string[];
   }>;
   units: Array<{ id: string; label: string }>;
-  sizeCode: string;
   hideCosts?: boolean;
   canCreateCatalog?: boolean;
 }) {
@@ -1176,7 +1109,7 @@ function InlineAddOrderMaterial({
     formData.set("materialId", nextMaterialId);
     formData.set("consumptionPerUnit", consumption || "1");
     formData.set("wastePercent", hideCosts ? "" : waste);
-    formData.set("sizeCode", sizeCode);
+    formData.set("sizeCode", ALL_SIZES);
     startTransition(async () => {
       await addOrderMaterialAction(formData);
       setMaterialId("");
@@ -1268,13 +1201,11 @@ function InlineAddOrderOperation({
   orderId,
   itemId,
   operations,
-  sizeCode,
   canCreateCatalog = false,
 }: {
   orderId: string;
   itemId: string;
   operations: Array<{ id: string; label: string }>;
-  sizeCode: string;
   canCreateCatalog?: boolean;
 }) {
   const router = useRouter();
@@ -1287,7 +1218,7 @@ function InlineAddOrderOperation({
     formData.set("orderId", orderId);
     formData.set("orderItemId", itemId);
     formData.set("operationId", nextId);
-    formData.set("sizeCode", sizeCode);
+    formData.set("sizeCode", ALL_SIZES);
     startTransition(async () => {
       await addOrderOperationAction(formData);
       setOperationId("");
