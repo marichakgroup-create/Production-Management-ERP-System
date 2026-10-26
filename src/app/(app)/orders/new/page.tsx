@@ -56,6 +56,14 @@ export default async function NewOrderPage({
           contactPerson: client.contactPerson,
           phone: client.phone,
           email: client.email,
+          contacts: client.contacts.map((person) => ({
+            id: person.id,
+            nameUk: person.nameUk,
+            roleUk: person.roleUk,
+            phone: person.phone,
+            email: person.email,
+            isPrimary: person.isPrimary,
+          })),
         }))}
         sizeOptions={sizes.map((size) => ({
           id: size.id,

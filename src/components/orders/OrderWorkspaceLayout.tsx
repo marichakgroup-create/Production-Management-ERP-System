@@ -101,7 +101,9 @@ export function OrderHeaderFacts({
               {fact.value}
             </dd>
             {fact.hint ? (
-              <dd className="type-caption mt-0.5 truncate">{fact.hint}</dd>
+              <dd className="type-caption mt-0.5 truncate text-[var(--color-text-quiet)]">
+                {fact.hint}
+              </dd>
             ) : null}
           </div>
         ))}

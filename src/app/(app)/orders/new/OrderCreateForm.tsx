@@ -40,12 +40,22 @@ import { IconClients } from "@/components/ui/Icons";
 import { UnsavedChangesDialog } from "@/components/ui/UnsavedChangesDialog";
 import { useUnsavedCloseGuard } from "@/hooks/useUnsavedCloseGuard";
 
+type ClientContactOption = {
+  id: string;
+  nameUk: string;
+  roleUk?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  isPrimary?: boolean;
+};
+
 type ClientOption = {
   id: string;
   label: string;
   contactPerson?: string | null;
   phone?: string | null;
   email?: string | null;
+  contacts?: ClientContactOption[];
 };
 type SizeOption = { id: string; label: string; code?: string; variantId?: string };
 
@@ -116,6 +126,7 @@ export function OrderCreateForm({
   const [operationCatalog, setOperationCatalog] = useState(initialOperationCatalog);
   const [decorationCatalog, setDecorationCatalog] = useState(initialDecorationCatalog);
   const [clientId, setClientId] = useState(initialClientId || "");
+  const [clientContactId, setClientContactId] = useState("");
   const [deadline, setDeadline] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [stagingProductId, setStagingProductId] = useState(initialProductId || "");
@@ -143,6 +154,28 @@ export function OrderCreateForm({
     [products, stagingProductId],
   );
   const selectedClient = clients.find((client) => client.id === clientId);
+  const clientPeople = selectedClient?.contacts ?? [];
+  const selectedContact =
+    clientPeople.find((person) => person.id === clientContactId) ??
+    clientPeople.find((person) => person.isPrimary) ??
+    clientPeople[0] ??
+    null;
+
+  useEffect(() => {
+    if (!selectedClient) {
+      setClientContactId("");
+      return;
+    }
+    const people = selectedClient.contacts ?? [];
+    if (people.length === 0) {
+      setClientContactId("");
+      return;
+    }
+    setClientContactId((prev) => {
+      if (prev && people.some((person) => person.id === prev)) return prev;
+      return people.find((person) => person.isPrimary)?.id ?? people[0]?.id ?? "";
+    });
+  }, [selectedClient]);
 
   const stagingSizes = stagingProduct?.sizes.length
     ? stagingProduct.sizes
@@ -473,12 +506,17 @@ export function OrderCreateForm({
                           contactPerson: client.contactPerson ?? null,
                           phone: client.phone ?? null,
                           email: client.email ?? null,
+                          contacts: client.contacts ?? [],
                         };
                         return prev.some((row) => row.id === client.id)
                           ? prev.map((row) => (row.id === client.id ? next : row))
                           : [...prev, next];
                       });
                       setClientId(client.id);
+                      const primary =
+                        client.contacts?.find((person) => person.isPrimary) ??
+                        client.contacts?.[0];
+                      setClientContactId(primary?.id ?? "");
                     }}
                   />
                 }
@@ -500,37 +538,83 @@ export function OrderCreateForm({
               </FormGroup>
 
               {selectedClient ? (
-                <div className="rounded-[10px] border border-[var(--color-divider)] bg-[var(--color-bg)]/40 px-3.5 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
-                    Дані клієнта
-                  </p>
-                  <p className="mt-1 text-[14px] font-semibold text-[var(--color-text-primary)]">
-                    {selectedClient.label}
-                  </p>
-                  <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-3">
-                    <div className="min-w-0">
-                      <dt className="type-caption">Контакт</dt>
-                      <dd className="truncate text-[13px] text-[var(--color-text-secondary)]">
-                        {selectedClient.contactPerson?.trim() || "—"}
-                      </dd>
+                <div className="space-y-3 rounded-[10px] border border-[var(--color-divider)] bg-[var(--color-bg)]/40 px-3.5 py-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
+                      Компанія
+                    </p>
+                    <p className="mt-1 text-[14px] font-semibold text-[var(--color-text-primary)]">
+                      {selectedClient.label}
+                    </p>
+                  </div>
+
+                  {clientPeople.length > 0 ? (
+                    <Select
+                      name="clientContactId"
+                      label="Контактна особа"
+                      value={clientContactId}
+                      onChange={(event) => setClientContactId(event.target.value)}
+                    >
+                      {clientPeople.map((person) => (
+                        <option
+                          key={person.id}
+                          value={person.id}
+                          data-description={
+                            [
+                              person.roleUk?.trim() || null,
+                              person.isPrimary ? "основний" : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || undefined
+                          }
+                        >
+                          {person.nameUk}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <>
+                      <input type="hidden" name="clientContactId" value="" />
+                      <p className="type-caption">
+                        У клієнта ще немає контактних осіб — додайте їх у картці контактів.
+                      </p>
+                    </>
+                  )}
+
+                  {selectedContact ? (
+                    <div className="rounded-[8px] border border-[var(--color-divider)] bg-[var(--color-surface)]/60 px-3 py-2">
+                      <p className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">
+                        {selectedContact.nameUk}
+                      </p>
+                      {selectedContact.roleUk?.trim() ? (
+                        <p className="type-caption mt-0.5 truncate text-[var(--color-text-quiet)]">
+                          {selectedContact.roleUk.trim()}
+                        </p>
+                      ) : null}
+                      <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                        <div className="min-w-0">
+                          <dt className="type-caption">Телефон</dt>
+                          <dd className="truncate text-[13px] text-[var(--color-text-secondary)]">
+                            {selectedContact.phone?.trim() ||
+                              selectedClient.phone?.trim() ||
+                              "—"}
+                          </dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="type-caption">Email</dt>
+                          <dd className="truncate text-[13px] text-[var(--color-text-secondary)]">
+                            {selectedContact.email?.trim() ||
+                              selectedClient.email?.trim() ||
+                              "—"}
+                          </dd>
+                        </div>
+                      </dl>
                     </div>
-                    <div className="min-w-0">
-                      <dt className="type-caption">Телефон</dt>
-                      <dd className="truncate text-[13px] text-[var(--color-text-secondary)]">
-                        {selectedClient.phone?.trim() || "—"}
-                      </dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="type-caption">Email</dt>
-                      <dd className="truncate text-[13px] text-[var(--color-text-secondary)]">
-                        {selectedClient.email?.trim() || "—"}
-                      </dd>
-                    </div>
-                  </dl>
+                  ) : null}
                 </div>
               ) : (
                 <p className="type-caption">
-                  Після вибору або створення клієнта тут зʼявляться контактні дані.
+                  Після вибору або створення клієнта тут зʼявляться контактні особи.
                 </p>
               )}
 
@@ -556,6 +640,7 @@ export function OrderCreateForm({
                 editing={Boolean(editingKey)}
                 inList={Boolean(editingKey) && !stagingDirty}
                 confirmLabel={confirmLabel}
+                tirageDock="fixed"
                 materialOptions={materialCatalog}
                 operationOptions={operationCatalog}
                 decorationOptions={decorationCatalog}

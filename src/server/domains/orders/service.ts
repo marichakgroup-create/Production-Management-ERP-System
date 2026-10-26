@@ -437,7 +437,14 @@ export async function getOrder(id: string) {
   return prisma.order.findUnique({
     where: { id },
     include: {
-      client: true,
+      client: {
+        include: {
+          contacts: {
+            orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+          },
+        },
+      },
+      clientContact: true,
       manager: { select: { id: true, name: true, email: true } },
       items: {
         orderBy: { createdAt: "asc" },
@@ -735,6 +742,7 @@ export async function createOrderWithProduct(input: {
 
 export async function createOrderWithProducts(input: {
   clientId: string;
+  clientContactId?: string | null;
   managerId: string;
   title?: string | null;
   deadline?: Date | null;
@@ -782,6 +790,22 @@ export async function createOrderWithProducts(input: {
     assertProductOrderable(product);
   }
 
+  let resolvedContactId: string | null = input.clientContactId?.trim() || null;
+  if (resolvedContactId) {
+    const contact = await prisma.clientContact.findFirst({
+      where: { id: resolvedContactId, clientId: input.clientId },
+      select: { id: true },
+    });
+    if (!contact) throw new Error("CLIENT_CONTACT_INVALID");
+  } else {
+    const primary = await prisma.clientContact.findFirst({
+      where: { clientId: input.clientId },
+      orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+      select: { id: true },
+    });
+    resolvedContactId = primary?.id ?? null;
+  }
+
   const [fabricGlobals, pricingDefaults] = await Promise.all([
     getFabricPricingGlobals(),
     getPricingDefaults(),
@@ -797,6 +821,7 @@ export async function createOrderWithProducts(input: {
       data: {
         number,
         clientId: input.clientId,
+        clientContactId: resolvedContactId,
         managerId: input.managerId,
         title: input.title || primaryName,
         status: "DRAFT",
@@ -3684,6 +3709,7 @@ export async function duplicateOrder(input: { orderId: string; userId: string })
       data: {
         number,
         clientId: source.clientId,
+        clientContactId: source.clientContactId,
         managerId: input.userId,
         title: source.title,
         status: "DRAFT",

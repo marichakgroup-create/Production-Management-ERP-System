@@ -73,7 +73,7 @@ export function isCutOperationName(nameUk: string | null | undefined) {
 }
 
 export const CUT_OPERATION_METHOD_LABEL = "Крій за тиражем";
-export const CUT_RATES_TAB_HINT = "Налаштування — вкладка «Прайс і крій»";
+export const CUT_RATES_TAB_HINT = "Налаштування — вкладка «Крій»";
 
 /** How to show «Розкрій» in BOM tables — rate comes from cut tiers, not catalog baseRate. */
 export function summarizeCutOperationDisplay(args: {

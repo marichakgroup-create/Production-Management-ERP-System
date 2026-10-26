@@ -21,6 +21,14 @@ export function ClientCreatePanel({
     contactPerson?: string | null;
     phone?: string | null;
     email?: string | null;
+    contacts?: Array<{
+      id: string;
+      nameUk: string;
+      roleUk?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      isPrimary?: boolean;
+    }>;
   }) => void;
   triggerLabel?: string;
   variant?: "primary" | "secondary" | "ghost";
@@ -43,6 +51,16 @@ export function ClientCreatePanel({
           contactPerson: result.contactPerson != null ? String(result.contactPerson) : null,
           phone: result.phone != null ? String(result.phone) : null,
           email: result.email != null ? String(result.email) : null,
+          contacts: Array.isArray(result.contacts)
+            ? (result.contacts as Array<Record<string, unknown>>).map((person) => ({
+                id: String(person.id ?? ""),
+                nameUk: String(person.nameUk ?? ""),
+                roleUk: person.roleUk != null ? String(person.roleUk) : null,
+                phone: person.phone != null ? String(person.phone) : null,
+                email: person.email != null ? String(person.email) : null,
+                isPrimary: Boolean(person.isPrimary),
+              }))
+            : [],
         })
       }
     >
@@ -50,10 +68,11 @@ export function ClientCreatePanel({
         <Input name="companyName" label="Назва компанії / ПІБ" required autoFocus />
       </FormGroup>
 
-      <FormGroup label="Контакти" columns={2}>
-        <Input name="contactPerson" label="Контактна особа" />
-        <Input name="phone" label="Телефон" type="tel" placeholder="+380" />
-        <Input name="email" label="Email" type="email" />
+      <FormGroup label="Компанія / перша особа" columns={2}>
+        <Input name="contactPerson" label="Контактна особа" placeholder="Стане основним контактом" />
+        <Input name="contactRoleUk" label="Посада" placeholder="Менеджер…" />
+        <Input name="phone" label="Телефон компанії" type="tel" placeholder="+380" />
+        <Input name="email" label="Email компанії" type="email" />
         <Input name="website" label="Сайт" placeholder="https://" />
       </FormGroup>
 

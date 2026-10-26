@@ -14,6 +14,7 @@ export async function createClientAction(formData: FormData) {
   const parsed = clientFormSchema.safeParse({
     companyName: formData.get("companyName"),
     contactPerson: formData.get("contactPerson") || null,
+    contactRoleUk: formData.get("contactRoleUk") || null,
     phone: formData.get("phone") || null,
     email: formData.get("email") || null,
     website: formData.get("website") || null,
@@ -35,6 +36,14 @@ export async function createClientAction(formData: FormData) {
     contactPerson: client.contactPerson,
     phone: client.phone,
     email: client.email,
+    contacts: client.contacts.map((person) => ({
+      id: person.id,
+      nameUk: person.nameUk,
+      roleUk: person.roleUk,
+      phone: person.phone,
+      email: person.email,
+      isPrimary: person.isPrimary,
+    })),
   };
 }
 
@@ -49,6 +58,7 @@ export async function updateClientAction(formData: FormData) {
   const parsed = clientFormSchema.safeParse({
     companyName: formData.get("companyName"),
     contactPerson: formData.get("contactPerson") || null,
+    contactRoleUk: formData.get("contactRoleUk") || null,
     phone: formData.get("phone") || null,
     email: formData.get("email") || null,
     website: formData.get("website") || null,

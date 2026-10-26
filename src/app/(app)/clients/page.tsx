@@ -32,19 +32,32 @@ export default async function ContactsPage({
 
   const filteredClients = clients.filter((client) => {
     if (!term) return true;
-    return [client.companyName, client.contactPerson, client.phone, client.email]
+    const personHits = client.contacts.flatMap((person) => [
+      person.nameUk,
+      person.roleUk,
+      person.phone,
+      person.email,
+    ]);
+    return [client.companyName, client.contactPerson, client.phone, client.email, ...personHits]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(term));
   });
 
   const filteredSuppliers = suppliers.filter((supplier) => {
     if (!term) return true;
+    const personHits = supplier.contacts.flatMap((person) => [
+      person.nameUk,
+      person.roleUk,
+      person.phone,
+      person.email,
+    ]);
     return [
       supplier.nameUk,
       supplier.contactPerson,
       supplier.phone,
       supplier.email,
       supplier.note,
+      ...personHits,
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(term));
@@ -122,6 +135,14 @@ export default async function ContactsPage({
               website: row.website,
               note: row.note,
               materialsCount: row._count.materialOffers,
+              contacts: row.contacts.map((person) => ({
+                id: person.id,
+                nameUk: person.nameUk,
+                roleUk: person.roleUk,
+                phone: person.phone,
+                email: person.email,
+                isPrimary: person.isPrimary,
+              })),
             }))}
           />
         )
@@ -147,6 +168,14 @@ export default async function ContactsPage({
             legalDetails: row.legalDetails,
             note: row.note,
             ordersCount: row._count.orders,
+            contacts: row.contacts.map((person) => ({
+              id: person.id,
+              nameUk: person.nameUk,
+              roleUk: person.roleUk,
+              phone: person.phone,
+              email: person.email,
+              isPrimary: person.isPrimary,
+            })),
           }))}
         />
       )}

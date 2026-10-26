@@ -1,6 +1,10 @@
 "use client";
 
 import { ContactCard, ContactCardsGrid, type ContactField } from "@/components/contacts/ContactCard";
+import {
+  PartyPeopleEditor,
+  type PartyPersonRow,
+} from "@/components/contacts/PartyPeopleEditor";
 import { updateClientAction } from "@/server/domains/clients/actions";
 
 export type ClientCardRow = {
@@ -13,6 +17,7 @@ export type ClientCardRow = {
   legalDetails: string | null;
   note: string | null;
   ordersCount: number;
+  contacts: PartyPersonRow[];
 };
 
 export function ClientContactCards({
@@ -28,17 +33,16 @@ export function ClientContactCards({
     <ContactCardsGrid>
       {rows.map((row) => {
         const fields: ContactField[] = [
-          { key: "contactPerson", label: "Контакт", value: row.contactPerson ?? "" },
           {
             key: "phone",
-            label: "Телефон",
+            label: "Телефон компанії",
             value: row.phone ?? "",
             kind: "tel",
             placeholder: "+380",
           },
           {
             key: "email",
-            label: "Email",
+            label: "Email компанії",
             value: row.email ?? "",
             kind: "email",
           },
@@ -67,12 +71,22 @@ export function ClientContactCards({
             meta={`${row.ordersCount} зам.`}
             disabled={!canEdit}
             fields={fields}
+            below={
+              <PartyPeopleEditor
+                kind="client"
+                partyId={row.id}
+                people={row.contacts}
+                canEdit={canEdit}
+                dense
+              />
+            }
             onSave={async (values) => {
               const formData = new FormData();
               formData.set("id", row.id);
               for (const [key, value] of Object.entries(values)) {
                 formData.set(key, value);
               }
+              formData.set("contactPerson", row.contactPerson ?? "");
               formData.set("legalDetails", row.legalDetails ?? "");
               const result = await updateClientAction(formData);
               return { ok: result.ok, error: result.ok ? undefined : result.error };

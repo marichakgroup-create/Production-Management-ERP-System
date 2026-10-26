@@ -37,6 +37,7 @@ export function ContactCard({
   href,
   detailLabel = "Детальніше",
   fields,
+  below,
   disabled,
   onSave,
 }: {
@@ -47,6 +48,8 @@ export function ContactCard({
   href?: string;
   detailLabel?: string;
   fields: ContactField[];
+  /** Nested block under company fields (e.g. contact people). */
+  below?: React.ReactNode;
   disabled?: boolean;
   onSave: (values: Record<string, string>) => Promise<{ ok: boolean; error?: string }>;
 }) {
@@ -163,38 +166,43 @@ export function ContactCard({
           ) : null}
         </header>
 
-        <div className="grid flex-1 grid-cols-2 gap-x-2 gap-y-2 px-3 py-2.5">
-          {fields.map((field) => (
-            <label
-              key={field.key}
-              className={cn("flex min-w-0 flex-col gap-0.5", field.wide && "col-span-2")}
-            >
-              <span className="type-label">
-                {field.label}
-                {field.required ? (
-                  <span className="ml-0.5 text-[var(--color-danger-text)]">*</span>
-                ) : null}
-              </span>
-              <input
-                type={
-                  field.kind === "number"
-                    ? "number"
-                    : field.kind === "url"
-                      ? "url"
-                      : field.kind ?? "text"
-                }
-                disabled={disabled || pending}
-                className={controlCompact}
-                value={draft[field.key] ?? ""}
-                placeholder={field.placeholder}
-                required={field.required}
-                step={field.kind === "number" ? "any" : undefined}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, [field.key]: event.target.value }))
-                }
-              />
-            </label>
-          ))}
+        <div className="flex flex-1 flex-col">
+          <div className="grid grid-cols-2 gap-x-2 gap-y-2 px-3 py-2.5">
+            {fields.map((field) => (
+              <label
+                key={field.key}
+                className={cn("flex min-w-0 flex-col gap-0.5", field.wide && "col-span-2")}
+              >
+                <span className="type-label">
+                  {field.label}
+                  {field.required ? (
+                    <span className="ml-0.5 text-[var(--color-danger-text)]">*</span>
+                  ) : null}
+                </span>
+                <input
+                  type={
+                    field.kind === "number"
+                      ? "number"
+                      : field.kind === "url"
+                        ? "url"
+                        : field.kind ?? "text"
+                  }
+                  disabled={disabled || pending}
+                  className={controlCompact}
+                  value={draft[field.key] ?? ""}
+                  placeholder={field.placeholder}
+                  required={field.required}
+                  step={field.kind === "number" ? "any" : undefined}
+                  onChange={(event) =>
+                    setDraft((prev) => ({ ...prev, [field.key]: event.target.value }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          {below ? (
+            <div className="border-t border-[var(--color-divider)] px-3 pb-2.5">{below}</div>
+          ) : null}
         </div>
 
         {(error || dirty) && !disabled ? (

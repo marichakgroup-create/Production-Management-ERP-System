@@ -16,7 +16,8 @@ import {
   THead,
   TR,
 } from "@/components/ui/Table";
-import { IconGrip, IconTrash } from "@/components/ui/Icons";
+import { IconGrip } from "@/components/ui/Icons";
+import { RowEditActions, ROW_DIRTY_CLASS } from "@/components/ui/RowEditActions";
 import { formatMoneyUah, formatUnit, cn } from "@/lib/utils";
 import { CopySizeSpec, SizeScopeTabs } from "@/components/catalog/SizeScopeTabs";
 import { SizeBomScopeHint } from "@/components/catalog/SizeBomScopeHint";
@@ -276,6 +277,10 @@ export function ProductSizeBom({
   const [sizeScope, setSizeScope] = useState<SizeScope>(ALL_SIZES);
   const [materialIds, setMaterialIds] = useState(() => materials.map((row) => row.id));
   const [operationIds, setOperationIds] = useState(() => operations.map((row) => row.id));
+  const [materialDrafts, setMaterialDrafts] = useState<
+    Record<string, { consumption: string; waste: string }>
+  >({});
+  const [operationDrafts, setOperationDrafts] = useState<Record<string, { rate: string }>>({});
   const [dragMaterialId, setDragMaterialId] = useState<string | null>(null);
   const [dragOperationId, setDragOperationId] = useState<string | null>(null);
   const [dropHint, setDropHint] = useState<{
@@ -290,6 +295,10 @@ export function ProductSizeBom({
   useEffect(() => {
     setOperationIds(operations.map((row) => row.id));
   }, [operations]);
+  useEffect(() => {
+    setMaterialDrafts({});
+    setOperationDrafts({});
+  }, [sizeScope]);
 
   const sizeRefs = sizes.map((size) => ({ code: size.code, nameUk: size.nameUk }));
   const activeSize = sizes.find((size) => size.code === sizeScope);
@@ -385,30 +394,6 @@ export function ProductSizeBom({
     persistBomOrder("operations", next);
   }
 
-  function saveConsumption(id: string, consumption: number) {
-    const formData = new FormData();
-    formData.set("productId", productId);
-    formData.set("id", id);
-    formData.set("consumptionPerUnit", String(consumption));
-    if (activeSize) formData.set("sizeId", activeSize.id);
-    startTransition(async () => {
-      await updateProductMaterialConsumptionAction(formData);
-      router.refresh();
-    });
-  }
-
-  function saveWaste(id: string, waste: number) {
-    const formData = new FormData();
-    formData.set("productId", productId);
-    formData.set("id", id);
-    formData.set("wastePercent", String(waste));
-    if (activeSize) formData.set("sizeId", activeSize.id);
-    startTransition(async () => {
-      await updateProductMaterialWasteAction(formData);
-      router.refresh();
-    });
-  }
-
   function removeMaterial(id: string) {
     const formData = new FormData();
     formData.set("productId", productId);
@@ -431,14 +416,81 @@ export function ProductSizeBom({
     });
   }
 
-  function saveOperationRate(id: string, rateOverride: number) {
-    const formData = new FormData();
-    formData.set("productId", productId);
-    formData.set("id", id);
-    formData.set("rateOverride", String(rateOverride));
+  function confirmMaterialDraft(
+    id: string,
+    currentConsumption: number,
+    currentWaste: number,
+  ) {
+    const draft = materialDrafts[id];
+    if (!draft) return;
+    const nextConsumption = Math.max(0, Number(draft.consumption) || 0);
+    const nextWaste = Math.max(0, Number(draft.waste) || 0);
     startTransition(async () => {
-      await updateProductOperationRateAction(formData);
+      if (Math.abs(nextConsumption - currentConsumption) >= 0.0000001) {
+        const formData = new FormData();
+        formData.set("productId", productId);
+        formData.set("id", id);
+        formData.set("consumptionPerUnit", String(nextConsumption));
+        if (activeSize) formData.set("sizeId", activeSize.id);
+        await updateProductMaterialConsumptionAction(formData);
+      }
+      if (!hideCosts && Math.abs(nextWaste - currentWaste) >= 0.0000001) {
+        const formData = new FormData();
+        formData.set("productId", productId);
+        formData.set("id", id);
+        formData.set("wastePercent", String(nextWaste));
+        if (activeSize) formData.set("sizeId", activeSize.id);
+        await updateProductMaterialWasteAction(formData);
+      }
+      setMaterialDrafts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       router.refresh();
+    });
+  }
+
+  function cancelMaterialDraft(id: string) {
+    setMaterialDrafts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function confirmOperationDraft(id: string, currentRate: number) {
+    const draft = operationDrafts[id];
+    if (!draft) return;
+    const next = Math.max(0, Number(draft.rate) || 0);
+    if (Math.abs(next - currentRate) < 0.0001) {
+      setOperationDrafts((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+      return;
+    }
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.set("productId", productId);
+      formData.set("id", id);
+      formData.set("rateOverride", String(next));
+      await updateProductOperationRateAction(formData);
+      setOperationDrafts((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+      router.refresh();
+    });
+  }
+
+  function cancelOperationDraft(id: string) {
+    setOperationDrafts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
     });
   }
 
@@ -543,12 +595,21 @@ export function ProductSizeBom({
                   sizeScope === ALL_SIZES
                     ? row.waste
                     : wasteForSize(row.waste, row.sizeWaste, sizeScope);
+                const draft = materialDrafts[row.id];
+                const draftConsumption =
+                  draft != null ? Math.max(0, Number(draft.consumption) || 0) : displayConsumption;
+                const draftWaste =
+                  draft != null ? Math.max(0, Number(draft.waste) || 0) : waste;
+                const rowDirty =
+                  draft != null &&
+                  (Math.abs(draftConsumption - displayConsumption) >= 0.0000001 ||
+                    (!hideCosts && Math.abs(draftWaste - waste) >= 0.0000001));
                 const mixed =
                   sizeScope === ALL_SIZES &&
                   (Object.keys(row.sizeConsumption).length > 0 ||
                     Object.keys(row.sizeWaste ?? {}).length > 0);
                 const unitCost =
-                  displayConsumption * (1 + waste / 100) * row.price;
+                  draftConsumption * (1 + draftWaste / 100) * row.price;
                 const specHint = materialOptionDescription(
                   row.densityGsm,
                   row.composition,
@@ -565,6 +626,7 @@ export function ProductSizeBom({
                     className={cn(
                       canReorder && "bom-sortable",
                       dragMaterialId === row.id && "bom-dragging",
+                      rowDirty && ROW_DIRTY_CLASS,
                       dropHint?.kind === "materials" &&
                         dropHint.id === row.id &&
                         dropHint.edge === "before" &&
@@ -670,11 +732,9 @@ export function ProductSizeBom({
                             <span className="tabular">{displayConsumption}</span>
                           ) : (
                             <input
-                              key={`${row.id}-${sizeScope}-consumption-${materialPct}`}
-                              type="number"
-                              min={0}
-                              step="0.0001"
-                              defaultValue={displayConsumption}
+                              type="text"
+                              inputMode="decimal"
+                              value={draft?.consumption ?? String(displayConsumption)}
                               title={
                                 mixed && sizeScope === ALL_SIZES
                                   ? "Редагує базову норму. Перевизначення по розмірах лишаються."
@@ -682,11 +742,15 @@ export function ProductSizeBom({
                                     ? `Базова норма. Націнка +${materialPct}% застосовується лише в замовленні, якщо є ${OVERSIZE_RANGE_LABEL}.`
                                     : undefined
                               }
-                              onBlur={(event) => {
-                                const next = Math.max(0, Number(event.target.value) || 0);
-                                if (next === displayConsumption) return;
-                                saveConsumption(row.id, next);
-                              }}
+                              onChange={(event) =>
+                                setMaterialDrafts((prev) => ({
+                                  ...prev,
+                                  [row.id]: {
+                                    consumption: event.target.value,
+                                    waste: prev[row.id]?.waste ?? String(waste),
+                                  },
+                                }))
+                              }
                               className={inputClass + " w-[72px]"}
                             />
                           )}
@@ -710,21 +774,24 @@ export function ProductSizeBom({
                             ) : (
                               <>
                                 <input
-                                  key={`${row.id}-${sizeScope}-waste`}
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  defaultValue={waste}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={draft?.waste ?? String(waste)}
                                   title={
                                     mixed && sizeScope === ALL_SIZES
                                       ? "Редагує базові відходи. Перевизначення по розмірах лишаються."
                                       : undefined
                                   }
-                                  onBlur={(event) => {
-                                    const next = Math.max(0, Number(event.target.value) || 0);
-                                    if (next === waste) return;
-                                    saveWaste(row.id, next);
-                                  }}
+                                  onChange={(event) =>
+                                    setMaterialDrafts((prev) => ({
+                                      ...prev,
+                                      [row.id]: {
+                                        consumption:
+                                          prev[row.id]?.consumption ?? String(displayConsumption),
+                                        waste: event.target.value,
+                                      },
+                                    }))
+                                  }
                                   className={inputClass}
                                 />
                                 <span className="text-[12px] text-[var(--color-text-secondary)]">%</span>
@@ -751,14 +818,16 @@ export function ProductSizeBom({
                     ) : null}
                     {!readOnly ? (
                       <TD align="center">
-                        <button
-                          type="button"
-                          aria-label={`Прибрати ${row.name}`}
-                          onClick={() => removeMaterial(row.id)}
-                          className="rounded-[var(--radius-control)] p-1.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger-text)]"
-                        >
-                          <IconTrash size={16} />
-                        </button>
+                        <RowEditActions
+                          dirty={rowDirty}
+                          pending={pending}
+                          onConfirm={() =>
+                            confirmMaterialDraft(row.id, displayConsumption, waste)
+                          }
+                          onCancel={() => cancelMaterialDraft(row.id)}
+                          onRemove={() => removeMaterial(row.id)}
+                          removeLabel={`Прибрати ${row.name}`}
+                        />
                       </TD>
                     ) : null}
                   </TR>
@@ -826,6 +895,12 @@ export function ProductSizeBom({
             ) : (
               visibleOperations.map((row) => {
                 const cutCell = row.isCut ? formatCutCostCell(row, previewQty, cutRateContext) : null;
+                const currentRate =
+                  row.rateOverride != null ? row.rateOverride : row.unitCost;
+                const opDraft = operationDrafts[row.id];
+                const opDirty =
+                  opDraft != null &&
+                  Math.abs(Math.max(0, Number(opDraft.rate) || 0) - currentRate) >= 0.0001;
                 return (
                 <TR
                   key={row.id}
@@ -837,6 +912,7 @@ export function ProductSizeBom({
                   className={cn(
                     canReorder && "bom-sortable",
                     dragOperationId === row.id && "bom-dragging",
+                    opDirty && ROW_DIRTY_CLASS,
                     dropHint?.kind === "operations" &&
                       dropHint.id === row.id &&
                       dropHint.edge === "before" &&
@@ -923,7 +999,7 @@ export function ProductSizeBom({
                         <div className="text-right">
                           <div>{cutCell.primary}</div>
                           <Link
-                            href={`/products/${productId}?tab=pricing`}
+                            href={`/products/${productId}?tab=cut`}
                             className="type-caption text-[var(--color-primary-700)] hover:underline"
                           >
                             редагувати крій →
@@ -935,10 +1011,10 @@ export function ProductSizeBom({
                             {formatMoneyUah(deliveryUnitRate(row, previewQty))}
                           </span>
                           <Link
-                            href={`/products/${productId}?tab=pricing`}
+                            href={`/products/${productId}?tab=cut`}
                             className="type-caption text-[var(--color-primary-700)] hover:underline"
                           >
-                            сітка в «Прайс і крій» →
+                            сітка в «Крій» →
                           </Link>
                         </span>
                       ) : isFixedCostOperationName(row.name) ? (
@@ -961,26 +1037,21 @@ export function ProductSizeBom({
                         <span className="inline-flex flex-col items-end gap-0.5">
                           <span className="inline-flex items-center justify-end gap-1">
                             <input
-                              key={`${row.id}-rate-${row.rateOverride ?? "catalog"}`}
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              defaultValue={
-                                row.rateOverride != null ? row.rateOverride : row.unitCost
-                              }
+                              type="text"
+                              inputMode="decimal"
+                              value={opDraft?.rate ?? String(currentRate)}
                               disabled={pending}
                               title={
                                 row.rateOverride != null
                                   ? `Перевизначення на виробі (довідник ${formatMoneyUah(row.catalogRate ?? 0)})`
-                                  : "Ставка на виробі. Змініть — збережеться окремо від довідника."
+                                  : "Ставка на виробі. Підтвердіть галочкою — збережеться окремо від довідника."
                               }
-                              onBlur={(event) => {
-                                const next = Math.max(0, Number(event.target.value) || 0);
-                                const current =
-                                  row.rateOverride != null ? row.rateOverride : row.unitCost;
-                                if (Math.abs(next - current) < 0.0001) return;
-                                saveOperationRate(row.id, next);
-                              }}
+                              onChange={(event) =>
+                                setOperationDrafts((prev) => ({
+                                  ...prev,
+                                  [row.id]: { rate: event.target.value },
+                                }))
+                              }
                               className={inputClass + " w-[72px]"}
                             />
                             <span className="text-[12px] text-[var(--color-text-secondary)]">₴</span>
@@ -996,14 +1067,14 @@ export function ProductSizeBom({
                   ) : null}
                   {!readOnly ? (
                     <TD align="center">
-                      <button
-                        type="button"
-                        aria-label={`Прибрати ${row.name}`}
-                        onClick={() => removeOperation(row.id)}
-                        className="rounded-[var(--radius-control)] p-1.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-danger-bg)] hover:text-[var(--color-danger-text)]"
-                      >
-                        <IconTrash size={16} />
-                      </button>
+                      <RowEditActions
+                        dirty={opDirty}
+                        pending={pending}
+                        onConfirm={() => confirmOperationDraft(row.id, currentRate)}
+                        onCancel={() => cancelOperationDraft(row.id)}
+                        onRemove={() => removeOperation(row.id)}
+                        removeLabel={`Прибрати ${row.name}`}
+                      />
                     </TD>
                   ) : null}
                 </TR>
@@ -1109,7 +1180,7 @@ export function ProductSizeBom({
       ) ? (
         <p className="type-caption rounded-[10px] border border-dashed border-[var(--color-border)] px-3 py-2.5">
           Доставка в комплектації — ₴ на 1 шт. На тираж: ставка × кількість (напр. 1,50 × 100 = 150).
-          Сітку ставок редагуйте в «Прайс і крій» (колонка «Достав.»).
+          Сітку ставок редагуйте у вкладці «Крій» (колонка «Достав.»).
         </p>
       ) : null}
 

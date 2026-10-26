@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getClient } from "@/server/domains/clients/service";
 import { Breadcrumbs, HeaderBlock, QuickAction, QuickActions } from "@/components/ui/ObjectHeader";
 import { DescriptionList, Stat } from "@/components/ui/DescriptionList";
@@ -17,15 +17,24 @@ import {
 import { IconClients, IconOrders, IconPlus } from "@/components/ui/Icons";
 import { formatDateUk, formatMoneyShort } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
+import { PartyPeopleEditor } from "@/components/contacts/PartyPeopleEditor";
+import { accessHas, getCurrentUserAccess } from "@/server/auth/access";
 
 function isOverdue(deadline: Date | undefined) {
   return deadline ? deadline.getTime() < Date.now() : false;
 }
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const access = await getCurrentUserAccess();
+  if (!access) redirect("/login");
+
   const { id } = await params;
   const client = await getClient(id);
   if (!client) notFound();
+
+  const canEdit = accessHas(access, "manageClients");
+  const primary =
+    client.contacts.find((person) => person.isPrimary) ?? client.contacts[0] ?? null;
 
   const activeOrders = client.orders.filter(
     (order) => !["CLOSED", "CANCELLED"].includes(order.status),
@@ -42,6 +51,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     .sort((a, b) => a.getTime() - b.getTime())[0];
   const deadlineOverdue = isOverdue(nextDeadline);
 
+  const subtitleBits = [
+    primary?.nameUk || client.contactPerson || null,
+    client.phone || primary?.phone || null,
+    client.email || primary?.email || null,
+  ].filter(Boolean);
+
   return (
     <div className="space-y-4">
       <Breadcrumbs items={[{ label: "Контакти", href: "/clients" }, { label: client.companyName }]} />
@@ -50,14 +65,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <div className="min-w-0">
           <h1 className="type-page-title">{client.companyName}</h1>
           <p className="type-body-secondary mt-1">
-            {client.contactPerson ? `${client.contactPerson} · ` : ""}
-            {client.phone || client.email || "Контакти не заповнені"}
+            {subtitleBits.length > 0 ? subtitleBits.join(" · ") : "Контакти не заповнені"}
           </p>
         </div>
-        <Link
-          href={`/orders/new?clientId=${client.id}`}
-          className="btn-primary"
-        >
+        <Link href={`/orders/new?clientId=${client.id}`} className="btn-primary">
           <IconPlus size={16} />
           Нове замовлення
         </Link>
@@ -71,10 +82,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         >
           Усі замовлення
         </QuickAction>
-        {client.email ? (
+        {(client.email || primary?.email) ? (
           <QuickAction
             icon={<IconClients size={15} />}
-            href={`mailto:${client.email}`}
+            href={`mailto:${client.email || primary?.email}`}
             hint="clientEmail"
           >
             Написати
@@ -83,10 +94,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       </QuickActions>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <HeaderBlock title="Контактні дані">
+        <HeaderBlock title="Компанія">
           <DescriptionList
             items={[
-              { label: "Контактна особа", value: client.contactPerson || "—" },
               {
                 label: "Телефон",
                 value: client.phone ? (
@@ -107,10 +117,40 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                   "—"
                 ),
               },
+              {
+                label: "Сайт",
+                value: client.website ? (
+                  <a
+                    href={client.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-[var(--color-primary-700)]"
+                  >
+                    {client.website}
+                  </a>
+                ) : (
+                  "—"
+                ),
+              },
               { label: "Реквізити", value: client.legalDetails || "—", multiline: true },
               { label: "Примітка", value: client.note || "—", multiline: true },
             ]}
           />
+          <div className="mt-4 border-t border-[var(--color-divider)] pt-3">
+            <PartyPeopleEditor
+              kind="client"
+              partyId={client.id}
+              canEdit={canEdit}
+              people={client.contacts.map((person) => ({
+                id: person.id,
+                nameUk: person.nameUk,
+                roleUk: person.roleUk,
+                phone: person.phone,
+                email: person.email,
+                isPrimary: person.isPrimary,
+              }))}
+            />
+          </div>
         </HeaderBlock>
 
         <HeaderBlock title="Співпраця">
@@ -153,6 +193,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <THead>
             <TH width="140px">Номер</TH>
             <TH>Виріб</TH>
+            <TH>Контакт</TH>
             <TH>Статус</TH>
             <TH align="right">К-сть</TH>
             <TH
@@ -166,7 +207,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <TBody>
             {client.orders.length === 0 ? (
               <TableEmpty
-                colSpan={6}
+                colSpan={7}
                 title="Замовлень ще немає"
                 description="Створіть перше замовлення для цього клієнта."
               />
@@ -185,6 +226,22 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                     <div className="max-w-[240px] truncate text-[var(--color-text-secondary)]">
                       {order.items[0]?.nameUk || order.title || "—"}
                     </div>
+                  </TD>
+                  <TD>
+                    {order.clientContact?.nameUk ? (
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] text-[var(--color-text-secondary)]">
+                          {order.clientContact.nameUk}
+                        </p>
+                        {order.clientContact.roleUk?.trim() ? (
+                          <p className="type-caption mt-0.5 truncate text-[var(--color-text-quiet)]">
+                            {order.clientContact.roleUk.trim()}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-[var(--color-text-tertiary)]">—</span>
+                    )}
                   </TD>
                   <TD nowrap>
                     <OrderStatusBadge status={order.status} dot />

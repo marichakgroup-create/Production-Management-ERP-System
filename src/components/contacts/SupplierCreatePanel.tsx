@@ -28,10 +28,11 @@ export function SupplierCreatePanel({
       <FormGroup label="Постачальник" columns={1}>
         <Input name="nameUk" label="Назва" required autoFocus />
       </FormGroup>
-      <FormGroup label="Контакти" columns={2}>
-        <Input name="contactPerson" label="Контактна особа" />
-        <Input name="phone" label="Телефон" type="tel" placeholder="+380" />
-        <Input name="email" label="Email" type="email" />
+      <FormGroup label="Компанія / перша особа" columns={2}>
+        <Input name="contactPerson" label="Контактна особа" placeholder="Стане основним контактом" />
+        <Input name="contactRoleUk" label="Посада" placeholder="Менеджер…" />
+        <Input name="phone" label="Телефон компанії" type="tel" placeholder="+380" />
+        <Input name="email" label="Email компанії" type="email" />
         <Input name="website" label="Сайт" placeholder="https://" />
       </FormGroup>
       <FormGroup label="Нотатка" columns={1}>

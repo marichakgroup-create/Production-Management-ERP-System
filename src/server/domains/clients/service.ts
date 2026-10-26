@@ -4,6 +4,8 @@ import { z } from "zod";
 export const clientFormSchema = z.object({
   companyName: z.string().trim().min(1),
   contactPerson: z.string().trim().optional().nullable(),
+  /** Optional job title for the first contact person. */
+  contactRoleUk: z.string().trim().optional().nullable(),
   phone: z.string().trim().optional().nullable(),
   email: z
     .string()
@@ -41,6 +43,9 @@ export async function listClients(search?: string) {
     },
     include: {
       _count: { select: { orders: true } },
+      contacts: {
+        orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+      },
       orders: {
         orderBy: { createdAt: "desc" },
         take: 1,
@@ -55,10 +60,16 @@ export async function getClient(id: string) {
   return prisma.client.findUnique({
     where: { id },
     include: {
+      contacts: {
+        orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+      },
       orders: {
         orderBy: { createdAt: "desc" },
         include: {
           manager: { select: { name: true } },
+          clientContact: {
+            select: { id: true, nameUk: true, roleUk: true, phone: true, email: true },
+          },
           items: {
             take: 1,
             include: {
@@ -77,16 +88,33 @@ export async function getClient(id: string) {
 
 export async function createClient(raw: ClientFormValues) {
   const data = clientFormSchema.parse(raw);
+  const contactName = data.contactPerson?.trim() || null;
+  const contactRole = data.contactRoleUk?.trim() || null;
   return prisma.client.create({
     data: {
       companyName: data.companyName,
-      contactPerson: data.contactPerson || null,
+      contactPerson: contactName,
       phone: data.phone || null,
       email: data.email || null,
       website: data.website || null,
       legalDetails: data.legalDetails || null,
       note: data.note || null,
+      ...(contactName
+        ? {
+            contacts: {
+              create: {
+                nameUk: contactName,
+                roleUk: contactRole,
+                phone: data.phone || null,
+                email: data.email || null,
+                isPrimary: true,
+                sortOrder: 0,
+              },
+            },
+          }
+        : {}),
     },
+    include: { contacts: true },
   });
 }
 

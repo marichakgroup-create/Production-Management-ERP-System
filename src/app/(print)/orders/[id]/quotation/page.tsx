@@ -238,9 +238,22 @@ export default async function QuotationPage({
                   <p>
                     <strong>{order.client.companyName}</strong>
                   </p>
-                  {order.client.contactPerson ? <p>{order.client.contactPerson}</p> : null}
-                  {order.client.phone ? <PrintDocMuted>{order.client.phone}</PrintDocMuted> : null}
-                  {order.client.email ? <PrintDocMuted>{order.client.email}</PrintDocMuted> : null}
+                  {(order.clientContact?.nameUk || order.client.contactPerson) ? (
+                    <p>{order.clientContact?.nameUk || order.client.contactPerson}</p>
+                  ) : null}
+                  {order.clientContact?.roleUk?.trim() ? (
+                    <PrintDocMuted>{order.clientContact.roleUk.trim()}</PrintDocMuted>
+                  ) : null}
+                  {(order.clientContact?.phone || order.client.phone) ? (
+                    <PrintDocMuted>
+                      {order.clientContact?.phone || order.client.phone}
+                    </PrintDocMuted>
+                  ) : null}
+                  {(order.clientContact?.email || order.client.email) ? (
+                    <PrintDocMuted>
+                      {order.clientContact?.email || order.client.email}
+                    </PrintDocMuted>
+                  ) : null}
                 </>
               ),
             },

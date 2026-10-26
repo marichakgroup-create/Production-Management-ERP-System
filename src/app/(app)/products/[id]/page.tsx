@@ -160,7 +160,8 @@ export default async function ProductDetailPage({
 }) {
   const { id } = await params;
   const { tab } = await searchParams;
-  const activeTab: ProductDetailTab = tab === "pricing" ? "pricing" : "composition";
+  const activeTab: ProductDetailTab =
+    tab === "cut" ? "cut" : tab === "price" || tab === "pricing" ? "price" : "composition";
   const product = await getProduct(id);
   if (!product) notFound();
 
@@ -209,7 +210,9 @@ export default async function ProductDetailPage({
   const canViewCosts = accessHas(access, "viewProductCosts");
   const canEditBom = accessHas(access, "createInlineCatalog");
   const resolvedTab: ProductDetailTab =
-    canViewCosts && activeTab === "pricing" ? "pricing" : "composition";
+    canViewCosts && (activeTab === "cut" || activeTab === "price")
+      ? activeTab
+      : "composition";
 
   const sewRow =
     product.operations.find((row) => isSewOperationName(row.operation.nameUk)) ??

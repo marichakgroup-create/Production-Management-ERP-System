@@ -112,6 +112,10 @@ async function assertCanManageOrderItems(orderId: string) {
 
 const createOrderSchema = z.object({
   clientId: z.string().min(1),
+  clientContactId: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().trim().min(1).optional().nullable(),
+  ),
   productId: z.string().optional().nullable(),
   title: z.string().optional().nullable(),
   deadline: z.string().optional().nullable(),
@@ -192,6 +196,7 @@ export async function createOrderAction(formData: FormData) {
 
   const parsed = createOrderSchema.safeParse({
     clientId: formData.get("clientId"),
+    clientContactId: formData.get("clientContactId") || null,
     productId: formData.get("productId") || null,
     title: formData.get("title") || null,
     deadline: formData.get("deadline") || null,
@@ -309,6 +314,7 @@ export async function createOrderAction(formData: FormData) {
   try {
     ({ order } = await createOrderWithProducts({
       clientId: parsed.data.clientId,
+      clientContactId: parsed.data.clientContactId ?? null,
       managerId: session.user.id,
       title: parsed.data.title,
       deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : null,
@@ -320,7 +326,11 @@ export async function createOrderAction(formData: FormData) {
     if (message === "PRODUCT_ARCHIVED") {
       return { ok: false as const, error: "PRODUCT_ARCHIVED" as const };
     }
-    if (message === "PRODUCT_NOT_FOUND" || message === "ITEMS_REQUIRED") {
+    if (
+      message === "PRODUCT_NOT_FOUND" ||
+      message === "ITEMS_REQUIRED" ||
+      message === "CLIENT_CONTACT_INVALID"
+    ) {
       return { ok: false as const, error: message };
     }
     console.error("[createOrderAction] failed:", error);

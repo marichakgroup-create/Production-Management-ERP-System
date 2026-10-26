@@ -759,18 +759,27 @@ export default async function OrderDetailPage({
       : []),
   ];
 
+  const orderContact =
+    order.clientContact ??
+    order.client.contacts.find((person) => person.isPrimary) ??
+    order.client.contacts[0] ??
+    null;
+  const contactName =
+    orderContact?.nameUk?.trim() || order.client.contactPerson?.trim() || "—";
+  const contactRole = orderContact?.roleUk?.trim() || null;
   const clientFacts = [
     {
       label: "Контакт",
-      value: order.client.contactPerson?.trim() || "—",
+      value: contactName,
+      hint: contactRole ?? undefined,
     },
     {
       label: "Телефон",
-      value: order.client.phone?.trim() || "—",
+      value: orderContact?.phone?.trim() || order.client.phone?.trim() || "—",
     },
     {
       label: "Email",
-      value: order.client.email?.trim() || "—",
+      value: orderContact?.email?.trim() || order.client.email?.trim() || "—",
     },
   ];
 
@@ -836,7 +845,7 @@ export default async function OrderDetailPage({
         </dl>
         {activeDraft?.priceSource === "cost" ? (
           <p className="type-caption mt-2 text-[var(--color-warning-text)]">
-            Зафіксуйте прайс у картці виробу («Прайс і крій»), щоб ціна відрізнялась від собівартості.
+            Зафіксуйте прайс у картці виробу (вкладка «Прайс»), щоб ціна відрізнялась від собівартості.
           </p>
         ) : null}
       </div>

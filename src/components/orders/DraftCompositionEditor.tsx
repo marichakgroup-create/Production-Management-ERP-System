@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Page";
 import { SizeRun } from "@/components/orders/SizeRun";
@@ -17,6 +18,7 @@ import {
 } from "@/components/composition/DraftCompositionForms";
 import { syncDraftMaterialPrices, compositionMissingMaterialChoices } from "@/lib/draft-composition";
 import type { MaterialCostVatMode } from "@/lib/fabric-pricing";
+import { cn } from "@/lib/utils";
 
 export {
   DraftAddDecorationForm,
@@ -62,6 +64,11 @@ export function DraftCompositionEditor({
   /** Order create: color / ПДВ are chosen later inside the order, not here. */
   enableLinePricingControls = false,
   showSubtotals = true,
+  /**
+   * `fixed` — pinned above the create footer (order /new).
+   * `inline` — sticky under BOM (default / in-order flows).
+   */
+  tirageDock = "inline",
 }: {
   product: CatalogProduct;
   composition: DraftComposition;
@@ -89,6 +96,7 @@ export function DraftCompositionEditor({
   fabricGlobals?: { usdUahRate: number; fabricCargoUsdPerKg: number };
   enableLinePricingControls?: boolean;
   showSubtotals?: boolean;
+  tirageDock?: "inline" | "fixed";
 }) {
   const productSizes = product.sizes.length
     ? product.sizes
@@ -116,6 +124,9 @@ export function DraftCompositionEditor({
     : enableLinePricingControls && !choicesComplete
       ? `Потрібен вибір · ${incompleteMaterials.length}`
       : null;
+
+  const totalQty = sizes.reduce((sum, size) => sum + (quantities[size.code] || 0), 0);
+  const productLabel = product.nameUk ?? product.label;
 
   function applyQtyMode(next: "bySize" | "total") {
     if (next === qtyMode) return;
@@ -147,13 +158,121 @@ export function DraftCompositionEditor({
     }
   }
 
+  function onQtyChange(code: string, quantity: number) {
+    onQuantitiesChange(code, quantity);
+    const nextQty = { ...quantities, [code]: quantity };
+    onCompositionChange(syncDraftMaterialPrices(composition, nextQty, companyCostMode));
+  }
+
+  const statusHint = confirmDisabled ? (
+    <span className="type-caption text-[var(--color-text-tertiary)]">
+      {enableLinePricingControls && incompleteMaterials.length > 0
+        ? `${incompleteMaterials.length} без параметрів`
+        : inList
+          ? "змініть тираж або склад, щоб знову зберегти"
+          : "вкажіть кількість"}
+    </span>
+  ) : (
+    <span className="type-caption text-[var(--color-primary-700)]">
+      {editing ? "є зміни — збережіть у список" : "готово до додавання"}
+    </span>
+  );
+
+  const tirageBody = (
+    <div className="space-y-2">
+      {tirageDock === "fixed" ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <ProductThumb
+            imageUrl={product.imageUrl}
+            label={productLabel}
+            active
+            size="sm"
+          />
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">
+              {productLabel}
+            </p>
+            <p className="type-caption truncate">
+              {totalQty > 0
+                ? `Разом ${totalQty} шт`
+                : "Виріб обрано — впишіть тираж, щоб додати в замовлення"}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="shrink-0 text-[11px] font-medium text-[var(--color-text-tertiary)]">
+          К-сть
+        </span>
+        {hasRealSizes ? (
+          <div className="inline-flex rounded-[6px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-0.5">
+            <button
+              type="button"
+              onClick={() => applyQtyMode("total")}
+              className={`rounded-[5px] px-2 py-0.5 text-[11px] font-medium ${
+                qtyMode === "total"
+                  ? "bg-white text-[var(--color-text-primary)] shadow-sm"
+                  : "text-[var(--color-text-secondary)]"
+              }`}
+            >
+              Загальний тираж
+            </button>
+            <button
+              type="button"
+              onClick={() => applyQtyMode("bySize")}
+              className={`rounded-[5px] px-2 py-0.5 text-[11px] font-medium ${
+                qtyMode === "bySize"
+                  ? "bg-white text-[var(--color-text-primary)] shadow-sm"
+                  : "text-[var(--color-text-secondary)]"
+              }`}
+            >
+              По розмірах
+            </button>
+          </div>
+        ) : null}
+        <SizeRun sizes={sizes} quantities={quantities} quiet onChange={onQtyChange} />
+        {tirageDock === "inline" ? statusHint : null}
+        {tirageDock === "fixed" && totalQty > 0 ? (
+          <span className="type-caption tabular text-[var(--color-text-secondary)]">
+            Разом {totalQty} шт
+          </span>
+        ) : null}
+        {tirageDock === "fixed" ? statusHint : null}
+      </div>
+
+      {qtyMode === "total" && hasRealSizes ? (
+        <p className="type-caption text-[var(--color-text-tertiary)]">
+          Орієнтовний тираж без розкладки по розмірах. Точну сітку задасте перед виробництвом у
+          комплектації замовлення.
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-divider)] pt-2">
+        <input
+          type="text"
+          value={comment}
+          onChange={(event) => onCommentChange(event.target.value)}
+          placeholder="Коментар (необовʼязково)"
+          className="h-8 min-w-[160px] flex-1 rounded-[6px] border border-[var(--color-border)] bg-transparent px-2.5 text-[12.5px] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-primary-500)]"
+        />
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Скасувати
+        </Button>
+        <Button type="button" size="sm" disabled={confirmDisabled} onClick={onConfirm}>
+          {confirmLabel ?? (editing ? "Зберегти в список" : "Погодити і додати")}
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="space-y-3">
+    <div className={cn("space-y-3", tirageDock === "fixed" && "pb-[11rem]")}>
       <div className="flex flex-wrap items-start justify-between gap-2 rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 shadow-[var(--shadow-card)]">
         <div className="flex min-w-0 flex-1 gap-3">
           <ProductThumb
             imageUrl={product.imageUrl}
-            label={product.nameUk ?? product.label}
+            label={productLabel}
             active
             size="lg"
           />
@@ -170,27 +289,34 @@ export function DraftCompositionEditor({
                 <StatusBadge tone="warning" dot>
                   {compositionReadyLabel}
                 </StatusBadge>
+              ) : totalQty <= 0 ? (
+                <StatusBadge tone="warning" dot>
+                  Потрібен тираж
+                </StatusBadge>
               ) : null}
             </div>
             <p className="type-caption mt-0.5 truncate">
-              {product.nameUk ?? product.label}
+              {productLabel}
               {inList
                 ? " · збережено нижче в «Позиції замовлення»"
                 : enableLinePricingControls && !choicesComplete
                   ? " · оберіть колір і ПДВ у рядках з маркером"
-                  : " · вкажіть тираж і натисніть кнопку нижче"}
+                  : tirageDock === "fixed"
+                    ? " · тираж — у панелі внизу екрана"
+                    : " · вкажіть тираж і натисніть кнопку нижче"}
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-            Скасувати
-          </Button>
-          <Button type="button" size="sm" disabled={confirmDisabled} onClick={onConfirm}>
-            {confirmLabel ??
-              (editing ? "Зберегти в список" : "Погодити і додати")}
-          </Button>
-        </div>
+        {tirageDock === "inline" ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+              Скасувати
+            </Button>
+            <Button type="button" size="sm" disabled={confirmDisabled} onClick={onConfirm}>
+              {confirmLabel ?? (editing ? "Зберегти в список" : "Погодити і додати")}
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <DraftCompositionBomEditor
@@ -212,86 +338,33 @@ export function DraftCompositionEditor({
         fabricGlobals={fabricGlobals}
       />
 
-      <div className="sticky bottom-14 z-10 space-y-2 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 shadow-[var(--shadow-card)]">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span className="shrink-0 text-[11px] font-medium text-[var(--color-text-tertiary)]">
-            К-сть
-          </span>
-          {hasRealSizes ? (
-            <div className="inline-flex rounded-[6px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-0.5">
-              <button
-                type="button"
-                onClick={() => applyQtyMode("total")}
-                className={`rounded-[5px] px-2 py-0.5 text-[11px] font-medium ${
-                  qtyMode === "total"
-                    ? "bg-white text-[var(--color-text-primary)] shadow-sm"
-                    : "text-[var(--color-text-secondary)]"
-                }`}
-              >
-                Загальний тираж
-              </button>
-              <button
-                type="button"
-                onClick={() => applyQtyMode("bySize")}
-                className={`rounded-[5px] px-2 py-0.5 text-[11px] font-medium ${
-                  qtyMode === "bySize"
-                    ? "bg-white text-[var(--color-text-primary)] shadow-sm"
-                    : "text-[var(--color-text-secondary)]"
-                }`}
-              >
-                По розмірах
-              </button>
-            </div>
-          ) : null}
-          <SizeRun
-            sizes={sizes}
-            quantities={quantities}
-            quiet
-            onChange={(code, quantity) => {
-              onQuantitiesChange(code, quantity);
-              const nextQty = { ...quantities, [code]: quantity };
-              onCompositionChange(
-                syncDraftMaterialPrices(composition, nextQty, companyCostMode),
-              );
-            }}
-          />
-          {confirmDisabled ? (
-            <span className="type-caption text-[var(--color-text-tertiary)]">
-              {enableLinePricingControls && incompleteMaterials.length > 0
-                ? `${incompleteMaterials.length} без параметрів`
-                : inList
-                  ? "змініть тираж або склад, щоб знову зберегти"
-                  : "вкажіть кількість"}
-            </span>
-          ) : (
-            <span className="type-caption text-[var(--color-primary-700)]">
-              {editing ? "є зміни — збережіть у список" : "готово до додавання"}
-            </span>
-          )}
+      {tirageDock === "inline" ? (
+        <div className="sticky bottom-14 z-10 space-y-2 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 shadow-[var(--shadow-card)]">
+          {tirageBody}
         </div>
-        {qtyMode === "total" && hasRealSizes ? (
-          <p className="type-caption text-[var(--color-text-tertiary)]">
-            Орієнтовний тираж без розкладки по розмірах. Точну сітку задасте перед
-            виробництвом у комплектації замовлення.
-          </p>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-divider)] pt-2">
-          <input
-            type="text"
-            value={comment}
-            onChange={(event) => onCommentChange(event.target.value)}
-            placeholder="Коментар (необовʼязково)"
-            className="h-8 min-w-[160px] flex-1 rounded-[6px] border border-[var(--color-border)] bg-transparent px-2.5 text-[12.5px] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-primary-500)]"
-          />
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-            Скасувати
-          </Button>
-          <Button type="button" size="sm" disabled={confirmDisabled} onClick={onConfirm}>
-            {confirmLabel ??
-              (editing ? "Зберегти в список" : "Погодити і додати")}
-          </Button>
-        </div>
-      </div>
+      ) : (
+        <FixedTirageDock>{tirageBody}</FixedTirageDock>
+      )}
     </div>
+  );
+}
+
+/** Pinned above OrderCreateFooter (h-12) for create flow. */
+function FixedTirageDock({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      className="pointer-events-none fixed inset-x-0 bottom-12 z-40 md:left-[var(--sidebar-width)]"
+      role="region"
+      aria-label="Тираж позиції"
+    >
+      <div className="pointer-events-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 shadow-[0_-6px_20px_rgba(15,23,32,0.08)] sm:px-6 xl:px-8">
+        <div className="mx-auto max-w-[1440px]">{children}</div>
+      </div>
+    </div>,
+    document.body,
   );
 }

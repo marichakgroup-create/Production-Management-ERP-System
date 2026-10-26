@@ -36,6 +36,9 @@ export async function listSuppliers(params?: { search?: string }) {
     },
     include: {
       _count: { select: { materialOffers: true } },
+      contacts: {
+        orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+      },
     },
     orderBy: { nameUk: "asc" },
   });
@@ -44,6 +47,7 @@ export async function listSuppliers(params?: { search?: string }) {
 export type SupplierContactInput = {
   nameUk: string;
   contactPerson?: string | null;
+  contactRoleUk?: string | null;
   phone?: string | null;
   email?: string | null;
   website?: string | null;
@@ -54,10 +58,12 @@ export type SupplierContactInput = {
 export async function createSupplierContact(input: SupplierContactInput) {
   const nameUk = input.nameUk.replace(/\s+/g, " ").trim();
   if (!nameUk) throw new Error("NAME_REQUIRED");
+  const personName = input.contactPerson?.trim() || null;
+  const personRole = input.contactRoleUk?.trim() || null;
   return prisma.supplier.create({
     data: {
       nameUk,
-      contactPerson: input.contactPerson?.trim() || null,
+      contactPerson: personName,
       phone: input.phone?.trim() || null,
       email: input.email?.trim() || null,
       website: input.website?.trim() || null,
@@ -66,7 +72,22 @@ export async function createSupplierContact(input: SupplierContactInput) {
         input.defaultCargoUsdPerKg != null && Number.isFinite(input.defaultCargoUsdPerKg)
           ? input.defaultCargoUsdPerKg
           : null,
+      ...(personName
+        ? {
+            contacts: {
+              create: {
+                nameUk: personName,
+                roleUk: personRole,
+                phone: input.phone?.trim() || null,
+                email: input.email?.trim() || null,
+                isPrimary: true,
+                sortOrder: 0,
+              },
+            },
+          }
+        : {}),
     },
+    include: { contacts: true },
   });
 }
 

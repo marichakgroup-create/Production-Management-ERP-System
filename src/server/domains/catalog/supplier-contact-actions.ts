@@ -17,6 +17,7 @@ function parseSupplierForm(formData: FormData) {
   return {
     nameUk: String(formData.get("nameUk") ?? ""),
     contactPerson: String(formData.get("contactPerson") ?? "").trim() || null,
+    contactRoleUk: String(formData.get("contactRoleUk") ?? "").trim() || null,
     phone: String(formData.get("phone") ?? "").trim() || null,
     email: String(formData.get("email") ?? "").trim() || null,
     website: String(formData.get("website") ?? "").trim() || null,

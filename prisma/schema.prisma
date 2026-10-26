@@ -219,6 +219,7 @@ model Material {
 model Supplier {
   id                     String       @id @default(cuid())
   nameUk                 String
+  /// @deprecated Prefer SupplierContact rows; kept as company fallback / legacy.
   contactPerson          String?
   phone                  String?
   email                  String?
@@ -234,10 +235,30 @@ model Supplier {
   materialOffers MaterialSupplier[]
   orderItemMaterials OrderItemMaterial[]
   productMaterials ProductMaterial[]
+  contacts SupplierContact[]
 
   @@unique([nameUk])
   @@index([status])
   @@map("suppliers")
+}
+
+/// People at a supplier company (purchasing / logistics contacts).
+model SupplierContact {
+  id         String   @id @default(cuid())
+  supplierId String
+  nameUk     String
+  roleUk     String?
+  phone      String?
+  email      String?
+  isPrimary  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@map("supplier_contacts")
 }
 
 /// Per-supplier purchase terms for a material (fabric). Primary drives Material.purchasePrice.
@@ -613,6 +634,7 @@ model ProductAdditionalCost {
 model Client {
   id            String       @id @default(cuid())
   companyName   String
+  /// @deprecated Prefer ClientContact rows; kept as company fallback / legacy.
   contactPerson String?
   phone         String?
   email         String?
@@ -623,17 +645,40 @@ model Client {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  orders Order[]
-  files  FileAsset[]
+  orders   Order[]
+  files    FileAsset[]
+  contacts ClientContact[]
 
   @@index([companyName])
   @@map("clients")
+}
+
+/// People at a client company (order contacts).
+model ClientContact {
+  id        String   @id @default(cuid())
+  clientId  String
+  nameUk    String
+  roleUk    String?
+  phone     String?
+  email     String?
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([clientId])
+  @@map("client_contacts")
 }
 
 model Order {
   id               String      @id @default(cuid())
   number           String      @unique
   clientId         String
+  /// Selected contact person for this order (from client.contacts).
+  clientContactId  String?     @map("client_contact_id")
   managerId        String
   title            String?
   status           OrderStatus @default(DRAFT)
@@ -648,14 +693,16 @@ model Order {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  client  Client @relation(fields: [clientId], references: [id])
-  manager User   @relation("OrderManager", fields: [managerId], references: [id])
-  items   OrderItem[]
-  files   FileAsset[]
+  client        Client         @relation(fields: [clientId], references: [id])
+  clientContact ClientContact? @relation(fields: [clientContactId], references: [id], onDelete: SetNull)
+  manager       User           @relation("OrderManager", fields: [managerId], references: [id])
+  items         OrderItem[]
+  files         FileAsset[]
 
   @@index([status])
   @@index([deadline])
   @@index([clientId])
+  @@index([clientContactId])
   @@map("orders")
 }
 

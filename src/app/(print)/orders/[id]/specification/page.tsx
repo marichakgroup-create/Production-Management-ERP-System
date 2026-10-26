@@ -338,7 +338,13 @@ export default async function SpecificationPage({
               <p className="print-doc-shop-check">☐ Крій &nbsp; ☐ Пошив &nbsp; ☐ Нанесення &nbsp; ☐ ОТК</p>
               <PrintDocMuted>
                 Менеджер: {order.manager.name}
-                {order.client.contactPerson ? ` · контакт клієнта: ${order.client.contactPerson}` : ""}
+                {(order.clientContact?.nameUk || order.client.contactPerson)
+                  ? ` · контакт клієнта: ${order.clientContact?.nameUk || order.client.contactPerson}${
+                      order.clientContact?.roleUk?.trim()
+                        ? ` (${order.clientContact.roleUk.trim()})`
+                        : ""
+                    }`
+                  : ""}
               </PrintDocMuted>
             </div>
             <PrintDocSignatures
