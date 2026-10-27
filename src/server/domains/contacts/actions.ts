@@ -29,7 +29,7 @@ function revalidateParty(clientId?: string | null, supplierId?: string | null) {
     revalidatePath(`/clients/${clientId}`);
   }
   if (supplierId) {
-    revalidatePath("/clients");
+    revalidatePath(`/clients/suppliers/${supplierId}`);
   }
 }
 

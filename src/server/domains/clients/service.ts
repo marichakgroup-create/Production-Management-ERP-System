@@ -26,6 +26,10 @@ export const clientFormSchema = z.object({
 
 export type ClientFormValues = z.infer<typeof clientFormSchema>;
 
+const legalEntitiesInclude = {
+  orderBy: [{ isPrimary: "desc" as const }, { sortOrder: "asc" as const }, { nameUk: "asc" as const }],
+};
+
 export async function listClients(search?: string) {
   const q = search?.trim();
   return prisma.client.findMany({
@@ -46,6 +50,7 @@ export async function listClients(search?: string) {
       contacts: {
         orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
       },
+      legalEntities: legalEntitiesInclude,
       orders: {
         orderBy: { createdAt: "desc" },
         take: 1,
@@ -63,6 +68,7 @@ export async function getClient(id: string) {
       contacts: {
         orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
       },
+      legalEntities: legalEntitiesInclude,
       orders: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -90,31 +96,59 @@ export async function createClient(raw: ClientFormValues) {
   const data = clientFormSchema.parse(raw);
   const contactName = data.contactPerson?.trim() || null;
   const contactRole = data.contactRoleUk?.trim() || null;
-  return prisma.client.create({
-    data: {
-      companyName: data.companyName,
-      contactPerson: contactName,
-      phone: data.phone || null,
-      email: data.email || null,
-      website: data.website || null,
-      legalDetails: data.legalDetails || null,
-      note: data.note || null,
-      ...(contactName
-        ? {
-            contacts: {
-              create: {
-                nameUk: contactName,
-                roleUk: contactRole,
-                phone: data.phone || null,
-                email: data.email || null,
-                isPrimary: true,
-                sortOrder: 0,
-              },
-            },
-          }
-        : {}),
-    },
-    include: { contacts: true },
+  const legalText = data.legalDetails?.trim() || null;
+
+  // Prefer delegate creates inside a transaction over nested ClientCreateInput.
+  // A long-lived Next.js process can keep a pre-generate ClientCreateInput that
+  // rejects `contacts` / `legalEntities` even after `prisma generate`.
+  return prisma.$transaction(async (tx) => {
+    const client = await tx.client.create({
+      data: {
+        companyName: data.companyName,
+        contactPerson: contactName,
+        phone: data.phone || null,
+        email: data.email || null,
+        website: data.website || null,
+        legalDetails: legalText,
+        note: data.note || null,
+      },
+    });
+
+    if (contactName) {
+      await tx.clientContact.create({
+        data: {
+          clientId: client.id,
+          nameUk: contactName,
+          roleUk: contactRole,
+          phone: data.phone || null,
+          email: data.email || null,
+          isPrimary: true,
+          sortOrder: 0,
+        },
+      });
+    }
+
+    if (legalText) {
+      await tx.clientLegalDetail.create({
+        data: {
+          clientId: client.id,
+          nameUk: "Основні реквізити",
+          details: legalText,
+          isPrimary: true,
+          sortOrder: 0,
+        },
+      });
+    }
+
+    return tx.client.findUniqueOrThrow({
+      where: { id: client.id },
+      include: {
+        contacts: {
+          orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+        },
+        legalEntities: legalEntitiesInclude,
+      },
+    });
   });
 }
 

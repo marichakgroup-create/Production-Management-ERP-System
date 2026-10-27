@@ -639,15 +639,17 @@ model Client {
   phone         String?
   email         String?
   website       String?
+  /// @deprecated Prefer ClientLegalDetail rows; kept as primary text mirror.
   legalDetails  String?
   note          String?
   status        RecordStatus @default(ACTIVE)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  orders   Order[]
-  files    FileAsset[]
-  contacts ClientContact[]
+  orders        Order[]
+  files         FileAsset[]
+  contacts      ClientContact[]
+  legalEntities ClientLegalDetail[]
 
   @@index([companyName])
   @@map("clients")
@@ -671,6 +673,25 @@ model ClientContact {
 
   @@index([clientId])
   @@map("client_contacts")
+}
+
+/// Legal / banking реквізити for a client (multiple entities allowed).
+model ClientLegalDetail {
+  id        String   @id @default(cuid())
+  clientId  String
+  /// Short label, e.g. "ТОВ …", "ФОП …", "IBAN USD".
+  nameUk    String
+  /// Free-text body: ЄДРПОУ, адреса, IBAN, банк…
+  details   String?
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("client_legal_details")
 }
 
 model Order {

@@ -77,7 +77,11 @@ export function ClientCreatePanel({
       </FormGroup>
 
       <FormGroup label="Реквізити" columns={1}>
-        <Textarea name="legalDetails" label="Юридичні реквізити" placeholder="ЄДРПОУ, адреса, IBAN" />
+        <Textarea
+          name="legalDetails"
+          label="Перші юридичні реквізити"
+          placeholder="ЄДРПОУ, адреса, IBAN — пізніше можна додати ще"
+        />
         <Input name="note" label="Нотатка" placeholder="Умови роботи, знижки, домовленості" />
       </FormGroup>
     </CreatePanel>

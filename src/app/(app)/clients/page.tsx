@@ -125,15 +125,12 @@ export default async function ContactsPage({
           />
         ) : (
           <SupplierContactCards
-            canEdit={canEditSuppliers}
             rows={filteredSuppliers.map((row) => ({
               id: row.id,
               nameUk: row.nameUk,
               contactPerson: row.contactPerson,
               phone: row.phone,
               email: row.email,
-              website: row.website,
-              note: row.note,
               materialsCount: row._count.materialOffers,
               contacts: row.contacts.map((person) => ({
                 id: person.id,
@@ -157,16 +154,12 @@ export default async function ContactsPage({
         />
       ) : (
         <ClientContactCards
-          canEdit={canEditClients}
           rows={filteredClients.map((row) => ({
             id: row.id,
             companyName: row.companyName,
             contactPerson: row.contactPerson,
             phone: row.phone,
             email: row.email,
-            website: row.website,
-            legalDetails: row.legalDetails,
-            note: row.note,
             ordersCount: row._count.orders,
             contacts: row.contacts.map((person) => ({
               id: person.id,
@@ -176,6 +169,7 @@ export default async function ContactsPage({
               email: person.email,
               isPrimary: person.isPrimary,
             })),
+            legalEntitiesCount: row.legalEntities.length,
           }))}
         />
       )}

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getClient } from "@/server/domains/clients/service";
 import { Breadcrumbs, HeaderBlock, QuickAction, QuickActions } from "@/components/ui/ObjectHeader";
-import { DescriptionList, Stat } from "@/components/ui/DescriptionList";
 import {
   Table,
   TableCard,
@@ -15,9 +14,11 @@ import {
   TR,
 } from "@/components/ui/Table";
 import { IconClients, IconOrders, IconPlus } from "@/components/ui/Icons";
-import { formatDateUk, formatMoneyShort } from "@/lib/utils";
+import { cn, formatDateUk, formatMoneyShort } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
-import { PartyPeopleEditor } from "@/components/contacts/PartyPeopleEditor";
+import { PartyPersonCards } from "@/components/contacts/PartyPersonCards";
+import { ClientLegalDetailsEditor } from "@/components/clients/ClientLegalDetailsEditor";
+import { ClientCompanyForm } from "@/components/clients/ClientCompanyForm";
 import { accessHas, getCurrentUserAccess } from "@/server/auth/access";
 
 function isOverdue(deadline: Date | undefined) {
@@ -43,7 +44,6 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
   const orderValue = (order: (typeof client.orders)[number]) =>
     Number(order.items[0]?.versions[0]?.totalSellingValue ?? 0);
-  const totalValue = client.orders.reduce((sum, order) => sum + orderValue(order), 0);
 
   const nextDeadline = client.orders
     .filter((order) => order.deadline && !["CLOSED", "CANCELLED"].includes(order.status))
@@ -55,6 +55,15 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
     primary?.nameUk || client.contactPerson || null,
     client.phone || primary?.phone || null,
     client.email || primary?.email || null,
+  ].filter(Boolean);
+
+  const coopBits = [
+    `${client.orders.length} зам.`,
+    activeOrders > 0 ? `${activeOrders} в роботі` : null,
+    nextDeadline
+      ? `дедлайн ${formatDateUk(nextDeadline)}${deadlineOverdue ? " · прострочено" : ""}`
+      : null,
+    lastOrder ? `останнє ${lastOrder.number}` : null,
   ].filter(Boolean);
 
   return (
@@ -82,7 +91,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         >
           Усі замовлення
         </QuickAction>
-        {(client.email || primary?.email) ? (
+        {client.email || primary?.email ? (
           <QuickAction
             icon={<IconClients size={15} />}
             href={`mailto:${client.email || primary?.email}`}
@@ -93,100 +102,78 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         ) : null}
       </QuickActions>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <HeaderBlock title="Компанія">
-          <DescriptionList
-            items={[
-              {
-                label: "Телефон",
-                value: client.phone ? (
-                  <a href={`tel:${client.phone}`} className="hover:text-[var(--color-primary-700)]">
-                    {client.phone}
-                  </a>
-                ) : (
-                  "—"
-                ),
-              },
-              {
-                label: "Email",
-                value: client.email ? (
-                  <a href={`mailto:${client.email}`} className="hover:text-[var(--color-primary-700)]">
-                    {client.email}
-                  </a>
-                ) : (
-                  "—"
-                ),
-              },
-              {
-                label: "Сайт",
-                value: client.website ? (
-                  <a
-                    href={client.website}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-[var(--color-primary-700)]"
-                  >
-                    {client.website}
-                  </a>
-                ) : (
-                  "—"
-                ),
-              },
-              { label: "Реквізити", value: client.legalDetails || "—", multiline: true },
-              { label: "Примітка", value: client.note || "—", multiline: true },
-            ]}
-          />
-          <div className="mt-4 border-t border-[var(--color-divider)] pt-3">
-            <PartyPeopleEditor
-              kind="client"
-              partyId={client.id}
+      {/* Company = primary object; people = secondary units on the right. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.85fr)] lg:items-start">
+        <div className="min-w-0 space-y-4">
+          <HeaderBlock title="Компанія">
+            <p className="type-caption mb-3 -mt-1 text-[var(--color-text-quiet)]">
+              Базові дані компанії
+            </p>
+            <ClientCompanyForm
               canEdit={canEdit}
-              people={client.contacts.map((person) => ({
-                id: person.id,
-                nameUk: person.nameUk,
-                roleUk: person.roleUk,
-                phone: person.phone,
-                email: person.email,
-                isPrimary: person.isPrimary,
+              initial={{
+                id: client.id,
+                companyName: client.companyName,
+                phone: client.phone,
+                email: client.email,
+                website: client.website,
+                note: client.note,
+                contactPerson: client.contactPerson,
+                legalDetails: client.legalDetails,
+              }}
+            />
+          </HeaderBlock>
+
+          <HeaderBlock title="Реквізити">
+            <ClientLegalDetailsEditor
+              clientId={client.id}
+              canEdit={canEdit}
+              rows={client.legalEntities.map((entity) => ({
+                id: entity.id,
+                nameUk: entity.nameUk,
+                details: entity.details,
+                isPrimary: entity.isPrimary,
               }))}
             />
-          </div>
-        </HeaderBlock>
+          </HeaderBlock>
+        </div>
 
-        <HeaderBlock title="Співпраця">
-          <div className="grid grid-cols-2 gap-4">
-            <Stat label="Усього замовлень" value={client.orders.length} />
-            <Stat label="В роботі" value={activeOrders} tone={activeOrders > 0 ? "accent" : "neutral"} />
-            <Stat
-              label="Сума замовлень"
-              value={totalValue > 0 ? formatMoneyShort(totalValue) : "—"}
-              hint="за версіями"
-            />
-            <Stat
-              label="Найближчий дедлайн"
-              value={nextDeadline ? formatDateUk(nextDeadline) : "—"}
-              tone={deadlineOverdue ? "danger" : "neutral"}
-              hint={deadlineOverdue ? "прострочено" : undefined}
-            />
-          </div>
-          {lastOrder ? (
-            <p className="type-caption mt-3 border-t border-[var(--color-divider)] pt-2">
-              Останнє замовлення{" "}
-              <Link
-                href={`/orders/${lastOrder.id}`}
-                className="tabular font-medium text-[var(--color-text-primary)] hover:text-[var(--color-primary-700)] hover:underline"
-              >
-                {lastOrder.number}
-              </Link>{" "}
-              від {formatDateUk(lastOrder.createdAt)}
-            </p>
-          ) : null}
-        </HeaderBlock>
+        <aside className="min-w-0">
+          <PartyPersonCards
+            kind="client"
+            partyId={client.id}
+            canEdit={canEdit}
+            people={client.contacts.map((person) => ({
+              id: person.id,
+              nameUk: person.nameUk,
+              roleUk: person.roleUk,
+              phone: person.phone,
+              email: person.email,
+              isPrimary: person.isPrimary,
+            }))}
+          />
+        </aside>
       </div>
 
       <TableCard>
         <TableToolbar
-          left={<span className="type-subsection">Замовлення клієнта</span>}
+          left={
+            <div className="min-w-0">
+              <span className="type-subsection">Замовлення клієнта</span>
+              {coopBits.length > 0 ? (
+                <p
+                  className={cn(
+                    "type-caption mt-0.5 truncate",
+                    deadlineOverdue
+                      ? "text-[var(--color-danger-text)]"
+                      : "text-[var(--color-text-quiet)]",
+                  )}
+                >
+                  {coopBits.join(" · ")}
+                </p>
+              ) : null}
+            </div>
+          }
           right={<span className="type-caption tabular">{client.orders.length}</span>}
         />
         <Table>

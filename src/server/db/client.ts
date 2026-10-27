@@ -9,10 +9,25 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /**
- * Bump when Prisma schema changes so dev HMR does not keep a stale client.
- * Also bump after `prisma generate` if a previous bump raced ahead of generation.
+ * Bump when Prisma schema changes so HMR drops the cached singleton.
+ * After `prisma generate`, a long-lived `next dev` may still need a full
+ * process restart — Node keeps the old `@prisma/client` module in memory.
  */
-const PRISMA_CLIENT_VERSION = "20261010094000_decoration_formats_pool";
+const PRISMA_CLIENT_VERSION = "20261027131500_client_legal_details_restart";
+
+/** Delegates that must exist after party contacts / legal details / decorations. */
+const REQUIRED_DELEGATES = [
+  "clientContact",
+  "supplierContact",
+  "clientLegalDetail",
+  "decorationFormat",
+  "decorationFormatTier",
+  "fixedCostSettings",
+  "fixedCostArticle",
+  "screenPrintPriceCell",
+  "screenPrintCoefficient",
+  "sizeChartVariant",
+] as const;
 
 function materialClientHasTagColor(): boolean {
   try {
@@ -24,32 +39,17 @@ function materialClientHasTagColor(): boolean {
 
 function clientHasCurrentDelegates(client: PrismaClient | undefined): boolean {
   if (!client) return false;
-  return (
-    "fixedCostSettings" in client &&
-    "fixedCostArticle" in client &&
-    "screenPrintPriceCell" in client &&
-    "screenPrintCoefficient" in client &&
-    "sizeChartVariant" in client &&
-    "decorationFormat" in client &&
-    "decorationFormatTier" in client &&
-    materialClientHasTagColor()
-  );
+  return REQUIRED_DELEGATES.every((name) => name in client) && materialClientHasTagColor();
 }
 
-function shouldRecreateClient(): boolean {
-  if (globalForPrisma.prismaClientVersion !== PRISMA_CLIENT_VERSION) return true;
-  if (!clientHasCurrentDelegates(globalForPrisma.prisma)) return true;
-  if (!materialClientHasTagColor()) return true;
-  return false;
-}
-
-if (shouldRecreateClient()) {
+function dropCachedClient(reason: string) {
   const stale = globalForPrisma.prisma;
   const stalePool = globalForPrisma.pgPool;
   globalForPrisma.prisma = undefined;
   globalForPrisma.pgPool = undefined;
-  globalForPrisma.prismaClientVersion = PRISMA_CLIENT_VERSION;
-  // Drop cached instance from a previous schema; ignore disconnect errors in HMR.
+  if (stale || stalePool) {
+    console.warn(`[prisma] Recreating client (${reason})`);
+  }
   void stale?.$disconnect().catch(() => undefined);
   void stalePool?.end().catch(() => undefined);
 }
@@ -122,15 +122,32 @@ function createPrismaClient() {
 }
 
 function getPrismaClient(): PrismaClient {
-  if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = createPrismaClient();
+  const versionMismatch = globalForPrisma.prismaClientVersion !== PRISMA_CLIENT_VERSION;
+  const delegatesStale = !clientHasCurrentDelegates(globalForPrisma.prisma);
+
+  if (globalForPrisma.prisma && (versionMismatch || delegatesStale)) {
+    dropCachedClient(versionMismatch ? "schema fingerprint changed" : "missing delegates");
   }
+
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prismaClientVersion = PRISMA_CLIENT_VERSION;
+    globalForPrisma.prisma = createPrismaClient();
+    if (!clientHasCurrentDelegates(globalForPrisma.prisma)) {
+      dropCachedClient("constructed client still missing delegates");
+      throw new Error(
+        "Prisma client loaded without ClientContact / ClientLegalDetail. " +
+          "The Node process still has a stale @prisma/client — fully restart `npm run dev`.",
+      );
+    }
+  }
+
   return globalForPrisma.prisma;
 }
 
 /**
  * Lazy proxy so importing calc helpers / scripts does not require DATABASE_URL
- * until the first real DB call.
+ * until the first real DB call. Freshness is checked on every access so HMR
+ * cannot keep serving a post-generate-stale singleton forever.
  */
 export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   get(_target, prop, _receiver) {

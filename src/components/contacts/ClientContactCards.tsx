@@ -1,11 +1,8 @@
-"use client";
-
-import { ContactCard, ContactCardsGrid, type ContactField } from "@/components/contacts/ContactCard";
 import {
-  PartyPeopleEditor,
-  type PartyPersonRow,
-} from "@/components/contacts/PartyPeopleEditor";
-import { updateClientAction } from "@/server/domains/clients/actions";
+  ContactCardsGrid,
+  ContactSummaryCard,
+} from "@/components/contacts/ContactSummaryCard";
+import type { PartyPersonRow } from "@/components/contacts/PartyPeopleEditor";
 
 export type ClientCardRow = {
   id: string;
@@ -13,84 +10,43 @@ export type ClientCardRow = {
   contactPerson: string | null;
   phone: string | null;
   email: string | null;
-  website: string | null;
-  legalDetails: string | null;
-  note: string | null;
   ordersCount: number;
   contacts: PartyPersonRow[];
+  legalEntitiesCount: number;
 };
 
-export function ClientContactCards({
-  rows,
-  canEdit,
-}: {
-  rows: ClientCardRow[];
-  canEdit: boolean;
-}) {
+function primaryPerson(row: ClientCardRow) {
+  return row.contacts.find((person) => person.isPrimary) ?? row.contacts[0] ?? null;
+}
+
+export function ClientContactCards({ rows }: { rows: ClientCardRow[] }) {
   if (rows.length === 0) return null;
 
   return (
     <ContactCardsGrid>
       {rows.map((row) => {
-        const fields: ContactField[] = [
-          {
-            key: "phone",
-            label: "Телефон компанії",
-            value: row.phone ?? "",
-            kind: "tel",
-            placeholder: "+380",
-          },
-          {
-            key: "email",
-            label: "Email компанії",
-            value: row.email ?? "",
-            kind: "email",
-          },
-          {
-            key: "website",
-            label: "Сайт",
-            value: row.website ?? "",
-            placeholder: "https://",
-          },
-          {
-            key: "note",
-            label: "Нотатка",
-            value: row.note ?? "",
-            wide: true,
-            placeholder: "Умови, домовленості…",
-          },
-        ];
+        const person = primaryPerson(row);
+        const name = person?.nameUk || row.contactPerson;
+        const role = person?.roleUk?.trim();
+        const phone = person?.phone || row.phone;
+        const email = person?.email || row.email;
+        const primaryLine = [name, role].filter(Boolean).join(" · ") || null;
+        const secondaryLine = [phone, email].filter(Boolean).join(" · ") || null;
+
+        const meta = [
+          `${row.ordersCount} зам.`,
+          row.contacts.length > 0 ? `${row.contacts.length} осіб` : null,
+          row.legalEntitiesCount > 0 ? `${row.legalEntitiesCount} рекв.` : null,
+        ].filter(Boolean) as string[];
 
         return (
-          <ContactCard
+          <ContactSummaryCard
             key={row.id}
-            title={row.companyName}
-            titleKey="companyName"
             href={`/clients/${row.id}`}
-            detailLabel="Детальніше"
-            meta={`${row.ordersCount} зам.`}
-            disabled={!canEdit}
-            fields={fields}
-            below={
-              <PartyPeopleEditor
-                kind="client"
-                partyId={row.id}
-                people={row.contacts}
-                canEdit={canEdit}
-                dense
-              />
-            }
-            onSave={async (values) => {
-              const formData = new FormData();
-              formData.set("id", row.id);
-              for (const [key, value] of Object.entries(values)) {
-                formData.set(key, value);
-              }
-              formData.set("contactPerson", row.contactPerson ?? "");
-              formData.set("legalDetails", row.legalDetails ?? "");
-              const result = await updateClientAction(formData);
-              return { ok: result.ok, error: result.ok ? undefined : result.error };
-            }}
+            title={row.companyName}
+            primaryLine={primaryLine}
+            secondaryLine={secondaryLine}
+            meta={meta}
           />
         );
       })}

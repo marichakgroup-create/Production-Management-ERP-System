@@ -44,6 +44,25 @@ export async function listSuppliers(params?: { search?: string }) {
   });
 }
 
+export async function getSupplier(id: string) {
+  return prisma.supplier.findUnique({
+    where: { id },
+    include: {
+      _count: { select: { materialOffers: true } },
+      contacts: {
+        orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+      },
+      materialOffers: {
+        orderBy: { updatedAt: "desc" },
+        take: 12,
+        include: {
+          material: { select: { id: true, nameUk: true, status: true } },
+        },
+      },
+    },
+  });
+}
+
 export type SupplierContactInput = {
   nameUk: string;
   contactPerson?: string | null;
@@ -60,34 +79,45 @@ export async function createSupplierContact(input: SupplierContactInput) {
   if (!nameUk) throw new Error("NAME_REQUIRED");
   const personName = input.contactPerson?.trim() || null;
   const personRole = input.contactRoleUk?.trim() || null;
-  return prisma.supplier.create({
-    data: {
-      nameUk,
-      contactPerson: personName,
-      phone: input.phone?.trim() || null,
-      email: input.email?.trim() || null,
-      website: input.website?.trim() || null,
-      note: input.note?.trim() || null,
-      defaultCargoUsdPerKg:
-        input.defaultCargoUsdPerKg != null && Number.isFinite(input.defaultCargoUsdPerKg)
-          ? input.defaultCargoUsdPerKg
-          : null,
-      ...(personName
-        ? {
-            contacts: {
-              create: {
-                nameUk: personName,
-                roleUk: personRole,
-                phone: input.phone?.trim() || null,
-                email: input.email?.trim() || null,
-                isPrimary: true,
-                sortOrder: 0,
-              },
-            },
-          }
-        : {}),
-    },
-    include: { contacts: true },
+  const phone = input.phone?.trim() || null;
+  const email = input.email?.trim() || null;
+  // Flat create + delegate (avoids stale SupplierCreateInput rejecting nested contacts).
+  return prisma.$transaction(async (tx) => {
+    const supplier = await tx.supplier.create({
+      data: {
+        nameUk,
+        contactPerson: personName,
+        phone,
+        email,
+        website: input.website?.trim() || null,
+        note: input.note?.trim() || null,
+        defaultCargoUsdPerKg:
+          input.defaultCargoUsdPerKg != null && Number.isFinite(input.defaultCargoUsdPerKg)
+            ? input.defaultCargoUsdPerKg
+            : null,
+      },
+    });
+    if (personName) {
+      await tx.supplierContact.create({
+        data: {
+          supplierId: supplier.id,
+          nameUk: personName,
+          roleUk: personRole,
+          phone,
+          email,
+          isPrimary: true,
+          sortOrder: 0,
+        },
+      });
+    }
+    return tx.supplier.findUniqueOrThrow({
+      where: { id: supplier.id },
+      include: {
+        contacts: {
+          orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+        },
+      },
+    });
   });
 }
 

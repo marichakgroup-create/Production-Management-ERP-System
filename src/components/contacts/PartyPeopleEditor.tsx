@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { SoftBusy } from "@/components/ui/SoftBusy";
 import { IconPlus, IconTrash } from "@/components/ui/Icons";
-import { cn } from "@/lib/utils";
 import {
   createClientContactAction,
   createSupplierContactPersonAction,
@@ -28,21 +27,21 @@ export type PartyPersonRow = {
 type Kind = "client" | "supplier";
 
 /**
- * Compact people list under a company (client or supplier).
- * Hierarchy: company card → contact persons.
+ * People under a company. On the object page the parent HeaderBlock owns the title.
  */
 export function PartyPeopleEditor({
   kind,
   partyId,
   people,
   canEdit,
-  dense = false,
+  embedded = true,
 }: {
   kind: Kind;
   partyId: string;
   people: PartyPersonRow[];
   canEdit: boolean;
-  dense?: boolean;
+  /** Hide local section title when wrapped in HeaderBlock. */
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -124,14 +123,18 @@ export function PartyPeopleEditor({
 
   return (
     <SoftBusy busy={pending} label="Оновлення контактів…">
-      <div className={cn("space-y-2", dense ? "pt-1" : "pt-2")}>
+      <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
-            Контактні особи
-            <span className="ml-1.5 font-normal tabular text-[var(--color-text-tertiary)]">
-              {people.length}
-            </span>
-          </p>
+          {!embedded ? (
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
+              Контактні особи
+              <span className="ml-1.5 font-normal tabular text-[var(--color-text-tertiary)]">
+                {people.length}
+              </span>
+            </p>
+          ) : (
+            <p className="type-caption tabular text-[var(--color-text-quiet)]">{people.length} осіб</p>
+          )}
           {canEdit && !adding ? (
             <button
               type="button"
@@ -148,12 +151,9 @@ export function PartyPeopleEditor({
           <p className="type-caption">Ще немає — додайте людину для замовлень / звʼязку.</p>
         ) : null}
 
-        <ul className="space-y-1.5">
+        <ul className="divide-y divide-[var(--color-divider)]">
           {people.map((person) => (
-            <li
-              key={person.id}
-              className="rounded-[8px] border border-[var(--color-divider)] bg-[var(--color-bg)]/50 px-2.5 py-2"
-            >
+            <li key={person.id} className="py-3 first:pt-0 last:pb-0">
               {canEdit ? (
                 <PersonFields
                   key={person.id}
@@ -164,7 +164,7 @@ export function PartyPeopleEditor({
                 />
               ) : (
                 <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-[var(--color-text-primary)]">
+                  <p className="text-[13.5px] font-medium text-[var(--color-text-primary)]">
                     {person.nameUk}
                     {person.isPrimary ? (
                       <span className="ml-1.5 text-[10px] font-semibold uppercase text-[var(--color-text-quiet)]">
@@ -181,8 +181,6 @@ export function PartyPeopleEditor({
                     <p className="type-caption mt-0.5 truncate">
                       {[person.phone, person.email].filter(Boolean).join(" · ")}
                     </p>
-                  ) : !person.roleUk?.trim() ? (
-                    <p className="type-caption mt-0.5">—</p>
                   ) : null}
                 </div>
               )}
@@ -191,7 +189,7 @@ export function PartyPeopleEditor({
         </ul>
 
         {adding && canEdit ? (
-          <div className="space-y-2 rounded-[8px] border border-dashed border-[var(--color-border-strong)] px-2.5 py-2">
+          <div className="space-y-2 border-t border-dashed border-[var(--color-border-strong)] pt-3">
             <div className="grid gap-2 sm:grid-cols-2">
               <Input
                 label="Імʼя"

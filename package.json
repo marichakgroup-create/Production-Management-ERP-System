@@ -18,6 +18,7 @@
     "db:deploy": "bash scripts/run-with-node.sh prisma migrate deploy",
     "db:seed": "bash scripts/run-with-node.sh tsx prisma/seed.ts",
     "db:studio": "bash scripts/run-with-node.sh prisma studio",
+    "db:health": "bash scripts/run-with-node.sh tsx scripts/prisma-healthcheck.ts",
     "test:calc": "bash scripts/run-with-node.sh tsx scripts/calc-engine.smoke.ts",
     "test:e2e": "bash scripts/run-with-node.sh playwright test",
     "test:qa": "bash scripts/run-with-node.sh bash -c 'tsx scripts/qa-e2e-prepare.ts && playwright test'"

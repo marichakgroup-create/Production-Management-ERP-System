@@ -75,6 +75,7 @@ export async function updateSupplierContactAction(formData: FormData) {
   }
 
   revalidatePath("/clients");
+  revalidatePath(`/clients/suppliers/${id}`);
   revalidatePath("/settings/resources");
   return { ok: true as const };
 }
