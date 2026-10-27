@@ -261,24 +261,38 @@ export function OrderDetailSection({
   action,
   children,
   className,
+  dense = false,
 }: {
   icon?: React.ReactNode;
   title: string;
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /** Compact chrome for secondary context (client / terms), not the main workspace. */
+  dense?: boolean;
 }) {
   return (
     <section
       className={cn(
-        "rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)] sm:p-5",
+        "rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]",
+        dense ? "px-3 py-2.5 sm:px-3.5" : "p-4 sm:p-5",
         className,
       )}
     >
-      <header className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+      <header
+        className={cn(
+          "flex items-center justify-between gap-3",
+          dense ? "mb-2" : "mb-4",
+        )}
+      >
+        <div className={cn("flex min-w-0 items-center", dense ? "gap-2" : "gap-2.5")}>
           {icon ? (
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-tint-sage)] text-[var(--color-primary-700)]">
+            <span
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-full bg-[var(--color-tint-sage)] text-[var(--color-primary-700)]",
+                dense ? "h-7 w-7" : "h-8 w-8",
+              )}
+            >
               {icon}
             </span>
           ) : null}

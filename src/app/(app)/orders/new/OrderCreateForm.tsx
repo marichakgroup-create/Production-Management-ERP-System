@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Select, FormGroup } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Field";
 import { Banner } from "@/components/ui/Banner";
 import { EmptyState } from "@/components/ui/Page";
 import { SplitWorkspace } from "@/components/layout/SplitWorkspace";
@@ -155,11 +155,6 @@ export function OrderCreateForm({
   );
   const selectedClient = clients.find((client) => client.id === clientId);
   const clientPeople = selectedClient?.contacts ?? [];
-  const selectedContact =
-    clientPeople.find((person) => person.id === clientContactId) ??
-    clientPeople.find((person) => person.isPrimary) ??
-    clientPeople[0] ??
-    null;
 
   useEffect(() => {
     if (!selectedClient) {
@@ -488,39 +483,39 @@ export function OrderCreateForm({
         className="xl:grid-cols-[minmax(0,1fr)_minmax(200px,232px)]"
         left={
           <>
-            <OrderDetailSection icon={<IconClients size={16} />} title="Замовник і умови">
-            <div className="space-y-4">
-              <FormGroup
-                label="Клієнт"
-                columns={1}
-                action={
-                  <ClientCreatePanel
-                    variant="secondary"
-                    size="sm"
-                    triggerLabel="Новий клієнт"
-                    onCreated={(client) => {
-                      setClients((prev) => {
-                        const next = {
-                          id: client.id,
-                          label: client.companyName,
-                          contactPerson: client.contactPerson ?? null,
-                          phone: client.phone ?? null,
-                          email: client.email ?? null,
-                          contacts: client.contacts ?? [],
-                        };
-                        return prev.some((row) => row.id === client.id)
-                          ? prev.map((row) => (row.id === client.id ? next : row))
-                          : [...prev, next];
-                      });
-                      setClientId(client.id);
-                      const primary =
-                        client.contacts?.find((person) => person.isPrimary) ??
-                        client.contacts?.[0];
-                      setClientContactId(primary?.id ?? "");
-                    }}
-                  />
-                }
-              >
+            <OrderDetailSection
+              dense
+              icon={<IconClients size={15} />}
+              title="Замовник і умови"
+              action={
+                <ClientCreatePanel
+                  variant="ghost"
+                  size="sm"
+                  triggerLabel="Новий"
+                  onCreated={(client) => {
+                    setClients((prev) => {
+                      const next = {
+                        id: client.id,
+                        label: client.companyName,
+                        contactPerson: client.contactPerson ?? null,
+                        phone: client.phone ?? null,
+                        email: client.email ?? null,
+                        contacts: client.contacts ?? [],
+                      };
+                      return prev.some((row) => row.id === client.id)
+                        ? prev.map((row) => (row.id === client.id ? next : row))
+                        : [...prev, next];
+                    });
+                    setClientId(client.id);
+                    const primary =
+                      client.contacts?.find((person) => person.isPrimary) ??
+                      client.contacts?.[0];
+                    setClientContactId(primary?.id ?? "");
+                  }}
+                />
+              }
+            >
+              <div className="grid gap-2 sm:grid-cols-2">
                 <Select
                   name="clientId"
                   label="Замовник"
@@ -535,91 +530,45 @@ export function OrderCreateForm({
                     </option>
                   ))}
                 </Select>
-              </FormGroup>
 
-              {selectedClient ? (
-                <div className="space-y-3 rounded-[10px] border border-[var(--color-divider)] bg-[var(--color-bg)]/40 px-3.5 py-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
-                      Компанія
-                    </p>
-                    <p className="mt-1 text-[14px] font-semibold text-[var(--color-text-primary)]">
-                      {selectedClient.label}
+                {selectedClient && clientPeople.length > 0 ? (
+                  <Select
+                    name="clientContactId"
+                    label="Контактна особа"
+                    value={clientContactId}
+                    onChange={(event) => setClientContactId(event.target.value)}
+                    hideSelectedDescription
+                  >
+                    {clientPeople.map((person) => (
+                      <option
+                        key={person.id}
+                        value={person.id}
+                        data-description={
+                          [
+                            person.roleUk?.trim() || null,
+                            person.isPrimary ? "основний" : null,
+                            person.phone?.trim() || null,
+                            person.email?.trim() || null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || undefined
+                        }
+                      >
+                        {person.nameUk}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <div className="min-w-0 self-end">
+                    <input type="hidden" name="clientContactId" value="" />
+                    <p className="type-caption pb-2">
+                      {selectedClient
+                        ? "Немає контактних осіб — додайте в картці клієнта."
+                        : "Оберіть клієнта, щоб вказати особу."}
                     </p>
                   </div>
+                )}
 
-                  {clientPeople.length > 0 ? (
-                    <Select
-                      name="clientContactId"
-                      label="Контактна особа"
-                      value={clientContactId}
-                      onChange={(event) => setClientContactId(event.target.value)}
-                    >
-                      {clientPeople.map((person) => (
-                        <option
-                          key={person.id}
-                          value={person.id}
-                          data-description={
-                            [
-                              person.roleUk?.trim() || null,
-                              person.isPrimary ? "основний" : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ") || undefined
-                          }
-                        >
-                          {person.nameUk}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : (
-                    <>
-                      <input type="hidden" name="clientContactId" value="" />
-                      <p className="type-caption">
-                        У клієнта ще немає контактних осіб — додайте їх у картці контактів.
-                      </p>
-                    </>
-                  )}
-
-                  {selectedContact ? (
-                    <div className="rounded-[8px] border border-[var(--color-divider)] bg-[var(--color-surface)]/60 px-3 py-2">
-                      <p className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">
-                        {selectedContact.nameUk}
-                      </p>
-                      {selectedContact.roleUk?.trim() ? (
-                        <p className="type-caption mt-0.5 truncate text-[var(--color-text-quiet)]">
-                          {selectedContact.roleUk.trim()}
-                        </p>
-                      ) : null}
-                      <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
-                        <div className="min-w-0">
-                          <dt className="type-caption">Телефон</dt>
-                          <dd className="truncate text-[13px] text-[var(--color-text-secondary)]">
-                            {selectedContact.phone?.trim() ||
-                              selectedClient.phone?.trim() ||
-                              "—"}
-                          </dd>
-                        </div>
-                        <div className="min-w-0">
-                          <dt className="type-caption">Email</dt>
-                          <dd className="truncate text-[13px] text-[var(--color-text-secondary)]">
-                            {selectedContact.email?.trim() ||
-                              selectedClient.email?.trim() ||
-                              "—"}
-                          </dd>
-                        </div>
-                      </dl>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="type-caption">
-                  Після вибору або створення клієнта тут зʼявляться контактні особи.
-                </p>
-              )}
-
-              <FormGroup label="Терміни" columns={2}>
-                <Input name="title" label="Назва запиту" placeholder="Необовʼязково" />
                 <Input
                   name="deadline"
                   label="Дедлайн"
@@ -627,9 +576,129 @@ export function OrderCreateForm({
                   value={deadline}
                   onChange={(event) => setDeadline(event.target.value)}
                 />
-              </FormGroup>
-            </div>
+                <Input
+                  name="comment"
+                  label="Коментар до замовлення"
+                  placeholder="Умови, побажання клієнта…"
+                />
+              </div>
             </OrderDetailSection>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="type-subsection">Позиції замовлення</h2>
+                <span className="type-caption tabular">{lines.length} у списку</span>
+              </div>
+
+              {lines.length === 0 ? (
+                <div className="rounded-[var(--radius-surface)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
+                  <p className="type-caption">
+                    Список порожній — оберіть виріб у каталозі справа й додайте тираж.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+                  <table className="erp-table w-full border-collapse text-[13px]">
+                    <thead>
+                      <tr className="border-b border-[var(--color-table-section-border)]">
+                        <th className="px-3 py-1.5 text-left">#</th>
+                        <th className="px-3 py-1.5 text-left">Виріб</th>
+                        <th className="px-3 py-1.5 text-right">К-сть</th>
+                        <th className="px-3 py-1.5 text-left">Склад</th>
+                        {showCosts ? (
+                          <th className="px-3 py-1.5 text-right">Орієнтир</th>
+                        ) : null}
+                        <th className="px-3 py-1.5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((line, index) => {
+                        const { qty, unit, sum } = lineTotal(line, products);
+                        const editing = editingKey === line.key;
+                        return (
+                          <tr
+                            key={line.key}
+                            className={cn(
+                              "border-b border-[var(--color-divider)] last:border-0",
+                              editing
+                                ? "bg-[var(--color-tint-sage)]"
+                                : "hover:bg-[var(--color-surface-hover)]",
+                            )}
+                          >
+                            <td className="px-3 py-1.5 tabular text-[var(--color-text-tertiary)]">
+                              {index + 1}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <ProductThumb
+                                  imageUrl={
+                                    products.find((row) => row.id === line.productId)?.imageUrl
+                                  }
+                                  label={line.label}
+                                  active={editing}
+                                  size="sm"
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium">{line.label}</p>
+                                  {editing ? (
+                                    <p className="type-caption text-[var(--color-primary-700)]">
+                                      Редагується нижче
+                                    </p>
+                                  ) : line.comment ? (
+                                    <p className="type-caption truncate">{line.comment}</p>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-1.5 text-right tabular">{qty} шт</td>
+                            <td className="px-3 py-1.5 text-[var(--color-text-secondary)]">
+                              {line.materialsCount} мат. · {line.operationsCount} оп.
+                            </td>
+                            {showCosts ? (
+                              <td className="px-3 py-1.5 text-right tabular">
+                                {unit != null ? (
+                                  <span className="inline-flex flex-col items-end gap-0.5">
+                                    <span className="font-medium">{formatMoneyUah(unit)}</span>
+                                    {sum != null && qty > 1 ? (
+                                      <span className="type-caption">
+                                        разом {formatMoneyUah(sum)}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            ) : null}
+                            <td className="px-3 py-1.5">
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => editLine(line)}
+                                >
+                                  Редагувати
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  aria-label="Видалити позицію"
+                                  onClick={() => removeLine(line.key)}
+                                >
+                                  <IconTrash size={14} />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
 
             {stagingProduct && stagingComposition ? (
               <DraftCompositionEditor
@@ -681,10 +750,10 @@ export function OrderCreateForm({
                 confirmDisabled={confirmDisabled}
               />
             ) : (
-              <div className="rounded-[var(--radius-surface)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]">
+              <div className="rounded-[var(--radius-surface)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6">
                 <EmptyState
-                  size="lg"
-                  icon={<IconGarment size={28} />}
+                  size="sm"
+                  icon={<IconGarment size={22} />}
                   title={
                     lines.length > 0
                       ? "Оберіть виріб у каталозі або позицію в списку"
@@ -698,126 +767,6 @@ export function OrderCreateForm({
                 />
               </div>
             )}
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="type-subsection">Позиції замовлення</h2>
-                <span className="type-caption tabular">{lines.length} у списку</span>
-              </div>
-
-              {lines.length === 0 ? (
-                <div className="rounded-[var(--radius-surface)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]">
-                  <EmptyState
-                    size="sm"
-                    icon={<IconGarment size={22} />}
-                    title="Позицій ще немає"
-                    description="Оберіть виріб у каталозі, вкажіть тираж і додайте його в таблицю замовлення."
-                  />
-                </div>
-              ) : (
-                <div className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-                  <table className="erp-table w-full border-collapse text-[13px]">
-                    <thead>
-                      <tr className="border-b border-[var(--color-table-section-border)]">
-                        <th className="px-3 py-2 text-left">#</th>
-                        <th className="px-3 py-2 text-left">Виріб</th>
-                        <th className="px-3 py-2 text-right">К-сть</th>
-                        <th className="px-3 py-2 text-left">Склад</th>
-                        {showCosts ? (
-                          <th className="px-3 py-2 text-right">Орієнтир</th>
-                        ) : null}
-                        <th className="px-3 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lines.map((line, index) => {
-                        const { qty, unit, sum } = lineTotal(line, products);
-                        const editing = editingKey === line.key;
-                        return (
-                          <tr
-                            key={line.key}
-                            className={cn(
-                              "border-b border-[var(--color-divider)] last:border-0",
-                              editing
-                                ? "bg-[var(--color-tint-sage)]"
-                                : "hover:bg-[var(--color-surface-hover)]",
-                            )}
-                          >
-                            <td className="px-3 py-2 tabular text-[var(--color-text-tertiary)]">
-                              {index + 1}
-                            </td>
-                            <td className="px-3 py-2">
-                              <div className="flex min-w-0 items-start gap-2.5">
-                                <ProductThumb
-                                  imageUrl={
-                                    products.find((row) => row.id === line.productId)?.imageUrl
-                                  }
-                                  label={line.label}
-                                  active={editing}
-                                  size="sm"
-                                />
-                                <div className="min-w-0">
-                                  <p className="font-medium">{line.label}</p>
-                                  {line.comment ? (
-                                    <p className="type-caption">{line.comment}</p>
-                                  ) : null}
-                                  {editing ? (
-                                    <p className="type-caption text-[var(--color-primary-700)]">
-                                      Редагується зліва
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-right tabular">{qty} шт</td>
-                            <td className="px-3 py-2 text-[var(--color-text-secondary)]">
-                              {line.materialsCount} мат. · {line.operationsCount} оп.
-                            </td>
-                            {showCosts ? (
-                              <td className="px-3 py-2 text-right tabular">
-                                {unit != null ? (
-                                  <span className="inline-flex flex-col items-end gap-0.5">
-                                    <span className="font-medium">{formatMoneyUah(unit)}</span>
-                                    {sum != null && qty > 1 ? (
-                                      <span className="type-caption">
-                                        разом {formatMoneyUah(sum)}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                ) : (
-                                  "—"
-                                )}
-                              </td>
-                            ) : null}
-                            <td className="px-3 py-2">
-                              <div className="flex justify-end gap-1">
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => editLine(line)}
-                                >
-                                  Редагувати
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  aria-label="Видалити позицію"
-                                  onClick={() => removeLine(line.key)}
-                                >
-                                  <IconTrash size={14} />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
 
             {error ? <Banner tone="danger">{error}</Banner> : null}
           </>

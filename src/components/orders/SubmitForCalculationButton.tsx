@@ -51,32 +51,19 @@ export function SubmitForCalculationButton({
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <Button
-        type="button"
-        onClick={submit}
-        disabled={disabled || pending}
-        title={disabled ? disabledReason : undefined}
-      >
-        {pending
-          ? asAdmin
-            ? "Перехід…"
-            : "Передача…"
-          : asAdmin
-            ? "До розрахунку"
-            : "На розрахунок адміну"}
-      </Button>
-      {disabled && disabledReason ? (
-        <p className="max-w-[16rem] text-right text-[11.5px] text-[var(--color-text-quiet)]">
-          {disabledReason}
-        </p>
-      ) : (
-        <p className="max-w-[16rem] text-right text-[11.5px] text-[var(--color-text-quiet)]">
-          {asAdmin
-            ? "Далі — ПДВ, кольори постачальників, доставка й калькуляція."
-            : "Адміністратор перевірить склад і зробить калькуляцію."}
-        </p>
-      )}
-    </div>
+    <Button
+      type="button"
+      onClick={submit}
+      disabled={disabled || pending}
+      title={disabled ? disabledReason : undefined}
+    >
+      {pending
+        ? asAdmin
+          ? "Перехід…"
+          : "Передача…"
+        : asAdmin
+          ? "До розрахунку"
+          : "На розрахунок адміну"}
+    </Button>
   );
 }

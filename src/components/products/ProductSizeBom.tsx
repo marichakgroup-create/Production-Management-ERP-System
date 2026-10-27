@@ -19,8 +19,6 @@ import {
 import { IconGrip } from "@/components/ui/Icons";
 import { RowEditActions, ROW_DIRTY_CLASS } from "@/components/ui/RowEditActions";
 import { formatMoneyUah, formatUnit, cn } from "@/lib/utils";
-import { CopySizeSpec, SizeScopeTabs } from "@/components/catalog/SizeScopeTabs";
-import { SizeBomScopeHint } from "@/components/catalog/SizeBomScopeHint";
 import { OversizeCoeffFields } from "@/components/catalog/OversizeCoeffFields";
 import {
   isOversizeCode,
@@ -29,16 +27,8 @@ import {
   type SizeCoeffRule,
 } from "@/lib/size-coeffs";
 import { materialOptionDescription } from "@/lib/material-catalog-options";
+import { ALL_SIZES } from "@/lib/size-bom";
 import {
-  ALL_SIZES,
-  appliesToSize,
-  consumptionForSize,
-  customizedSizeCodes,
-  wasteForSize,
-  type SizeScope,
-} from "@/lib/size-bom";
-import {
-  copyProductSizeSpecAction,
   removeProductMaterialAction,
   removeProductOperationAction,
   reorderProductBomAction,
@@ -274,7 +264,8 @@ export function ProductSizeBom({
   const router = useRouter();
   const previewQty = useProductPreviewQty();
   const [pending, startTransition] = useTransition();
-  const [sizeScope, setSizeScope] = useState<SizeScope>(ALL_SIZES);
+  // Per-size BOM tabs temporarily disabled — one shared spec + oversize % only.
+  const sizeScope = ALL_SIZES;
   const [materialIds, setMaterialIds] = useState(() => materials.map((row) => row.id));
   const [operationIds, setOperationIds] = useState(() => operations.map((row) => row.id));
   const [materialDrafts, setMaterialDrafts] = useState<
@@ -295,16 +286,9 @@ export function ProductSizeBom({
   useEffect(() => {
     setOperationIds(operations.map((row) => row.id));
   }, [operations]);
-  useEffect(() => {
-    setMaterialDrafts({});
-    setOperationDrafts({});
-  }, [sizeScope]);
 
-  const sizeRefs = sizes.map((size) => ({ code: size.code, nameUk: size.nameUk }));
-  const activeSize = sizes.find((size) => size.code === sizeScope);
-  const sizeIdsForAdd = sizeScope === ALL_SIZES || !activeSize ? [] : [activeSize.id];
-  const sizeLabelForAdd =
-    sizeScope === ALL_SIZES || !activeSize ? undefined : activeSize.nameUk;
+  const sizeIdsForAdd: string[] = [];
+  const sizeLabelForAdd: string | undefined = undefined;
 
   const materialsById = useMemo(
     () => new Map(materials.map((row) => [row.id, row])),
@@ -321,25 +305,14 @@ export function ProductSizeBom({
     .map((id) => operationsById.get(id))
     .filter((row): row is OperationView => Boolean(row));
 
-  const canReorder = !readOnly && sizeScope === ALL_SIZES;
-  const visibleMaterials =
-    sizeScope === ALL_SIZES
-      ? orderedMaterials
-      : orderedMaterials.filter((row) => appliesToSize(row.sizeCodes, sizeScope));
-  const visibleOperations =
-    sizeScope === ALL_SIZES
-      ? orderedOperations
-      : orderedOperations.filter((row) => appliesToSize(row.sizeCodes, sizeScope));
+  const canReorder = !readOnly;
+  const visibleMaterials = orderedMaterials;
+  const visibleOperations = orderedOperations;
   const hasDeliveryOp = operations.some((row) => isDeliveryOperationName(row.name));
   const deliveryOpRow = operations.find((row) => isDeliveryOperationName(row.name));
   const deliveryPerUnit = deliveryOpRow ? deliveryUnitRate(deliveryOpRow, previewQty) : 0;
-  const customized = customizedSizeCodes({
-    allCodes: sizes.map((size) => size.code),
-    materials,
-    operations,
-  });
   const hasOversizeSizes = sizes.some((size) => isOversizeCode(size.code));
-  const scopeIsOversize = isOversizeCode(sizeScope);
+  const scopeIsOversize = false;
   const oversizeUplift = resolveOversizeUplift(sizeRules);
   const materialPct = Math.round((oversizeUplift.materialCoeff - 1) * 100);
   const operationPct = Math.round((oversizeUplift.operationCoeff - 1) * 100);
@@ -398,7 +371,6 @@ export function ProductSizeBom({
     const formData = new FormData();
     formData.set("productId", productId);
     formData.set("id", id);
-    if (activeSize) formData.set("sizeId", activeSize.id);
     startTransition(async () => {
       await removeProductMaterialAction(formData);
       router.refresh();
@@ -409,7 +381,6 @@ export function ProductSizeBom({
     const formData = new FormData();
     formData.set("productId", productId);
     formData.set("id", id);
-    if (activeSize) formData.set("sizeId", activeSize.id);
     startTransition(async () => {
       await removeProductOperationAction(formData);
       router.refresh();
@@ -431,7 +402,6 @@ export function ProductSizeBom({
         formData.set("productId", productId);
         formData.set("id", id);
         formData.set("consumptionPerUnit", String(nextConsumption));
-        if (activeSize) formData.set("sizeId", activeSize.id);
         await updateProductMaterialConsumptionAction(formData);
       }
       if (!hideCosts && Math.abs(nextWaste - currentWaste) >= 0.0000001) {
@@ -439,7 +409,6 @@ export function ProductSizeBom({
         formData.set("productId", productId);
         formData.set("id", id);
         formData.set("wastePercent", String(nextWaste));
-        if (activeSize) formData.set("sizeId", activeSize.id);
         await updateProductMaterialWasteAction(formData);
       }
       setMaterialDrafts((prev) => {
@@ -494,44 +463,17 @@ export function ProductSizeBom({
     });
   }
 
-  function copySpecTo(toCodes: string[]) {
-    if (!activeSize) return;
-    const formData = new FormData();
-    formData.set("productId", productId);
-    formData.set("fromSizeId", activeSize.id);
-    for (const code of toCodes) {
-      const size = sizes.find((row) => row.code === code);
-      if (size) formData.append("toSizeId", size.id);
-    }
-    startTransition(async () => {
-      await copyProductSizeSpecAction(formData);
-      router.refresh();
-    });
-  }
-
   return (
     <div className="space-y-4">
       <TableCard>
         <TableToolbar
           left={
-            <div className="flex min-w-0 flex-col gap-2">
+            <div className="min-w-0">
               <span className="type-subsection">Матеріали</span>
-              <SizeScopeTabs
-                sizes={sizeRefs}
-                value={sizeScope}
-                onChange={setSizeScope}
-                customized={customized}
-              />
-              {sizeScope !== ALL_SIZES ? (
-                <CopySizeSpec from={sizeScope} sizes={sizeRefs} onCopy={copySpecTo} disabled={pending} />
-              ) : null}
-              {sizes.length > 1 ? (
-                <SizeBomScopeHint
-                  sizeScope={sizeScope}
-                  hasOversizeSizes={hasOversizeSizes}
-                  materialPct={materialPct}
-                  operationPct={operationPct}
-                />
+              {hasOversizeSizes ? (
+                <p className="type-caption mt-0.5 text-[var(--color-text-quiet)]">
+                  Одна специфікація на всі розміри. Для {OVERSIZE_RANGE_LABEL} — надбавка % справа.
+                </p>
               ) : null}
             </div>
           }
@@ -571,11 +513,7 @@ export function ProductSizeBom({
             {visibleMaterials.length === 0 ? (
               <TableEmpty
                 colSpan={2 + (canReorder ? 1 : 0) + (hideCosts ? 0 : 3) + (readOnly ? 0 : 1)}
-                title={
-                  sizeScope === ALL_SIZES
-                    ? "Матеріалів ще немає"
-                    : "Немає матеріалів для цього розміру"
-                }
+                title="Матеріалів ще немає"
                 description={
                   hideCosts
                     ? "Склад матеріалів для цього виробу."
@@ -584,17 +522,10 @@ export function ProductSizeBom({
               />
             ) : (
               visibleMaterials.map((row) => {
-                const hasSizeNorm =
-                  sizeScope !== ALL_SIZES && row.sizeConsumption[sizeScope] != null;
-                // Product BOM shows base norms only — size markups apply in orders.
-                const displayConsumption =
-                  sizeScope === ALL_SIZES
-                    ? row.consumption
-                    : consumptionForSize(row.consumption, row.sizeConsumption, sizeScope);
-                const waste =
-                  sizeScope === ALL_SIZES
-                    ? row.waste
-                    : wasteForSize(row.waste, row.sizeWaste, sizeScope);
+                const hasSizeNorm = false;
+                // Shared base norms — oversize markups apply in orders via %.
+                const displayConsumption = row.consumption;
+                const waste = row.waste;
                 const draft = materialDrafts[row.id];
                 const draftConsumption =
                   draft != null ? Math.max(0, Number(draft.consumption) || 0) : displayConsumption;
@@ -888,7 +819,7 @@ export function ProductSizeBom({
               <TableEmpty
                 colSpan={2 + (canReorder ? 1 : 0) + (hideCosts ? 0 : 1) + (readOnly ? 0 : 1)}
                 title={
-                  sizeScope === ALL_SIZES ? "Операцій ще немає" : "Немає операцій для цього розміру"
+                  "Операцій ще немає"
                 }
                 description="Додайте технологічні операції, щоб врахувати роботу у собівартості."
               />

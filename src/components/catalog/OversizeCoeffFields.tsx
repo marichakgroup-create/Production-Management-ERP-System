@@ -53,7 +53,7 @@ export function OversizeCoeffFields({
         "flex shrink-0 flex-nowrap items-center justify-end gap-x-3 whitespace-nowrap",
         className,
       )}
-      title="Надбавка для розмірів 3XL–6XL до базових норм з вкладки «Усі». Діє для всіх виробів."
+      title="Надбавка для великих розмірів до базової специфікації. Діє для всіх виробів у замовленні."
     >
       <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
         {OVERSIZE_RANGE_LABEL}
