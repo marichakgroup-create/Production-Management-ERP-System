@@ -845,7 +845,7 @@ export default async function OrderDetailPage({
         </dl>
         {activeDraft?.priceSource === "cost" ? (
           <p className="type-caption mt-2 text-[var(--color-warning-text)]">
-            Зафіксуйте прайс у картці виробу (вкладка «Прайс»), щоб ціна відрізнялась від собівартості.
+            Зафіксуйте прайс у картці виробу («Прайс і крій»), щоб ціна відрізнялась від собівартості.
           </p>
         ) : null}
       </div>

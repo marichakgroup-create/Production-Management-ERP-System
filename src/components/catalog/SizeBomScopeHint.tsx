@@ -56,7 +56,7 @@ export function SizeBomScopeHint({
           <>
             {" "}
             Для {OVERSIZE_RANGE_LABEL} у замовленні автоматично матеріали +{materialPct}% і операції +
-            {operationPct}% (поля справа — % для компанії). У картці виробу, «Крій» і «Прайс» націнки не
+            {operationPct}% (поля справа — % для компанії). У картці виробу й «Прайс і крій» націнки не
             рахуються.
           </>
         ) : hasOversizeSizes ? (

@@ -12,7 +12,7 @@ import { formatMoneyUah } from "@/lib/utils";
 function priceSourceSubtitle(quantity: number, price: ResolvedClientPrice | null): string {
   if (!price) return `Тираж ${quantity} шт`;
   if (price.source === "pricelist") {
-    return `Тираж ${quantity} шт · ціна з прайсу виробу (вкладка «Прайс»)`;
+    return `Тираж ${quantity} шт · ціна з прайсу виробу (вкладка «Прайс і крій»)`;
   }
   if (price.source === "sewing_markup") {
     const uplift = Math.round(price.sewingPerUnit * price.sewingMultiplier * 100) / 100;

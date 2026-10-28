@@ -930,7 +930,7 @@ export function ProductSizeBom({
                         <div className="text-right">
                           <div>{cutCell.primary}</div>
                           <Link
-                            href={`/products/${productId}?tab=cut`}
+                            href={`/products/${productId}?tab=pricing`}
                             className="type-caption text-[var(--color-primary-700)] hover:underline"
                           >
                             редагувати крій →
@@ -942,10 +942,10 @@ export function ProductSizeBom({
                             {formatMoneyUah(deliveryUnitRate(row, previewQty))}
                           </span>
                           <Link
-                            href={`/products/${productId}?tab=cut`}
+                            href={`/products/${productId}?tab=pricing`}
                             className="type-caption text-[var(--color-primary-700)] hover:underline"
                           >
-                            сітка в «Крій» →
+                            сітка в «Прайс і крій» →
                           </Link>
                         </span>
                       ) : isFixedCostOperationName(row.name) ? (
@@ -1111,7 +1111,7 @@ export function ProductSizeBom({
       ) ? (
         <p className="type-caption rounded-[10px] border border-dashed border-[var(--color-border)] px-3 py-2.5">
           Доставка в комплектації — ₴ на 1 шт. На тираж: ставка × кількість (напр. 1,50 × 100 = 150).
-          Сітку ставок редагуйте у вкладці «Крій» (колонка «Достав.»).
+          Сітку ставок редагуйте в «Прайс і крій» (колонка «Достав.»).
         </p>
       ) : null}
 

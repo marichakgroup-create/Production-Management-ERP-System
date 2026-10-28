@@ -306,7 +306,6 @@ function liveTirageSheet(args: {
 
 export function ProductPriceCutPanel({
   productId,
-  view = "price",
   optimalQty: initialOptimalQty,
   cutTiers,
   deliveryOp = null,
@@ -317,8 +316,6 @@ export function ProductPriceCutPanel({
   showDeliveryColumn: forceShowDelivery = false,
 }: {
   productId: string;
-  /** Which product-menu section: cut rates vs commercial price. */
-  view?: "cut" | "price";
   optimalQty: number | null;
   cutTiers: Array<{ minQuantity: number; ratePerUnit: number }>;
   deliveryOp?: DeliveryOp | null;
@@ -334,8 +331,6 @@ export function ProductPriceCutPanel({
   /** Force «Достав.» column even when computed amount is still 0. */
   showDeliveryColumn?: boolean;
 }) {
-  const showCutColumns = view === "cut";
-  const showPriceColumns = view === "price";
   const router = useRouter();
   const hasDeliveryOp = Boolean(deliveryOp);
   const hasMaterialDelivery = costHints.some(
@@ -704,11 +699,7 @@ export function ProductPriceCutPanel({
       }
       markSaved(snapshotRows, snapshotOptimalQty, snapshotOptimalTotal, snapshotBaseModel);
       setMessage(
-        view === "cut"
-          ? hasDeliveryOp
-            ? "Крій і доставку збережено"
-            : "Крій збережено"
-          : "Прайс збережено",
+        hasDeliveryOp ? "Крій, доставку і прайс збережено" : "Крій і прайс збережено",
       );
       // Soft refresh in background — do not block UI / wipe local rows.
       void router.refresh();
@@ -748,55 +739,51 @@ export function ProductPriceCutPanel({
     <div className="space-y-3 rounded-[14px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-soft)]">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="type-label">{view === "cut" ? "Крій" : "Прайс"}</p>
+          <p className="type-label">Прайс і крій</p>
         </div>
-        {showPriceColumns ? (
-          <label className="inline-flex items-center gap-2 type-caption">
-            <input
-              type="checkbox"
-              checked={isBaseModel}
-              onChange={(event) => setIsBaseModel(event.target.checked)}
-              className="h-4 w-4 rounded border-[var(--color-border)]"
-            />
-            Базова модель (без націнки за крій)
-          </label>
-        ) : null}
+        <label className="inline-flex items-center gap-2 type-caption">
+          <input
+            type="checkbox"
+            checked={isBaseModel}
+            onChange={(event) => setIsBaseModel(event.target.checked)}
+            className="h-4 w-4 rounded border-[var(--color-border)]"
+          />
+          Базова модель (без націнки за крій)
+        </label>
       </div>
 
-      {showCutColumns ? (
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
-          <label className="flex flex-col gap-1">
-            <span className="type-caption text-[var(--color-text-quiet)]">Оптимум, шт</span>
-            <CompactInput
-              type="number"
-              min={1}
-              step={1}
-              inputMode="numeric"
-              className="h-8 w-[7rem] text-[13px]"
-              value={optimalQty}
-              onChange={(event) => applyOptimal(Number(event.target.value), optimalCutTotal, true)}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="type-caption text-[var(--color-text-quiet)]">Крій на оптимум, ₴</span>
-            <CompactInput
-              type="number"
-              min={0}
-              step="0.01"
-              inputMode="decimal"
-              className="h-8 w-[8rem] text-[13px]"
-              value={optimalCutTotal}
-              onChange={(event) => applyOptimal(optimalQty, Number(event.target.value), true)}
-            />
-          </label>
-          <div className="flex flex-col gap-1">
-            <span className="type-caption text-[var(--color-text-quiet)]">₴/шт</span>
-            <p className="flex h-8 items-center type-mono text-[13px] font-semibold tabular-nums text-[var(--color-text)]">
-              {formatMoneyUah(cutRateFromOptimalJobTotal(optimalCutTotal, optimalQty, optimalQty))}
-            </p>
-          </div>
+      <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
+        <label className="flex flex-col gap-1">
+          <span className="type-caption text-[var(--color-text-quiet)]">Оптимум, шт</span>
+          <CompactInput
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            className="h-8 w-[7rem] text-[13px]"
+            value={optimalQty}
+            onChange={(event) => applyOptimal(Number(event.target.value), optimalCutTotal, true)}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="type-caption text-[var(--color-text-quiet)]">Крій на оптимум, ₴</span>
+          <CompactInput
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            className="h-8 w-[8rem] text-[13px]"
+            value={optimalCutTotal}
+            onChange={(event) => applyOptimal(optimalQty, Number(event.target.value), true)}
+          />
+        </label>
+        <div className="flex flex-col gap-1">
+          <span className="type-caption text-[var(--color-text-quiet)]">₴/шт</span>
+          <p className="flex h-8 items-center type-mono text-[13px] font-semibold tabular-nums text-[var(--color-text)]">
+            {formatMoneyUah(cutRateFromOptimalJobTotal(optimalCutTotal, optimalQty, optimalQty))}
+          </p>
         </div>
-      ) : null}
+      </div>
 
       {message ? <p className="type-caption text-[var(--color-text-muted)]">{message}</p> : null}
       {hasUnconfirmedDrafts ? (
@@ -810,37 +797,25 @@ export function ProductPriceCutPanel({
       <div className="w-full overflow-x-auto rounded-[12px] border border-[var(--color-border)]">
         <div className="flex items-center justify-between gap-2 border-b border-[var(--color-divider)] bg-[var(--color-bg)]/40 px-2.5 py-1.5">
           <p className="type-caption text-[var(--color-text-quiet)]">
-            {showCutColumns
-              ? "Редагуйте клітинку → підтвердіть галочкою в рядку. Основне — ₴/шт, сіре — сума на тираж."
-              : "Редагуйте клітинку → підтвердіть галочкою. Мат + Крій + Пошив + Достав + Пакування + ПВ = Собів."}
+            Редагуйте клітинку → підтвердіть галочкою в рядку. Основне — ₴/шт · сіре під ним — сума
+            на тираж · Мат + Крій + Пошив + Достав + Пакування + ПВ = Собів
           </p>
         </div>
-        <table
-          className={cn(
-            "w-full table-fixed border-collapse text-left",
-            showPriceColumns ? "min-w-[58rem]" : "min-w-[28rem]",
-          )}
-        >
+        <table className="w-full min-w-[58rem] table-fixed border-collapse text-left">
           <colgroup>
             <col className="w-[3.25rem]" />
             <col className="w-[5.5rem]" />
-            {showCutColumns ? <col className="w-[5.75rem]" /> : null}
-            {showCutColumns && showDeliveryColumn ? <col className="w-[5.75rem]" /> : null}
-            {showPriceColumns ? (
-              <>
-                <col />
-                <col />
-                <col />
-                <col />
-                <col />
-                <col className="w-[4.5rem]" />
-                <col className="w-[6.75rem]" />
-                <col />
-                <col className="w-[3.75rem]" />
-              </>
-            ) : (
-              <col />
-            )}
+            <col className="w-[5.75rem]" />
+            {showDeliveryColumn ? <col className="w-[5.75rem]" /> : null}
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col className="w-[4.5rem]" />
+            <col className="w-[6.75rem]" />
+            <col />
+            <col className="w-[3.75rem]" />
             <col className="w-[4.5rem]" />
           </colgroup>
           <thead>
@@ -851,51 +826,41 @@ export function ProductPriceCutPanel({
               <th className={thClass}>
                 <HeaderTip tip={headerTips.qty}>Тираж</HeaderTip>
               </th>
-              {showCutColumns ? (
-                <th className={thClass}>
-                  <HeaderTip tip={headerTips.cut}>Крій</HeaderTip>
-                </th>
-              ) : null}
-              {showCutColumns && showDeliveryColumn ? (
+              <th className={thClass}>
+                <HeaderTip tip={headerTips.cut}>Крій</HeaderTip>
+              </th>
+              {showDeliveryColumn ? (
                 <th className={thClass}>
                   <HeaderTip tip={headerTips.delivery}>Достав.</HeaderTip>
                 </th>
               ) : null}
-              {showPriceColumns ? (
-                <>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.materials}>Мат.</HeaderTip>
-                  </th>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.sewing}>Пошив</HeaderTip>
-                  </th>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.other}>Пакування</HeaderTip>
-                  </th>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.pv}>ПВ</HeaderTip>
-                  </th>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.cost}>Собів.</HeaderTip>
-                  </th>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.multiplier}>×</HeaderTip>
-                  </th>
-                  <th className={thClass}>
-                    <HeaderTip tip={headerTips.price}>Ціна</HeaderTip>
-                  </th>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.profit}>Прибуток</HeaderTip>
-                  </th>
-                  <th className={`${thClass} text-right`}>
-                    <HeaderTip tip={headerTips.margin}>Маржа</HeaderTip>
-                  </th>
-                </>
-              ) : (
-                <th className={`${thClass} text-right`}>
-                  <HeaderTip tip={headerTips.cost}>Собів.</HeaderTip>
-                </th>
-              )}
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.materials}>Мат.</HeaderTip>
+              </th>
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.sewing}>Пошив</HeaderTip>
+              </th>
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.other}>Пакування</HeaderTip>
+              </th>
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.pv}>ПВ</HeaderTip>
+              </th>
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.cost}>Собів.</HeaderTip>
+              </th>
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.multiplier}>×</HeaderTip>
+              </th>
+              <th className={thClass}>
+                <HeaderTip tip={headerTips.price}>Ціна</HeaderTip>
+              </th>
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.profit}>Прибуток</HeaderTip>
+              </th>
+              <th className={`${thClass} text-right`}>
+                <HeaderTip tip={headerTips.margin}>Маржа</HeaderTip>
+              </th>
               <th className={thClass} />
             </tr>
           </thead>
@@ -998,28 +963,26 @@ export function ProductPriceCutPanel({
                       ) : null}
                     </div>
                   </td>
-                  {showCutColumns ? (
-                    <td className={tdClass}>
-                      <div className="flex flex-col items-end gap-0.5">
-                        <CompactInput
-                          type="text"
-                          inputMode="decimal"
-                          className="w-full"
-                          value={draft?.cutRate ?? String(row.cutRate)}
-                          title={tips.cut}
-                          onChange={(event) =>
-                            patchDraft(row.uid, { cutRate: event.target.value })
-                          }
-                        />
-                        <FormulaTip tip={tips.cut}>
-                          <span className="type-caption tabular-nums text-[var(--color-text-quiet)]">
-                            {formatAmountWhole(sheet.cut)}
-                          </span>
-                        </FormulaTip>
-                      </div>
-                    </td>
-                  ) : null}
-                  {showCutColumns && showDeliveryColumn ? (
+                  <td className={tdClass}>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <CompactInput
+                        type="text"
+                        inputMode="decimal"
+                        className="w-full"
+                        value={draft?.cutRate ?? String(row.cutRate)}
+                        title={tips.cut}
+                        onChange={(event) =>
+                          patchDraft(row.uid, { cutRate: event.target.value })
+                        }
+                      />
+                      <FormulaTip tip={tips.cut}>
+                        <span className="type-caption tabular-nums text-[var(--color-text-quiet)]">
+                          {formatAmountWhole(sheet.cut)}
+                        </span>
+                      </FormulaTip>
+                    </div>
+                  </td>
+                  {showDeliveryColumn ? (
                     <td className={tdClass}>
                       {hasDeliveryOp ? (
                         <div className="flex flex-col items-end gap-0.5">
@@ -1048,99 +1011,80 @@ export function ProductPriceCutPanel({
                       )}
                     </td>
                   ) : null}
-                  {showPriceColumns ? (
-                    <>
-                      <td className={tdNum}>
-                        <MoneyCell
-                          perUnit={perUnit.materials}
-                          total={sheet.materials}
-                          tip={tips.materials}
-                        />
-                      </td>
-                      <td className={tdNum}>
-                        <MoneyCell
-                          perUnit={perUnit.sewing}
-                          total={sheet.sewing}
-                          tip={tips.sewing}
-                        />
-                      </td>
-                      <td className={tdNum}>
-                        <MoneyCell perUnit={perUnit.other} total={sheet.other} tip={tips.other} />
-                      </td>
-                      <td className={tdNum}>
-                        <MoneyCell perUnit={perUnit.pv} total={sheet.pv} tip={tips.pv} />
-                      </td>
-                      <td className={tdNum}>
-                        <MoneyCell
-                          perUnit={perUnit.cost}
-                          total={sheet.cost}
-                          tip={tips.cost}
-                          tone="strong"
-                        />
-                      </td>
-                      <td className={tdClass}>
-                        <FormulaTip tip={tips.multiplier} className="w-full">
-                          <CompactInput
-                            type="text"
-                            inputMode="decimal"
-                            className="w-full text-center"
-                            value={draft?.sewingMultiplier ?? String(row.sewingMultiplier)}
-                            title={tips.multiplier}
-                            onChange={(event) =>
-                              patchDraft(row.uid, { sewingMultiplier: event.target.value })
-                            }
-                          />
-                        </FormulaTip>
-                      </td>
-                      <td className={tdClass}>
-                        <div className="flex flex-col items-end gap-0.5">
-                          <FormulaTip tip={tips.price} className="w-full">
-                            <CompactInput
-                              type="text"
-                              inputMode="decimal"
-                              className="w-full font-semibold"
-                              value={draft?.pricePerUnit ?? String(row.pricePerUnit)}
-                              title={tips.price}
-                              onChange={(event) =>
-                                patchDraft(row.uid, { pricePerUnit: event.target.value })
-                              }
-                            />
-                          </FormulaTip>
-                          <FormulaTip tip={tips.selling}>
-                            <span className="type-caption tabular-nums text-[var(--color-text-quiet)]">
-                              {formatAmountWhole(selling)}
-                            </span>
-                          </FormulaTip>
-                        </div>
-                      </td>
-                      <td className={tdNum}>
-                        <MoneyCell
-                          perUnit={perUnit.profit}
-                          total={profit}
-                          tip={tips.profit}
-                          tone="strong"
-                        />
-                      </td>
-                      <td className={tdNum}>
-                        <FormulaTip tip={tips.margin}>
-                          <span className="type-mono text-[12px] font-medium tabular-nums text-[var(--color-text)]">
-                            {Number.isFinite(marginPercent)
-                              ? `${marginPercent.toFixed(0)}%`
-                              : "—"}
-                          </span>
-                        </FormulaTip>
-                      </td>
-                    </>
-                  ) : (
-                    <td className={tdNum}>
-                      <MoneyCell
-                        perUnit={perUnit.cost}
-                        total={sheet.cost}
-                        tip={tips.cost}
-                        tone="strong"
+                  <td className={tdNum}>
+                    <MoneyCell
+                      perUnit={perUnit.materials}
+                      total={sheet.materials}
+                      tip={tips.materials}
+                    />
+                  </td>
+                  <td className={tdNum}>
+                    <MoneyCell perUnit={perUnit.sewing} total={sheet.sewing} tip={tips.sewing} />
+                  </td>
+                  <td className={tdNum}>
+                    <MoneyCell perUnit={perUnit.other} total={sheet.other} tip={tips.other} />
+                  </td>
+                  <td className={tdNum}>
+                    <MoneyCell perUnit={perUnit.pv} total={sheet.pv} tip={tips.pv} />
+                  </td>
+                  <td className={tdNum}>
+                    <MoneyCell
+                      perUnit={perUnit.cost}
+                      total={sheet.cost}
+                      tip={tips.cost}
+                      tone="strong"
+                    />
+                  </td>
+                  <td className={tdClass}>
+                    <FormulaTip tip={tips.multiplier} className="w-full">
+                      <CompactInput
+                        type="text"
+                        inputMode="decimal"
+                        className="w-full text-center"
+                        value={draft?.sewingMultiplier ?? String(row.sewingMultiplier)}
+                        title={tips.multiplier}
+                        onChange={(event) =>
+                          patchDraft(row.uid, { sewingMultiplier: event.target.value })
+                        }
                       />
-                    </td>
-                  )}
+                    </FormulaTip>
+                  </td>
+                  <td className={tdClass}>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <FormulaTip tip={tips.price} className="w-full">
+                        <CompactInput
+                          type="text"
+                          inputMode="decimal"
+                          className="w-full font-semibold"
+                          value={draft?.pricePerUnit ?? String(row.pricePerUnit)}
+                          title={tips.price}
+                          onChange={(event) =>
+                            patchDraft(row.uid, { pricePerUnit: event.target.value })
+                          }
+                        />
+                      </FormulaTip>
+                      <FormulaTip tip={tips.selling}>
+                        <span className="type-caption tabular-nums text-[var(--color-text-quiet)]">
+                          {formatAmountWhole(selling)}
+                        </span>
+                      </FormulaTip>
+                    </div>
+                  </td>
+                  <td className={tdNum}>
+                    <MoneyCell
+                      perUnit={perUnit.profit}
+                      total={profit}
+                      tip={tips.profit}
+                      tone="strong"
+                    />
+                  </td>
+                  <td className={tdNum}>
+                    <FormulaTip tip={tips.margin}>
+                      <span className="type-mono text-[12px] font-medium tabular-nums text-[var(--color-text)]">
+                        {Number.isFinite(marginPercent) ? `${marginPercent.toFixed(0)}%` : "—"}
+                      </span>
+                    </FormulaTip>
+                  </td>
                   <td className={`${tdClass} text-center`}>
                     <RowEditActions
                       dirty={rowPending}
@@ -1162,56 +1106,52 @@ export function ProductPriceCutPanel({
         <Button type="button" variant="secondary" size="sm" onClick={addTirage}>
           Додати тираж
         </Button>
-        {showCutColumns ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setDrafts({});
-              setRows((prev) =>
-                spreadCutFromOptimal(
-                  ensureOptimalRow(
-                    prev,
-                    optimalQty,
-                    cutRateFromOptimalJobTotal(optimalCutTotal, optimalQty, optimalQty),
-                  ),
-                  optimalCutTotal,
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setDrafts({});
+            setRows((prev) =>
+              spreadCutFromOptimal(
+                ensureOptimalRow(
+                  prev,
                   optimalQty,
+                  cutRateFromOptimalJobTotal(optimalCutTotal, optimalQty, optimalQty),
                 ),
-              );
-            }}
-          >
-            Розкласти крій
-          </Button>
-        ) : null}
-        {showPriceColumns ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setDrafts({});
-              setRows((prev) =>
-                hydrateCommercialPriceTiers(
-                  prev.map((row) => ({
-                    minQuantity: row.minQuantity,
-                    pricePerUnit: row.pricePerUnit,
-                    sewingMultiplier: row.sewingMultiplier,
-                  })),
-                  costHints,
-                  { force: true },
-                ).map((hydrated, index) => ({
-                  ...prev[index]!,
-                  pricePerUnit: hydrated.pricePerUnit,
-                  sewingMultiplier: hydrated.sewingMultiplier ?? prev[index]!.sewingMultiplier,
+                optimalCutTotal,
+                optimalQty,
+              ),
+            );
+          }}
+        >
+          Розкласти крій
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setDrafts({});
+            setRows((prev) =>
+              hydrateCommercialPriceTiers(
+                prev.map((row) => ({
+                  minQuantity: row.minQuantity,
+                  pricePerUnit: row.pricePerUnit,
+                  sewingMultiplier: row.sewingMultiplier,
                 })),
-              );
-            }}
-          >
-            Перерахувати ціни
-          </Button>
-        ) : null}
+                costHints,
+                { force: true },
+              ).map((hydrated, index) => ({
+                ...prev[index]!,
+                pricePerUnit: hydrated.pricePerUnit,
+                sewingMultiplier: hydrated.sewingMultiplier ?? prev[index]!.sewingMultiplier,
+              })),
+            );
+          }}
+        >
+          Перерахувати ціни
+        </Button>
         <Button
           type="button"
           size="sm"
@@ -1222,11 +1162,9 @@ export function ProductPriceCutPanel({
         >
           {saving
             ? "Збереження…"
-            : view === "cut"
-              ? hasDeliveryOp
-                ? "Зберегти крій і доставку"
-                : "Зберегти крій"
-              : "Зберегти прайс"}
+            : hasDeliveryOp
+              ? "Зберегти крій, доставку і прайс"
+              : "Зберегти крій і прайс"}
         </Button>
         <span className="type-caption ml-auto">
           {previewQty} шт → крій {formatMoneyUah(previewCut)} · клієнту{" "}

@@ -19,7 +19,7 @@ export function CreateProductCutRatePanel() {
           Ставки крою (за бажанням)
         </h3>
         <p className="type-caption mt-0.5">
-          Можна заповнити зараз або пізніше на картці виробу у вкладці «Крій».
+          Можна заповнити зараз або пізніше на картці виробу у «Прайс і крій».
         </p>
       </div>
       <input type="hidden" name="cutOptimalQty" value={optimalQty || ""} />

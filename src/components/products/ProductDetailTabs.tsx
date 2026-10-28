@@ -3,7 +3,7 @@ import { ProductSizeBom } from "@/components/products/ProductSizeBom";
 import { ProductPriceCutPanel } from "@/components/products/ProductPriceCutPanel";
 import type { TirageCostHint } from "@/components/products/ProductPriceFields";
 
-export type ProductDetailTab = "composition" | "cut" | "price";
+export type ProductDetailTab = "composition" | "pricing";
 
 type BomProps = React.ComponentProps<typeof ProductSizeBom>;
 
@@ -45,9 +45,7 @@ export function ProductDetailTabs({
   };
   showPricing?: boolean;
 }) {
-  const effectiveTab: ProductDetailTab = showPricing
-    ? activeTab
-    : "composition";
+  const effectiveTab = showPricing ? activeTab : "composition";
   const tabs = [
     {
       key: "composition",
@@ -58,33 +56,25 @@ export function ProductDetailTabs({
     ...(showPricing
       ? [
           {
-            key: "cut",
-            label: "Крій",
-            href: `/products/${productId}?tab=cut`,
-          },
-          {
-            key: "price",
-            label: "Прайс",
-            href: `/products/${productId}?tab=price`,
+            key: "pricing",
+            label: "Прайс і крій",
+            href: `/products/${productId}?tab=pricing`,
           },
         ]
       : []),
   ];
 
-  const caption =
-    effectiveTab === "composition"
-      ? showPricing
-        ? "Норми на 1 шт. Сітка крою — у «Крій», продажні ціни — у «Прайс»."
-        : "Склад виробу (без цін і калькуляції)"
-      : effectiveTab === "cut"
-        ? "Крій по тиражах. Ставка ₴/шт і сума на тираж; оптимум задає базову розкладку."
-        : "Прайс для клієнта. Собів. і маржа рахуються з комплектації та крою.";
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="type-caption">{caption}</p>
+          <p className="type-caption">
+            {effectiveTab === "composition"
+              ? showPricing
+                ? "Норми на 1 шт (і доставка теж). Сума доставки на тираж = ₴/од. × кількість; сітка — у «Прайс і крій»."
+                : "Склад виробу (без цін і калькуляції)"
+              : "Калькуляція на весь тираж. Статті не перетинаються: Мат + Крій + Пошив + Достав (тканини CARGO/НП + операція) + Пакування + ПВ = Собів."}
+          </p>
         </div>
         {tabs.length > 1 ? <SegmentedTabs items={tabs} active={effectiveTab} /> : null}
       </div>
@@ -94,7 +84,6 @@ export function ProductDetailTabs({
       ) : (
         <ProductPriceCutPanel
           productId={productId}
-          view={effectiveTab === "cut" ? "cut" : "price"}
           optimalQty={cut.optimalQty}
           cutTiers={cut.tiers}
           deliveryOp={deliveryOp}
