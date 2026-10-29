@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { richTextIsEmpty, sanitizeRichHtml } from "@/lib/rich-text";
 
@@ -8,27 +8,56 @@ function exec(command: string, value?: string) {
   document.execCommand(command, false, value);
 }
 
-export function MiniRichText({
-  value,
-  onChange,
-  disabled,
-  placeholder = "Коментар",
-  className,
-}: {
-  value?: string | null;
-  onChange: (html: string) => void;
-  disabled?: boolean;
-  placeholder?: string;
-  className?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
+function htmlFromEditor(el: HTMLDivElement | null): string {
+  const next = sanitizeRichHtml(el?.innerHTML ?? "");
+  return richTextIsEmpty(next) ? "" : next;
+}
+
+export type MiniRichTextHandle = {
+  getHtml: () => string;
+};
+
+export const MiniRichText = forwardRef<
+  MiniRichTextHandle,
+  {
+    value?: string | null;
+    onChange?: (html: string) => void;
+    disabled?: boolean;
+    placeholder?: string;
+    className?: string;
+    /** Default true. Set false when a parent Save button commits the value. */
+    saveOnBlur?: boolean;
+    autoFocus?: boolean;
+  }
+>(function MiniRichText(
+  {
+    value,
+    onChange,
+    disabled,
+    placeholder = "Коментар",
+    className,
+    saveOnBlur = true,
+    autoFocus = false,
+  },
+  ref,
+) {
+  const editorRef = useRef<HTMLDivElement>(null);
   const html = sanitizeRichHtml(value);
 
+  useImperativeHandle(ref, () => ({
+    getHtml: () => htmlFromEditor(editorRef.current),
+  }));
+
   useEffect(() => {
-    const el = ref.current;
+    const el = editorRef.current;
     if (!el || disabled) return;
     if (el.innerHTML !== html) el.innerHTML = html;
   }, [html, disabled]);
+
+  useEffect(() => {
+    if (disabled || !autoFocus) return;
+    editorRef.current?.focus();
+  }, [autoFocus, disabled]);
 
   if (disabled) {
     if (richTextIsEmpty(html)) return null;
@@ -47,7 +76,7 @@ export function MiniRichText({
           label="Жирний"
           onClick={() => {
             exec("bold");
-            ref.current?.focus();
+            editorRef.current?.focus();
           }}
         >
           <span className="font-bold">Ж</span>
@@ -56,7 +85,7 @@ export function MiniRichText({
           label="Курсив"
           onClick={() => {
             exec("italic");
-            ref.current?.focus();
+            editorRef.current?.focus();
           }}
         >
           <span className="italic">К</span>
@@ -65,7 +94,7 @@ export function MiniRichText({
           label="Абзац"
           onClick={() => {
             exec("formatBlock", "p");
-            ref.current?.focus();
+            editorRef.current?.focus();
           }}
         >
           ¶
@@ -74,28 +103,29 @@ export function MiniRichText({
           label="Список"
           onClick={() => {
             exec("insertUnorderedList");
-            ref.current?.focus();
+            editorRef.current?.focus();
           }}
         >
           •
         </MarkButton>
       </div>
       <div
-        ref={ref}
+        ref={editorRef}
         contentEditable
         role="textbox"
         aria-label={placeholder}
         data-placeholder={placeholder}
         className="mini-rich-edit min-h-[4.5rem] px-2 py-1.5 text-[13px] text-[var(--color-text-primary)] outline-none empty:before:text-[var(--color-text-quiet)] empty:before:content-[attr(data-placeholder)]"
         onBlur={() => {
-          const next = sanitizeRichHtml(ref.current?.innerHTML ?? "");
+          if (!saveOnBlur || !onChange) return;
+          const next = htmlFromEditor(editorRef.current);
           if (next === html) return;
-          onChange(richTextIsEmpty(next) ? "" : next);
+          onChange(next);
         }}
       />
     </div>
   );
-}
+});
 
 function MarkButton({
   label,

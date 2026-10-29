@@ -15,7 +15,7 @@ export function PricingToggle({
       onClick={onClick}
       className={
         active
-          ? "rounded-[4px] bg-[var(--color-primary-500)] px-1.5 py-0.5 text-[10px] font-medium text-white"
+          ? "on-primary rounded-[4px] bg-[var(--color-primary-500)] px-1.5 py-0.5 text-[10px] font-medium"
           : "rounded-[4px] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-border)]"
       }
     >

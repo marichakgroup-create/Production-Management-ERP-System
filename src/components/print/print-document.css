@@ -312,11 +312,26 @@
 .print-doc-rich ul,
 .print-doc-rich ol {
   margin: 0 0 1.5mm;
-  padding-left: 4mm;
+  padding-left: 5.5mm;
+}
+
+.print-doc-rich ul {
+  list-style: disc;
+}
+
+.print-doc-rich ol {
+  list-style: decimal;
 }
 
 .print-doc-rich li {
-  margin: 0;
+  display: list-item;
+  margin: 0 0 0.8mm;
+}
+
+.print-doc-table .print-doc-rich ul,
+.print-doc-table .print-doc-rich ol {
+  list-style-position: inside;
+  padding-left: 0;
 }
 
 .print-doc-footer {
@@ -461,4 +476,79 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+}
+
+/* Product catalog specification: photo + identity */
+.print-doc-hero {
+  display: grid;
+  grid-template-columns: 36mm 1fr;
+  gap: 5mm;
+  align-items: start;
+}
+
+.print-doc-hero--text {
+  grid-template-columns: 1fr;
+}
+
+.print-doc-hero-photo {
+  display: block;
+  width: 36mm;
+  height: 36mm;
+  object-fit: cover;
+  border: 0.5pt solid #c5cec8;
+  border-radius: 2mm;
+  background: #f4f6f5;
+}
+
+@media print {
+  .print-doc-hero-photo {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+.print-doc-hero-name {
+  margin: 0 0 1.5mm;
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  font-size: 13pt;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.print-doc-hero-facts {
+  margin: 0;
+  font-size: 9pt;
+  color: #3d4742;
+  line-height: 1.45;
+}
+
+.print-doc-hero .print-doc-chips {
+  margin-top: 3mm;
+}
+
+.print-doc-ladder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2mm;
+}
+
+.print-doc-ladder-item {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 22mm;
+  padding: 1.5mm 2.5mm;
+  border: 0.5pt solid #c5cec8;
+  border-radius: 1.5mm;
+  background: #f7f9f8;
+}
+
+.print-doc-ladder-item strong {
+  font-size: 10pt;
+  font-weight: 700;
+}
+
+.print-doc-ladder-item span {
+  font-size: 7.5pt;
+  color: #5a6560;
 }

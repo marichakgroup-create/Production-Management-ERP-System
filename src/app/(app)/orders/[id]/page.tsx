@@ -17,6 +17,7 @@ import {
 } from "@/lib/fixed-costs";
 import { draftLineFromItem } from "@/lib/order-item-commercial";
 import { Breadcrumbs, QuickAction, QuickActions } from "@/components/ui/ObjectHeader";
+import { GeneratingDocumentLink } from "@/components/print/GeneratingDocumentLink";
 import { Banner } from "@/components/ui/Banner";
 import { OrderWorkspaceTabs } from "@/components/orders/OrderWorkspaceTabs";
 import { OrderUnsavedProvider } from "@/components/orders/OrderUnsavedContext";
@@ -70,7 +71,7 @@ import { itemNeedsSizeBreakdown, itemSizeBreakdownReady } from "@/lib/order-item
 import { ConfigurationTab } from "./ConfigurationTab";
 import { CalculationTab } from "./CalculationTab";
 import { VersionsTab } from "./VersionsTab";
-import { FilesTab } from "./FilesTab";
+import { FilesTab, OrderDocumentsCard } from "./FilesTab";
 import { SaveProposalPanel } from "./SaveProposalPanel";
 import { StartNewProposalButton } from "./StartNewProposalButton";
 import { proposalSnapshotRestorable } from "@/lib/proposal-snapshot";
@@ -933,13 +934,14 @@ export default async function OrderDetailPage({
               <>
                 <QuickActions>
                   {action.quotationReady && accessHas(access, "generateQuotations") ? (
-                    <QuickAction
-                      icon={<IconQuote size={15} />}
+                    <GeneratingDocumentLink
                       href={`/orders/${order.id}/quotation`}
                       hint="orderQuotation"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
                     >
+                      <IconQuote size={15} />
                       КП
-                    </QuickAction>
+                    </GeneratingDocumentLink>
                   ) : null}
                   {action.specificationReady ? (
                     <QuickAction
@@ -1246,6 +1248,7 @@ export default async function OrderDetailPage({
 
             {activeTab === "files" ? (
               <FilesTab
+                showPrintDocs={false}
                 orderId={order.id}
                 itemId={item.id}
                 hasApprovedVersion={hasAnyApprovedVersion}
@@ -1307,7 +1310,23 @@ export default async function OrderDetailPage({
               />
             ) : null}
           </div>
-          {moneyRail}
+          {activeTab === "files" ? (
+            <aside className="space-y-3 xl:sticky xl:top-[72px] xl:h-fit">
+              <OrderDocumentsCard
+                orderId={order.id}
+                itemId={item.id}
+                hasApprovedVersion={hasAnyApprovedVersion}
+                quotationReady={action.quotationReady}
+                quotationFrozen={
+                  order.status === "HANDED_TO_PRODUCTION" || order.status === "CLOSED"
+                }
+                specificationLockedAt={item.specification?.lockedAt.toISOString() ?? null}
+                needsArtwork={needsArtwork}
+              />
+            </aside>
+          ) : (
+            moneyRail
+          )}
         </div>
         )}
       </OrderWorkspacePanel>

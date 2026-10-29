@@ -152,6 +152,12 @@ table {
   outline-offset: 2px;
 }
 
+/* Unlayered `a { color: inherit }` beats Tailwind utilities on Links.
+   Filled primary chips (tabs, steppers) must force the on-primary token. */
+.on-primary {
+  color: var(--color-on-primary) !important;
+}
+
 /* Shared primary CTA — always white label on deep green */
 .btn-primary {
   display: inline-flex;
@@ -496,13 +502,20 @@ tr.bom-drop-after {
 .mini-rich-edit ul,
 .mini-rich-view ul {
   list-style: disc;
+  list-style-position: outside;
   padding-left: 1.15rem;
 }
 
 .mini-rich-edit ol,
 .mini-rich-view ol {
   list-style: decimal;
+  list-style-position: outside;
   padding-left: 1.15rem;
+}
+
+.mini-rich-edit li,
+.mini-rich-view li {
+  display: list-item;
 }
 
 .mini-rich-edit p,

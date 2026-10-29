@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Banner } from "@/components/ui/Banner";
 import { StatusBadge } from "@/components/ui/Page";
-import { IconDecoration, IconPlus, IconTrash } from "@/components/ui/Icons";
+import { IconDecoration, IconEdit, IconPlus, IconTrash } from "@/components/ui/Icons";
 import { controlClass } from "@/components/ui/Field";
 import {
   Table,
@@ -42,7 +42,8 @@ import {
 } from "@/lib/artwork-file-qty";
 import { isRealSizeCode } from "@/lib/order-item-sizes";
 import { updateOrderDecorationAction } from "@/server/domains/orders/actions";
-import { MiniRichText } from "@/components/ui/MiniRichText";
+import { MiniRichText, type MiniRichTextHandle } from "@/components/ui/MiniRichText";
+import { richTextIsEmpty } from "@/lib/rich-text";
 
 export type OrderFileRow = {
   id: string;
@@ -533,24 +534,12 @@ export function OrderAttachments({
                               </Button>
                             ) : null}
                           </div>
-                          <div className="mt-2">
-                            <p className="type-caption mb-1">Коментар</p>
-                            <MiniRichText
-                              value={decoration.comment}
-                              disabled={locked || pending}
-                              placeholder="Примітка для друку: колір, розміщення, кількість…"
-                              onChange={(next) => {
-                                const formData = new FormData();
-                                formData.set("orderId", orderId);
-                                formData.set("id", decoration.id);
-                                formData.set("comment", next);
-                                startTransition(async () => {
-                                  await updateOrderDecorationAction(formData);
-                                  router.refresh();
-                                });
-                              }}
-                            />
-                          </div>
+                          <DecorationCommentField
+                            orderId={orderId}
+                            decorationId={decoration.id}
+                            comment={decoration.comment}
+                            locked={Boolean(locked)}
+                          />
 
                           {shownFiles.length > 0 ? (
                             <ul className="mt-2 space-y-1.5 border-t border-[var(--color-divider)] pt-2">
@@ -737,6 +726,131 @@ export function OrderAttachments({
           </div>
         ) : null}
       </TableCard>
+    </div>
+  );
+}
+
+function DecorationCommentField({
+  orderId,
+  decorationId,
+  comment,
+  locked,
+}: {
+  orderId: string;
+  decorationId: string;
+  comment?: string | null;
+  locked: boolean;
+}) {
+  const router = useRouter();
+  const editorRef = useRef<MiniRichTextHandle>(null);
+  const [editing, setEditing] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const empty = richTextIsEmpty(comment);
+
+  function commit(next: string) {
+    const formData = new FormData();
+    formData.set("orderId", orderId);
+    formData.set("id", decorationId);
+    formData.set("comment", next);
+    startTransition(async () => {
+      await updateOrderDecorationAction(formData);
+      setEditing(false);
+      router.refresh();
+    });
+  }
+
+  function save() {
+    commit(editorRef.current?.getHtml() ?? "");
+  }
+
+  function remove() {
+    if (!window.confirm("Видалити коментар до нанесення?")) return;
+    commit("");
+  }
+
+  if (locked) {
+    if (empty) return null;
+    return (
+      <div className="mt-2">
+        <p className="type-caption mb-1">Коментар</p>
+        <MiniRichText value={comment} disabled />
+      </div>
+    );
+  }
+
+  if (!editing && empty) {
+    return (
+      <div className="mt-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          onClick={() => setEditing(true)}
+        >
+          <IconPlus size={14} />
+          Додати коментар
+        </Button>
+      </div>
+    );
+  }
+
+  if (!editing) {
+    return (
+      <div className="mt-2">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <p className="type-caption">Коментар</p>
+          <div className="flex items-center gap-0.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => setEditing(true)}
+            >
+              <IconEdit size={14} />
+              Змінити
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              aria-label="Видалити коментар"
+              onClick={remove}
+            >
+              <IconTrash size={14} />
+            </Button>
+          </div>
+        </div>
+        <MiniRichText value={comment} disabled />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <p className="type-caption mb-1">Коментар</p>
+      <MiniRichText
+        ref={editorRef}
+        value={comment}
+        saveOnBlur={false}
+        placeholder="Примітка для друку: колір, розміщення, кількість…"
+      />
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <Button type="button" size="sm" loading={pending} disabled={pending} onClick={save}>
+          Зберегти
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          onClick={() => setEditing(false)}
+        >
+          Скасувати
+        </Button>
+      </div>
     </div>
   );
 }

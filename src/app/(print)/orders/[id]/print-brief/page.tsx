@@ -3,7 +3,6 @@ import { getOrder } from "@/server/domains/orders/service";
 import { prisma } from "@/server/db/client";
 import { PrintToolbar } from "@/components/print/PrintToolbar";
 import {
-  PrintDocFooter,
   PrintDocHeader,
   PrintDocMeta,
   PrintDocMuted,
@@ -37,8 +36,8 @@ export default async function PrintBriefPage({
   if (!order) notFound();
 
   const items = order.items.filter((row) => !row.superseded);
+  const companyName = company?.legalName ?? "Виробництво";
   const companyLines = [
-    company?.legalName,
     company?.address,
     [company?.phone, company?.email].filter(Boolean).join(" · ") || null,
   ].filter((line): line is string => Boolean(line?.trim()));
@@ -46,9 +45,9 @@ export default async function PrintBriefPage({
   return (
     <>
       <PrintToolbar backHref={`/orders/${order.id}?tab=files`} title="Завдання на нанесення" />
-      <PrintDocument runningTitle={`${company?.legalName ?? "ERP"} · нанесення ${order.number}`}>
+      <PrintDocument runningTitle={`${companyName} · нанесення ${order.number}`}>
         <PrintDocHeader
-          companyName={company?.legalName ?? "Виробництво"}
+          companyName={companyName}
           companyLines={companyLines}
           docType="Завдання на нанесення"
           docNumber={order.number}
@@ -68,13 +67,8 @@ export default async function PrintBriefPage({
               ),
             },
             {
-              label: "Для підрядника",
-              content: (
-                <>
-                  <p>Без цін — лише вироби, тираж, розміри і макети.</p>
-                  <PrintDocMuted>Менеджер: {order.manager.name}</PrintDocMuted>
-                </>
-              ),
+              label: "Менеджер",
+              content: <p>{order.manager.name}</p>,
             },
           ]}
         />
@@ -183,10 +177,6 @@ export default async function PrintBriefPage({
             />
           </PrintDocSection>
         ) : null}
-
-        <PrintDocFooter>
-          Документ для підрядника з нанесення. Ціни в цьому завданні не вказуються.
-        </PrintDocFooter>
       </PrintDocument>
     </>
   );

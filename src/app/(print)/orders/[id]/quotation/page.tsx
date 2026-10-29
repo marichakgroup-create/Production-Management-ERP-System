@@ -259,19 +259,7 @@ export default async function QuotationPage({
             },
             {
               label: "Умови",
-              content: (
-                <>
-                  <p>
-                    Менеджер: <strong>{order.manager.name}</strong>
-                  </p>
-                  <p>Термін виконання: {formatDateUk(order.deadline)}</p>
-                  <PrintDocMuted>
-                    {frozen
-                      ? "Ціни зафіксовані при передачі у виробництво"
-                      : "Ціни з поточного складу замовлення (оновлюються при зміні тиражу / матеріалів)"}
-                  </PrintDocMuted>
-                </>
-              ),
+              content: <p>Термін виконання: {formatDateUk(order.deadline)}</p>,
             },
           ]}
         />

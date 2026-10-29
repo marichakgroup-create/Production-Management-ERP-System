@@ -34,7 +34,7 @@ export function ModeSegment<T extends string>({
               className={cn(
                 "rounded-[6px] px-2 py-1 text-[11.5px] font-semibold leading-none transition-colors",
                 active
-                  ? "bg-[var(--color-primary-500)] text-white"
+                  ? "on-primary bg-[var(--color-primary-500)]"
                   : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
               )}
             >

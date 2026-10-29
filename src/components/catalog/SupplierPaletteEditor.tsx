@@ -256,7 +256,7 @@ export function SupplierPaletteEditor({
                           className={cn(
                             "flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
                             checked
-                              ? "border-[var(--color-primary-600)] bg-[var(--color-primary-600)] text-white"
+                              ? "on-primary border-[var(--color-primary-600)] bg-[var(--color-primary-600)]"
                               : "border-[var(--color-border-strong)] bg-[var(--color-surface)]",
                           )}
                           aria-hidden

@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { SegmentedTabs } from "@/components/ui/Tabs";
 import { ProductSizeBom } from "@/components/products/ProductSizeBom";
 import { ProductPriceCutPanel } from "@/components/products/ProductPriceCutPanel";
 import type { TirageCostHint } from "@/components/products/ProductPriceFields";
+import { IconPrint } from "@/components/ui/Icons";
 
 export type ProductDetailTab = "composition" | "pricing";
 
@@ -76,7 +78,18 @@ export function ProductDetailTabs({
               : "Калькуляція на весь тираж. Статті не перетинаються: Мат + Крій + Пошив + Достав (тканини CARGO/НП + операція) + Пакування + ПВ = Собів."}
           </p>
         </div>
-        {tabs.length > 1 ? <SegmentedTabs items={tabs} active={effectiveTab} /> : null}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {tabs.length > 1 ? <SegmentedTabs items={tabs} active={effectiveTab} /> : null}
+          <Link
+            href={`/products/${productId}/spec`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+          >
+            <IconPrint size={15} />
+            Специфікація
+          </Link>
+        </div>
       </div>
 
       {effectiveTab === "composition" ? (
