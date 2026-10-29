@@ -370,19 +370,30 @@ model DecorationQuantityTier {
   @@map("decoration_quantity_tiers")
 }
 
+enum DecorationFormatKind {
+  DTF
+  EMBROIDERY
+}
+
 /// Application format (e.g. «До 5 × 5 см») with qty-tier unit rates.
 model DecorationFormat {
-  id        String       @id @default(cuid())
-  nameUk    String
-  sortOrder Int          @default(0)
-  status    RecordStatus @default(ACTIVE)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                 String               @id @default(cuid())
+  kind               DecorationFormatKind @default(DTF)
+  nameUk             String
+  /// Size / conditions shown next to the category (embroidery matrix).
+  detailUk           String?
+  /// No catalog rate — unit ₴/шт is entered on the order.
+  quoteIndividually  Boolean              @default(false)
+  sortOrder          Int                  @default(0)
+  status             RecordStatus         @default(ACTIVE)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
-  tiers              DecorationFormatTier[]
+  tiers                DecorationFormatTier[]
   orderItemDecorations OrderItemDecoration[]
 
   @@index([sortOrder])
+  @@index([kind, sortOrder])
   @@map("decoration_formats")
 }
 
@@ -845,6 +856,9 @@ model OrderItemDecoration {
   nameSnapshot       String
   setupCost          Decimal @db.Decimal(14, 4)
   unitRate           Decimal @db.Decimal(14, 4)
+  /// Pieces this line covers. Null = whole item tirage (legacy stacking).
+  quantity           Int?
+  comment            String?
   sortOrder          Int     @default(0)
 
   orderItem          OrderItem          @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
@@ -1022,6 +1036,10 @@ model FileAsset {
   orderItemId String?
   /// Specific decoration line (format / placement) this artwork belongs to.
   orderItemDecorationId String?
+  /// Pieces this maket covers (when the product has no size grid).
+  pieceQuantity Int?
+  /// Per-size counts for this maket: [{ sizeCode, quantity }].
+  sizeQuantities Json?
   createdAt DateTime @default(now())
 
   client    Client?    @relation(fields: [clientId], references: [id])

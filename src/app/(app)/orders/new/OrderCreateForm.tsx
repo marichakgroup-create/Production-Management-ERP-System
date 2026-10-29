@@ -148,6 +148,7 @@ export function OrderCreateForm({
   const [pending, startTransition] = useTransition();
   const [switchProductOpen, setSwitchProductOpen] = useState(false);
   const [pendingProductId, setPendingProductId] = useState<string | null>(null);
+  const [pendingLineKey, setPendingLineKey] = useState<string | null>(null);
 
   const stagingProduct = useMemo(
     () => products.find((product) => product.id === stagingProductId),
@@ -372,6 +373,19 @@ export function OrderCreateForm({
   }
 
   function editLine(line: DraftLine) {
+    if (line.key === editingKey) return;
+    if (!editingKey && stagingDirty) {
+      setPendingLineKey(line.key);
+      setPendingProductId(null);
+      setSwitchProductOpen(true);
+      return;
+    }
+    if (editingKey) {
+      const payload = buildStagingPayload(editingKey);
+      if (payload) {
+        setLines((prev) => prev.map((row) => (row.key === editingKey ? payload : row)));
+      }
+    }
     focusLine(line);
   }
 
@@ -618,8 +632,17 @@ export function OrderCreateForm({
                         return (
                           <tr
                             key={line.key}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => editLine(line)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                editLine(line);
+                              }
+                            }}
                             className={cn(
-                              "border-b border-[var(--color-divider)] last:border-0",
+                              "cursor-pointer border-b border-[var(--color-divider)] last:border-0",
                               editing
                                 ? "bg-[var(--color-tint-sage)]"
                                 : "hover:bg-[var(--color-surface-hover)]",
@@ -642,7 +665,7 @@ export function OrderCreateForm({
                                   <p className="truncate font-medium">{line.label}</p>
                                   {editing ? (
                                     <p className="type-caption text-[var(--color-primary-700)]">
-                                      Редагується нижче
+                                      Відкрито
                                     </p>
                                   ) : line.comment ? (
                                     <p className="type-caption truncate">{line.comment}</p>
@@ -674,18 +697,13 @@ export function OrderCreateForm({
                               <div className="flex justify-end gap-1">
                                 <Button
                                   type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => editLine(line)}
-                                >
-                                  Редагувати
-                                </Button>
-                                <Button
-                                  type="button"
                                   variant="ghost"
                                   size="sm"
                                   aria-label="Видалити позицію"
-                                  onClick={() => removeLine(line.key)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeLine(line.key);
+                                  }}
                                 >
                                   <IconTrash size={14} />
                                 </Button>
@@ -710,6 +728,7 @@ export function OrderCreateForm({
                 inList={Boolean(editingKey) && !stagingDirty}
                 confirmLabel={confirmLabel}
                 tirageDock="fixed"
+                hideTirage={Boolean(editingKey) && !stagingDirty}
                 materialOptions={materialCatalog}
                 operationOptions={operationCatalog}
                 decorationOptions={decorationCatalog}
@@ -744,7 +763,26 @@ export function OrderCreateForm({
                   setStagingQty((prev) => ({ ...prev, [code]: quantity }))
                 }
                 onCommentChange={setStagingComment}
-                onCompositionChange={setStagingComposition}
+                onCompositionChange={(next) => {
+                  setStagingComposition(next);
+                  if (!editingKey) return;
+                  setLines((prev) =>
+                    prev.map((row) =>
+                      row.key === editingKey
+                        ? {
+                            ...row,
+                            composition: {
+                              materials: next.materials.map((item) => ({ ...item })),
+                              operations: next.operations.map((item) => ({ ...item })),
+                              decorations: next.decorations.map((item) => ({ ...item })),
+                            },
+                            materialsCount: next.materials.length,
+                            operationsCount: next.operations.length,
+                          }
+                        : row,
+                    ),
+                  );
+                }}
                 onCancel={cancelStaging}
                 onConfirm={addOrSaveStaging}
                 confirmDisabled={confirmDisabled}
@@ -761,7 +799,7 @@ export function OrderCreateForm({
                   }
                   description={
                     lines.length > 0
-                      ? "Натисніть «Редагувати» у списку або додайте новий виріб з панелі справа."
+                      ? "Натисніть позицію в списку або додайте новий виріб з панелі справа."
                       : "Після вибору тут зʼявляться матеріали, операції та попередня калькуляція."
                   }
                 />
@@ -834,12 +872,19 @@ export function OrderCreateForm({
         onStay={() => {
           setSwitchProductOpen(false);
           setPendingProductId(null);
+          setPendingLineKey(null);
         }}
         onDiscard={() => {
           const nextId = pendingProductId;
+          const nextLineKey = pendingLineKey;
           setSwitchProductOpen(false);
           setPendingProductId(null);
+          setPendingLineKey(null);
           if (nextId) applySelectProduct(nextId);
+          else if (nextLineKey) {
+            const line = lines.find((row) => row.key === nextLineKey);
+            if (line) focusLine(line);
+          }
         }}
       />
     </form>

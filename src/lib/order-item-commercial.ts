@@ -12,6 +12,7 @@ export type OrderItemCommercialInput = {
   decorations: Array<{
     setupCost: { toString(): string } | number;
     unitRate: { toString(): string } | number;
+    quantity?: number | null;
   }>;
   operations?: Array<{
     nameSnapshot?: string | null;
@@ -40,6 +41,7 @@ export function commercialPriceForOrderItem(
     decorations: item.decorations.map((row) => ({
       setupCost: Number(row.setupCost),
       unitRate: Number(row.unitRate),
+      quantity: row.quantity ?? null,
     })),
     discountPercent: options?.discountPercent,
     fallbackPricePerUnit: options?.fallbackPricePerUnit ?? null,

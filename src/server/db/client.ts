@@ -13,7 +13,7 @@ const globalForPrisma = globalThis as unknown as {
  * After `prisma generate`, a long-lived `next dev` may still need a full
  * process restart — Node keeps the old `@prisma/client` module in memory.
  */
-const PRISMA_CLIENT_VERSION = "20261027131500_client_legal_details_restart";
+const PRISMA_CLIENT_VERSION = "20261029150000_decoration_comment_file_qty";
 
 /** Delegates that must exist after party contacts / legal details / decorations. */
 const REQUIRED_DELEGATES = [
@@ -37,9 +37,21 @@ function materialClientHasTagColor(): boolean {
   }
 }
 
+function decorationHasQuantityField(): boolean {
+  try {
+    return "quantity" in (Prisma.OrderItemDecorationScalarFieldEnum ?? {});
+  } catch {
+    return false;
+  }
+}
+
 function clientHasCurrentDelegates(client: PrismaClient | undefined): boolean {
   if (!client) return false;
-  return REQUIRED_DELEGATES.every((name) => name in client) && materialClientHasTagColor();
+  return (
+    REQUIRED_DELEGATES.every((name) => name in client) &&
+    materialClientHasTagColor() &&
+    decorationHasQuantityField()
+  );
 }
 
 function dropCachedClient(reason: string) {
@@ -135,7 +147,7 @@ function getPrismaClient(): PrismaClient {
     if (!clientHasCurrentDelegates(globalForPrisma.prisma)) {
       dropCachedClient("constructed client still missing delegates");
       throw new Error(
-        "Prisma client loaded without ClientContact / ClientLegalDetail. " +
+        "Prisma client loaded without current schema fields. " +
           "The Node process still has a stale @prisma/client — fully restart `npm run dev`.",
       );
     }

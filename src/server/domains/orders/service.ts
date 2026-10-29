@@ -35,6 +35,11 @@ import {
   resolveDecorationFormatRate,
 } from "@/lib/decoration-format-pricing";
 import {
+  decorationOccupiesTirage,
+  occupiedDecorationQty,
+} from "@/lib/decoration-qty";
+import { richTextIsEmpty, sanitizeRichHtml } from "@/lib/rich-text";
+import {
   pickOperationQuantityTiers,
   resolveQuantityTierRate,
 } from "@/lib/quantity-tiers";
@@ -1406,14 +1411,26 @@ async function syncDecorationFormatRatesForOrderItem(
   for (const row of decorations) {
     const format = row.decorationFormat;
     if (!format) continue;
+    const nameSnapshot = decorationFormatLineName(format.nameUk, {
+      kind: format.kind,
+      detailUk: format.detailUk,
+    });
+    if (format.quoteIndividually) {
+      if (row.nameSnapshot !== nameSnapshot) {
+        await tx.orderItemDecoration.update({
+          where: { id: row.id },
+          data: { nameSnapshot },
+        });
+      }
+      continue;
+    }
     const tiers = mapDecorationFormatTiers(format.tiers);
     if (tiers.length === 0) continue;
     const unitRate = resolveDecorationFormatRate({
-      quantity: totalQuantity,
+      quantity: row.quantity ?? totalQuantity,
       tiers,
       fallbackRate: Number(row.unitRate ?? 0),
     });
-    const nameSnapshot = decorationFormatLineName(format.nameUk);
     const rateChanged = Math.abs(Number(row.unitRate ?? 0) - unitRate) > 0.0001;
     const nameChanged = row.nameSnapshot !== nameSnapshot;
     if (!rateChanged && !nameChanged) continue;
@@ -2710,6 +2727,34 @@ export async function copyOrderItemSizeSpec(input: {
   });
 }
 
+async function resolveDecorationLineQuantity(args: {
+  orderItemId: string;
+  nameUk: string;
+  requested?: number | null;
+  excludeId?: string;
+}): Promise<number | null> {
+  const item = await prisma.orderItem.findUnique({
+    where: { id: args.orderItemId },
+    select: {
+      totalQuantity: true,
+      decorations: { select: { id: true, nameSnapshot: true, quantity: true } },
+    },
+  });
+  if (!item) throw new Error("NOT_FOUND");
+  const itemQty = item.totalQuantity;
+  if (!decorationOccupiesTirage(args.nameUk)) {
+    if (args.requested == null) return null;
+    return Math.max(0, Math.floor(args.requested));
+  }
+  const occupied = occupiedDecorationQty(item.decorations, itemQty, args.excludeId);
+  const remaining = Math.max(0, itemQty - occupied);
+  const next =
+    args.requested == null ? remaining : Math.max(0, Math.floor(args.requested));
+  if (next > remaining) throw new Error("OVER_QTY");
+  if (args.requested == null && remaining === 0) throw new Error("OVER_QTY");
+  return next;
+}
+
 export async function addOrderItemDecoration(input: {
   orderItemId: string;
   decorationMethodId: string;
@@ -2722,6 +2767,10 @@ export async function addOrderItemDecoration(input: {
     where: { orderItemId: input.orderItemId },
     _max: { sortOrder: true },
   });
+  const quantity = await resolveDecorationLineQuantity({
+    orderItemId: input.orderItemId,
+    nameUk: method.nameUk,
+  });
 
   return prisma.orderItemDecoration.create({
     data: {
@@ -2730,6 +2779,7 @@ export async function addOrderItemDecoration(input: {
       nameSnapshot: method.nameUk,
       setupCost: method.setupCost,
       unitRate: method.unitRate,
+      quantity,
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
   });
@@ -2741,6 +2791,7 @@ export async function addOrderItemDecorationWithRates(input: {
   nameUk: string;
   setupCost: number;
   unitRate: number;
+  quantity?: number | null;
   decorationMethodId?: string | null;
   decorationFormatId?: string | null;
 }) {
@@ -2749,6 +2800,11 @@ export async function addOrderItemDecorationWithRates(input: {
   if (!nameUk) throw new Error("VALIDATION");
   const setupCost = Math.max(0, Number(input.setupCost) || 0);
   const unitRate = Math.max(0, Number(input.unitRate) || 0);
+  const quantity = await resolveDecorationLineQuantity({
+    orderItemId: input.orderItemId,
+    nameUk,
+    requested: input.quantity,
+  });
   const maxSort = await prisma.orderItemDecoration.aggregate({
     where: { orderItemId: input.orderItemId },
     _max: { sortOrder: true },
@@ -2762,6 +2818,7 @@ export async function addOrderItemDecorationWithRates(input: {
       nameSnapshot: nameUk,
       setupCost,
       unitRate,
+      quantity,
       sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
     },
   });
@@ -2776,16 +2833,83 @@ export async function updateOrderItemDecoration(input: {
   id: string;
   setupCost?: number;
   unitRate?: number;
+  quantity?: number;
   nameUk?: string;
+  comment?: string | null;
 }) {
   await assertOrderItemDecorationEditable(input.id);
+  const existing = await prisma.orderItemDecoration.findUnique({
+    where: { id: input.id },
+    select: {
+      id: true,
+      orderItemId: true,
+      nameSnapshot: true,
+      decorationFormatId: true,
+    },
+  });
+  if (!existing) throw new Error("NOT_FOUND");
   const nameUk = input.nameUk?.trim();
+  let quantity: number | undefined;
+  if (input.quantity != null) {
+    const next = await resolveDecorationLineQuantity({
+      orderItemId: existing.orderItemId,
+      nameUk: nameUk || existing.nameSnapshot,
+      requested: input.quantity,
+      excludeId: existing.id,
+    });
+    quantity = next ?? 0;
+  }
+  let unitRate = input.unitRate;
+  if (quantity != null && unitRate == null && existing.decorationFormatId) {
+    const format = await prisma.decorationFormat.findUnique({
+      where: { id: existing.decorationFormatId },
+      include: { tiers: { orderBy: { minQuantity: "asc" } } },
+    });
+    if (format && !format.quoteIndividually) {
+      unitRate = resolveDecorationFormatRate({
+        quantity,
+        tiers: mapDecorationFormatTiers(format.tiers),
+      });
+    }
+  }
+  if (
+    quantity != null &&
+    unitRate == null &&
+    !existing.decorationFormatId &&
+    isScreenPrintDecorationName(existing.nameSnapshot)
+  ) {
+    const { getScreenPrintCatalog } = await import("@/server/domains/screen-print/service");
+    const { parseScreenPrintLineName, resolveScreenPrintUnitRate } = await import(
+      "@/lib/screen-print-pricing"
+    );
+    const catalog = await getScreenPrintCatalog();
+    const parsed = parseScreenPrintLineName(existing.nameSnapshot, catalog.coefficients);
+    if (parsed) {
+      const resolved = resolveScreenPrintUnitRate({
+        quantity,
+        colorCount: parsed.colorCount,
+        cells: catalog.cells,
+        coefficients: catalog.coefficients,
+        selectedCodes: parsed.selectedCodes,
+      });
+      if (resolved) unitRate = resolved.unitRate;
+    }
+  }
   return prisma.orderItemDecoration.update({
     where: { id: input.id },
     data: {
       ...(nameUk ? { nameSnapshot: nameUk } : {}),
       ...(input.setupCost != null ? { setupCost: Math.max(0, input.setupCost) } : {}),
-      ...(input.unitRate != null ? { unitRate: Math.max(0, input.unitRate) } : {}),
+      ...(unitRate != null ? { unitRate: Math.max(0, unitRate) } : {}),
+      ...(quantity != null ? { quantity } : {}),
+      ...(input.comment !== undefined
+        ? {
+            comment: (() => {
+              const html = sanitizeRichHtml(input.comment);
+              return richTextIsEmpty(html) ? null : html;
+            })(),
+          }
+        : {}),
     },
   });
 }
@@ -3814,6 +3938,15 @@ export async function duplicateOrder(input: { orderId: string; userId: string })
   return created;
 }
 
+export async function updateOrderComment(orderId: string, comment: string | null) {
+  await assertOrderEditableById(orderId);
+  const html = sanitizeRichHtml(comment);
+  return prisma.order.update({
+    where: { id: orderId },
+    data: { comment: richTextIsEmpty(html) ? null : html },
+  });
+}
+
 export async function updateOrderTargetMargin(orderId: string, targetMarginPercent: number | null) {
   await assertOrderEditableById(orderId);
   return prisma.order.update({
@@ -3881,6 +4014,8 @@ export async function updateOrderFileMeta(input: {
   caption?: string | null;
   orderItemId?: string | null;
   orderItemDecorationId?: string | null;
+  pieceQuantity?: number | null;
+  sizeQuantities?: Array<{ sizeCode: string; quantity: number }> | null;
 }) {
   const file = await prisma.fileAsset.findUnique({
     where: { id: input.fileId },
@@ -3917,6 +4052,82 @@ export async function updateOrderFileMeta(input: {
     orderItemDecorationId = null;
   }
 
+  let pieceQuantity = input.pieceQuantity;
+  let sizeQuantities = input.sizeQuantities;
+  if (sizeQuantities !== undefined && sizeQuantities !== null) {
+    const cleaned = sizeQuantities
+      .map((row) => ({
+        sizeCode: String(row.sizeCode ?? "").trim(),
+        quantity: Math.max(0, Math.floor(Number(row.quantity) || 0)),
+      }))
+      .filter((row) => row.sizeCode && row.quantity > 0);
+    sizeQuantities = cleaned;
+    pieceQuantity = cleaned.reduce((sum, row) => sum + row.quantity, 0);
+  }
+
+  if (pieceQuantity !== undefined || sizeQuantities !== undefined) {
+    const current = await prisma.fileAsset.findUnique({
+      where: { id: input.fileId },
+      select: {
+        orderItemDecorationId: true,
+        orderItemId: true,
+        pieceQuantity: true,
+        sizeQuantities: true,
+      },
+    });
+    const decorationId = orderItemDecorationId ?? current?.orderItemDecorationId ?? null;
+    if (decorationId) {
+      const decoration = await prisma.orderItemDecoration.findUnique({
+        where: { id: decorationId },
+        select: {
+          quantity: true,
+          orderItem: {
+            select: {
+              totalQuantity: true,
+              sizes: { select: { sizeCode: true, quantity: true } },
+              decorations: { select: { id: true, files: true } },
+            },
+          },
+        },
+      });
+      if (decoration) {
+        const { decorationCostQuantity } = await import("@/lib/decoration-qty");
+        const { decorationAllocatedPieces, parseFileSizeQuantities } = await import(
+          "@/lib/artwork-file-qty"
+        );
+        const cap = decorationCostQuantity(
+          { quantity: decoration.quantity },
+          decoration.orderItem.totalQuantity,
+        );
+        const siblings = decoration.orderItem.decorations
+          .find((row) => row.id === decorationId)
+          ?.files.filter((file) => file.id !== input.fileId) ?? [];
+        const nextPieces =
+          sizeQuantities && sizeQuantities.length > 0
+            ? sizeQuantities.reduce((sum, row) => sum + row.quantity, 0)
+            : Math.max(0, Math.floor(Number(pieceQuantity) || 0));
+        if (decorationAllocatedPieces(siblings) + nextPieces > cap) {
+          throw new Error("OVER_QTY");
+        }
+        const sizeCaps = new Map(
+          decoration.orderItem.sizes.map((row) => [row.sizeCode, row.quantity]),
+        );
+        for (const row of sizeQuantities ?? []) {
+          const used = siblings.reduce((sum, file) => {
+            const match = parseFileSizeQuantities(file.sizeQuantities).find(
+              (size) => size.sizeCode === row.sizeCode,
+            );
+            return sum + (match?.quantity ?? 0);
+          }, 0);
+          const sizeCap = sizeCaps.get(row.sizeCode);
+          if (sizeCap != null && used + row.quantity > sizeCap) {
+            throw new Error("OVER_QTY");
+          }
+        }
+      }
+    }
+  }
+
   return prisma.fileAsset.update({
     where: { id: input.fileId },
     data: {
@@ -3925,6 +4136,8 @@ export async function updateOrderFileMeta(input: {
       ...(orderItemDecorationId !== undefined
         ? { orderItemDecorationId: orderItemDecorationId || null }
         : {}),
+      ...(pieceQuantity !== undefined ? { pieceQuantity: pieceQuantity ?? null } : {}),
+      ...(sizeQuantities !== undefined ? { sizeQuantities: sizeQuantities ?? undefined } : {}),
     },
   });
 }

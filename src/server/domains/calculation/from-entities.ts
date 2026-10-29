@@ -581,6 +581,7 @@ export type OrderItemForCalc = {
     id: string;
     setupCost: { toString(): string } | number;
     unitRate: { toString(): string } | number;
+    quantity?: number | null;
   }>;
   additionalCosts: Array<{
     id: string;
@@ -734,6 +735,7 @@ export function buildCalcFromOrderItem(
       id: row.id,
       setupCost: Number(row.setupCost),
       unitRate: Number(row.unitRate),
+      quantity: row.quantity ?? null,
     })),
     additionalCosts,
     pricingMethod: pricing.pricingMethod,

@@ -51,6 +51,7 @@ import {
   applyOrderItemSizeBreakdown,
   updateOrderStatus,
   updateOrderTargetMargin,
+  updateOrderComment,
 } from "@/server/domains/orders/service";
 import {
   buildCalcFromOrderItem,
@@ -606,7 +607,14 @@ export async function addOrderDecorationAction(formData: FormData) {
     return { ok: false as const, error: "VALIDATION" as const };
   }
 
-  await addOrderItemDecoration({ orderItemId, decorationMethodId });
+  try {
+    await addOrderItemDecoration({ orderItemId, decorationMethodId });
+  } catch (error) {
+    if (error instanceof Error && error.message === "OVER_QTY") {
+      return { ok: false as const, error: "OVER_QTY" as const };
+    }
+    throw error;
+  }
   revalidatePath(`/orders/${orderId}`);
   return { ok: true as const };
 }
@@ -631,23 +639,38 @@ export async function updateOrderDecorationAction(formData: FormData) {
 
   const orderId = String(formData.get("orderId") ?? "");
   const { access } = await assertCanEditOrderComposition(orderId);
-  if (!canEditOrderPricing(access)) {
-    return { ok: false as const, error: "FORBIDDEN" as const };
-  }
   const id = String(formData.get("id") ?? "");
   const setupRaw = String(formData.get("setupCost") ?? "").trim();
   const unitRaw = String(formData.get("unitRate") ?? "").trim();
+  const qtyRaw = String(formData.get("quantity") ?? "").trim();
+  const commentRaw = formData.get("comment");
   const setupCost = setupRaw === "" ? undefined : Number(setupRaw);
   const unitRate = unitRaw === "" ? undefined : Number(unitRaw);
+  const quantity = qtyRaw === "" ? undefined : Math.floor(Number(qtyRaw));
+  const comment = commentRaw === null ? undefined : String(commentRaw);
+  if (
+    (setupCost != null || unitRate != null) &&
+    !canEditOrderPricing(access)
+  ) {
+    return { ok: false as const, error: "FORBIDDEN" as const };
+  }
   if (
     (setupCost != null && (Number.isNaN(setupCost) || setupCost < 0)) ||
-    (unitRate != null && (Number.isNaN(unitRate) || unitRate < 0))
+    (unitRate != null && (Number.isNaN(unitRate) || unitRate < 0)) ||
+    (quantity != null && (!Number.isFinite(quantity) || quantity < 0))
   ) {
     return { ok: false as const, error: "VALIDATION" as const };
   }
 
   const { updateOrderItemDecoration } = await import("@/server/domains/orders/service");
-  await updateOrderItemDecoration({ id, setupCost, unitRate });
+  try {
+    await updateOrderItemDecoration({ id, setupCost, unitRate, quantity, comment });
+  } catch (error) {
+    if (error instanceof Error && error.message === "OVER_QTY") {
+      return { ok: false as const, error: "OVER_QTY" as const };
+    }
+    throw error;
+  }
   revalidatePath(`/orders/${orderId}`);
   return { ok: true as const };
 }
@@ -1336,6 +1359,26 @@ export async function updateOrderMarginAction(formData: FormData) {
   return { ok: true as const };
 }
 
+export async function updateOrderCommentAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+  await assertCanEditOrderComposition(String(formData.get("orderId") ?? ""));
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+  const comment = String(formData.get("comment") ?? "");
+  try {
+    await updateOrderComment(orderId, comment);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "FORBIDDEN") return { ok: false as const, error: "FORBIDDEN" as const };
+    throw error;
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true as const };
+}
+
 export async function uploadOrderFileAction(formData: FormData) {
   const session = await auth();
   if (!session?.user) throw new Error("UNAUTHORIZED");
@@ -1448,7 +1491,20 @@ export async function updateOrderFileMetaAction(formData: FormData) {
   const captionRaw = formData.get("caption");
   const itemRaw = formData.get("orderItemId");
   const decorationRaw = formData.get("orderItemDecorationId");
+  const pieceRaw = formData.get("pieceQuantity");
+  const sizesRaw = formData.get("sizeQuantities");
   try {
+    let sizeQuantities: Array<{ sizeCode: string; quantity: number }> | undefined;
+    if (typeof sizesRaw === "string" && sizesRaw.trim()) {
+      const parsed = JSON.parse(sizesRaw) as unknown;
+      if (!Array.isArray(parsed)) {
+        return { ok: false as const, error: "VALIDATION" as const };
+      }
+      sizeQuantities = parsed.map((row) => ({
+        sizeCode: String((row as { sizeCode?: unknown }).sizeCode ?? ""),
+        quantity: Math.max(0, Math.floor(Number((row as { quantity?: unknown }).quantity) || 0)),
+      }));
+    }
     await updateOrderFileMeta({
       fileId,
       ...(captionRaw !== null ? { caption: String(captionRaw) } : {}),
@@ -1456,6 +1512,10 @@ export async function updateOrderFileMetaAction(formData: FormData) {
       ...(decorationRaw !== null
         ? { orderItemDecorationId: String(decorationRaw).trim() || null }
         : {}),
+      ...(pieceRaw !== null
+        ? { pieceQuantity: Math.max(0, Math.floor(Number(pieceRaw) || 0)) }
+        : {}),
+      ...(sizeQuantities !== undefined ? { sizeQuantities } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ERROR";
@@ -1465,6 +1525,7 @@ export async function updateOrderFileMetaAction(formData: FormData) {
       return { ok: false as const, error: "DECORATION" as const };
     }
     if (message === "NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" as const };
+    if (message === "OVER_QTY") return { ok: false as const, error: "OVER_QTY" as const };
     return { ok: false as const, error: "ERROR" as const };
   }
 

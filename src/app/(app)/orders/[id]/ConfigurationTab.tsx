@@ -65,6 +65,11 @@ import {
   isDecorationFormatLineName,
   isMiscDecorationCostName,
 } from "@/lib/decoration-format-pricing";
+import {
+  decorationCostQuantity,
+  decorationLineTotal,
+  remainingDecorationQty,
+} from "@/lib/decoration-qty";
 import { mergeOrderSizesWithCatalog } from "@/lib/order-item-sizes";
 import type { DecorationFormatCatalogRow } from "@/server/domains/decoration-formats/service";
 
@@ -128,6 +133,8 @@ export type DecorationRow = {
   name: string;
   setupCost: number;
   unitRate: number;
+  quantity?: number | null;
+  comment?: string | null;
   totalCost: number;
 };
 
@@ -242,6 +249,7 @@ export function ConfigurationTab({
   const [committedQuantities, setCommittedQuantities] =
     useState<Record<string, number> | null>(null);
   const [sizeSaveError, setSizeSaveError] = useState<string | null>(null);
+  const [decorationError, setDecorationError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{
     kind: "material" | "operation" | "decoration";
     id: string;
@@ -297,7 +305,15 @@ export function ConfigurationTab({
     0,
   );
   const decorationSetupTotal = decorations.reduce((sum, row) => sum + row.setupCost, 0);
-  const decorationUnitRateTotal = decorations.reduce((sum, row) => sum + row.unitRate, 0);
+  const decorationCoveredQty = decorations.reduce(
+    (sum, row) =>
+      sum +
+      (isMiscDecorationCostName(row.name)
+        ? 0
+        : decorationCostQuantity(row, totalQuantity)),
+    0,
+  );
+  const decorationRemainingQty = remainingDecorationQty(decorations, totalQuantity);
   /** Order BOM is always the full shared list — per-size norms live on the product card. */
   const hasOversizeQty = editableSizes.some(
     (size) => isOversizeCode(size.sizeCode) && (quantities[size.sizeCode] ?? 0) > 0,
@@ -332,14 +348,25 @@ export function ConfigurationTab({
     });
   }
 
-  function saveDecorationRates(id: string, setupCost: number, unitRate: number) {
+  function saveDecorationRates(
+    id: string,
+    setupCost: number,
+    unitRate?: number,
+    quantity?: number,
+  ) {
     const formData = new FormData();
     formData.set("orderId", orderId);
     formData.set("id", id);
     formData.set("setupCost", String(setupCost));
-    formData.set("unitRate", String(unitRate));
+    if (unitRate != null) formData.set("unitRate", String(unitRate));
+    if (quantity != null) formData.set("quantity", String(quantity));
     runBusy(`decoration:${id}`, async () => {
-      await updateOrderDecorationAction(formData);
+      const result = await updateOrderDecorationAction(formData);
+      if (result && "error" in result && result.error === "OVER_QTY") {
+        setDecorationError("Шт нанесення не можуть перевищувати тираж позиції.");
+      } else {
+        setDecorationError(null);
+      }
     });
   }
 
@@ -885,18 +912,38 @@ export function ConfigurationTab({
               <span className="type-caption ml-1.5 font-normal">{decorations.length}</span>
             </span>
           }
+          right={
+            decorations.length > 0 ? (
+              <span className="type-caption">
+                {decorationRemainingQty > 0
+                  ? `${decorationRemainingQty} шт без нанесення`
+                  : "тираж розподілено"}
+              </span>
+            ) : null
+          }
         />
+        {decorationError ? (
+          <p className="type-caption px-3 pb-1 text-[var(--color-danger-text)]">{decorationError}</p>
+        ) : null}
         <Table className="table-fixed">
           <THead>
             <TH>Метод</TH>
             {!hideCosts ? (
-              <TH align="right" width="88px" title="Один раз на партію">
+              <TH align="right" width="80px" title="Один раз на партію">
                 Приладка
               </TH>
             ) : null}
+            <TH align="right" width="64px">
+              шт
+            </TH>
             {!hideCosts ? (
-              <TH align="right" width="72px" title="За одиницю">
-                /шт
+              <TH align="right" width="72px" title="Ціна за одиницю">
+                ₴/шт
+              </TH>
+            ) : null}
+            {!hideCosts ? (
+              <TH align="right" width="96px">
+                Разом ₴
               </TH>
             ) : null}
             {!locked ? <TH width="40px" /> : null}
@@ -904,19 +951,25 @@ export function ConfigurationTab({
           <TBody>
             {decorations.length === 0 ? (
               <TableEmpty
-                colSpan={locked ? (hideCosts ? 1 : 3) : hideCosts ? 2 : 4}
+                colSpan={
+                  (hideCosts ? 2 : 5) + (locked ? 0 : 1)
+                }
                 icon={<IconDecoration size={20} />}
                 title="Без нанесення"
                 description={
                   locked
                     ? "Нанесення не додано."
-                    : "Оберіть шовкотрафарет або DTF нижче — можна додати кілька разів."
+                    : "Оберіть метод і шт — можна кілька видів у межах тиражу."
                 }
               />
             ) : (
               decorations.map((row) => {
                 const rowBusy = isBusy(`decoration:${row.id}`);
                 const isMiscCost = isMiscDecorationCostName(row.name);
+                const lineQty = decorationCostQuantity(row, totalQuantity);
+                const lineTotal = decorationLineTotal(row, totalQuantity);
+                const qtyInputClass =
+                  "h-7 w-[56px] rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12.5px] tabular outline-none placeholder:text-[var(--color-text-quiet)] focus:border-[var(--color-primary-500)] disabled:opacity-60";
                 return (
                   <TR key={row.id} className={busyRowClass(rowBusy)} aria-busy={rowBusy || undefined}>
                     <TD className="min-w-0 py-1.5">
@@ -930,7 +983,7 @@ export function ConfigurationTab({
                         {isMiscCost ? (
                           <span
                             className="text-[var(--color-text-quiet)]"
-                            title="Додаткові витрати йдуть у ставку /шт на тираж, не в приладку"
+                            title="Додаткові витрати йдуть у ставку /шт, не в приладку"
                           >
                             —
                           </span>
@@ -951,7 +1004,7 @@ export function ConfigurationTab({
                               const next = raw === "" ? 0 : Math.max(0, Number(raw) || 0);
                               event.target.value = next > 0 ? String(next) : "";
                               if (next === row.setupCost) return;
-                              saveDecorationRates(row.id, next, row.unitRate);
+                              saveDecorationRates(row.id, next, row.unitRate, lineQty);
                             }}
                             className="h-7 w-[72px] rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12.5px] tabular outline-none placeholder:text-[var(--color-text-quiet)] focus:border-[var(--color-primary-500)] disabled:opacity-60"
                             title="Приладка (разово на партію). Можна лишити порожнім."
@@ -959,6 +1012,29 @@ export function ConfigurationTab({
                         )}
                       </TD>
                     ) : null}
+                    <TD numeric className="py-1.5">
+                      {locked ? (
+                        <span className="tabular">{lineQty}</span>
+                      ) : (
+                        <input
+                          key={`${row.id}-qty-${lineQty}`}
+                          type="number"
+                          min={0}
+                          step="1"
+                          defaultValue={lineQty}
+                          disabled={rowBusy}
+                          onBlur={(event) => {
+                            const next = Math.max(0, Math.floor(Number(event.target.value) || 0));
+                            event.target.value = String(next);
+                            if (next === lineQty) return;
+                            saveDecorationRates(row.id, row.setupCost, undefined, next);
+                          }}
+                          className={qtyInputClass}
+                          title="Штук цього нанесення"
+                          aria-label={`${decorationLabel(row.name)} · шт`}
+                        />
+                      )}
+                    </TD>
                     {!hideCosts ? (
                       <TD numeric className="py-1.5">
                         {locked ? (
@@ -973,11 +1049,41 @@ export function ConfigurationTab({
                             onBlur={(event) => {
                               const next = Math.max(0, Number(event.target.value) || 0);
                               if (next === row.unitRate) return;
-                              saveDecorationRates(row.id, row.setupCost, next);
+                              saveDecorationRates(row.id, row.setupCost, next, lineQty);
                             }}
                             className="h-7 w-[64px] rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12.5px] tabular outline-none focus:border-[var(--color-primary-500)] disabled:opacity-60"
-                            title="Ставка за виріб"
+                            title="Ціна за штуку"
                           />
+                        )}
+                      </TD>
+                    ) : null}
+                    {!hideCosts ? (
+                      <TD numeric className="py-1.5">
+                        {locked ? (
+                          <span className="font-medium">{formatMoneyUah(lineTotal)}</span>
+                        ) : (
+                          <span className="inline-flex items-center justify-end gap-0.5">
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.1"
+                              defaultValue={lineTotal}
+                              disabled={rowBusy}
+                              onBlur={(event) => {
+                                const nextTotal = Math.max(0, Number(event.target.value) || 0);
+                                if (nextTotal === lineTotal) return;
+                                const nextRate =
+                                  lineQty > 0
+                                    ? Math.max(0, (nextTotal - row.setupCost) / lineQty)
+                                    : row.unitRate;
+                                saveDecorationRates(row.id, row.setupCost, nextRate, lineQty);
+                              }}
+                              className="h-7 w-[72px] rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12.5px] tabular outline-none focus:border-[var(--color-primary-500)] disabled:opacity-60"
+                              title="Разом = приладка + ₴/шт × шт"
+                              aria-label="Разом, ₴"
+                            />
+                            <span className="type-caption text-[var(--color-text-tertiary)]">₴</span>
+                          </span>
                         )}
                       </TD>
                     ) : null}
@@ -1018,14 +1124,11 @@ export function ConfigurationTab({
                   </span>
                 </TD>
                 <TD numeric>
-                  <span className="inline-flex flex-col items-end gap-0.5">
-                    <span className="font-medium">
-                      {formatMoneyUah(decorationUnitRateTotal)}
-                    </span>
-                    <span className="type-caption">
-                      разом {formatMoneyUah(decorationsSubtotal)}
-                    </span>
-                  </span>
+                  <span className="tabular">{decorationCoveredQty} шт</span>
+                </TD>
+                <TD />
+                <TD numeric>
+                  <span className="font-medium">{formatMoneyUah(decorationsSubtotal)}</span>
                 </TD>
                 {!locked ? <TD /> : null}
               </tr>
@@ -1036,6 +1139,7 @@ export function ConfigurationTab({
           orderId={orderId}
           orderItemId={itemId}
           quantity={totalQuantity}
+          remainingQuantity={decorationRemainingQty}
           formats={decorationFormats}
           screenPrintCells={screenPrintCells}
           screenPrintCoefficients={screenPrintCoefficients}

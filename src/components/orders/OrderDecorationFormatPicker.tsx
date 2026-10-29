@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Select, type SelectOption } from "@/components/ui/Select";
@@ -12,6 +12,7 @@ import {
 } from "@/server/domains/decoration-formats/actions";
 import { syncOrderScreenPrintAction } from "@/server/domains/screen-print/actions";
 import {
+  formatCatalogDisplayName,
   mapDecorationFormatTiers,
   MISC_DECORATION_COST_NAME,
   MISC_DECORATION_OPTION_VALUE,
@@ -44,12 +45,13 @@ function parseScreenPrintColorCount(value: string): number | null {
 }
 
 /**
- * Unified decoration picker: Шовкотрафарет + DTF Друк (+ додаткові витрати /шт).
+ * Unified decoration picker: Шовкотрафарет + DTF + вишивка (+ додаткові витрати /шт).
  */
 export function OrderDecorationFormatPicker({
   orderId,
   orderItemId,
   quantity,
+  remainingQuantity,
   formats,
   screenPrintCells = [],
   screenPrintCoefficients = [],
@@ -59,6 +61,7 @@ export function OrderDecorationFormatPicker({
   orderId: string;
   orderItemId: string;
   quantity: number;
+  remainingQuantity?: number;
   formats: DecorationFormatCatalogRow[];
   screenPrintCells?: ScreenPrintPriceCell[];
   screenPrintCoefficients?: ScreenPrintCoefficient[];
@@ -66,39 +69,62 @@ export function OrderDecorationFormatPicker({
   hideCosts?: boolean;
 }) {
   const router = useRouter();
+  const remaining = remainingQuantity ?? quantity;
   const [selected, setSelected] = useState("");
   const [miscAmount, setMiscAmount] = useState("");
+  const [lineQty, setLineQty] = useState(String(remaining));
   const [coefCodes, setCoefCodes] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  useEffect(() => {
+    setLineQty(String(remaining));
+  }, [remaining]);
+
   const isMisc = selected === MISC_DECORATION_OPTION_VALUE;
   const screenPrintColors = parseScreenPrintColorCount(selected);
   const isScreenPrint = screenPrintColors != null;
+  const rateQty = Math.max(1, Math.floor(Number(lineQty) || remaining || quantity));
 
-  const dtfOptions = useMemo(() => {
+  const formatOptions = useMemo(() => {
     return formats
-      .filter((row) => row.status === "ACTIVE")
+      .filter((row) => row.status === "ACTIVE" && !row.quoteIndividually)
       .map((row) => {
-        const unitRate = resolveDecorationFormatRate({
-          quantity,
-          tiers: mapDecorationFormatTiers(row.tiers),
-        });
+        const display = formatCatalogDisplayName(row.nameUk, row.detailUk);
+        const unitRate = row.quoteIndividually
+          ? 0
+          : resolveDecorationFormatRate({
+              quantity: rateQty,
+              tiers: mapDecorationFormatTiers(row.tiers),
+            });
         return {
           id: row.id,
+          kind: row.kind,
+          quoteIndividually: row.quoteIndividually,
           label: hideCosts
-            ? row.nameUk
-            : `${row.nameUk} · ${formatMoneyUah(unitRate)}/шт`,
+            ? display
+            : row.quoteIndividually
+              ? `${display} · індивід.`
+              : `${display} · ${formatMoneyUah(unitRate)}/шт`,
           unitRate,
         };
       });
-  }, [formats, quantity, hideCosts]);
+  }, [formats, rateQty, hideCosts]);
+
+  const dtfOptions = useMemo(
+    () => formatOptions.filter((row) => row.kind !== "EMBROIDERY"),
+    [formatOptions],
+  );
+  const embroideryOptions = useMemo(
+    () => formatOptions.filter((row) => row.kind === "EMBROIDERY"),
+    [formatOptions],
+  );
 
   const screenPrintOptions = useMemo(() => {
     return uniqueColorCounts(screenPrintCells)
       .map((colorCount) => {
         const base = lookupScreenPrintBaseRate({
-          quantity,
+          quantity: rateQty,
           colorCount,
           cells: screenPrintCells,
         });
@@ -113,7 +139,7 @@ export function OrderDecorationFormatPicker({
         };
       })
       .filter((row): row is NonNullable<typeof row> => row != null);
-  }, [screenPrintCells, quantity, hideCosts]);
+  }, [screenPrintCells, rateQty, hideCosts]);
 
   const selectOptions = useMemo((): SelectOption[] => {
     const rows: SelectOption[] = [{ value: "", label: "Оберіть нанесення…" }];
@@ -131,23 +157,31 @@ export function OrderDecorationFormatPicker({
         group: "DTF Друк",
       });
     }
+    for (const row of embroideryOptions) {
+      rows.push({
+        value: row.id,
+        label: row.label,
+        group: "Вишивка",
+      });
+    }
     rows.push({
       value: MISC_DECORATION_OPTION_VALUE,
       label: MISC_DECORATION_COST_NAME,
       group: "Інше",
     });
     return rows;
-  }, [screenPrintOptions, dtfOptions]);
+  }, [screenPrintOptions, dtfOptions, embroideryOptions]);
 
-  const dtfPreview =
+  const formatPreview =
     !isMisc && !isScreenPrint
-      ? (dtfOptions.find((row) => row.id === selected) ?? null)
+      ? (formatOptions.find((row) => row.id === selected) ?? null)
       : null;
+  const needsCustomRate = Boolean(formatPreview?.quoteIndividually);
 
   const screenPrintPreview = useMemo(() => {
     if (screenPrintColors == null) return null;
     return resolveScreenPrintUnitRate({
-      quantity,
+      quantity: rateQty,
       colorCount: screenPrintColors,
       cells: screenPrintCells,
       coefficients: screenPrintCoefficients,
@@ -155,7 +189,7 @@ export function OrderDecorationFormatPicker({
     });
   }, [
     screenPrintColors,
-    quantity,
+    rateQty,
     screenPrintCells,
     screenPrintCoefficients,
     coefCodes,
@@ -168,6 +202,12 @@ export function OrderDecorationFormatPicker({
     setMiscAmount("");
     setCoefCodes([]);
     setError(null);
+    setLineQty(String(remaining));
+  }
+
+  function parsedLineQty() {
+    const qty = Math.max(0, Math.floor(Number(lineQty) || 0));
+    return qty;
   }
 
   function toggleCoef(code: string) {
@@ -179,6 +219,15 @@ export function OrderDecorationFormatPicker({
   function add() {
     if (!selected) {
       setError("Оберіть нанесення");
+      return;
+    }
+    const qty = parsedLineQty();
+    if (!isMisc && qty <= 0) {
+      setError("Вкажіть кількість шт");
+      return;
+    }
+    if (!isMisc && qty > remaining) {
+      setError(`Не більше ${remaining} шт (залишок тиражу)`);
       return;
     }
     setError(null);
@@ -207,12 +256,15 @@ export function OrderDecorationFormatPicker({
           enabled: true,
           colorCount,
           selectedCodes: coefCodes,
+          quantity: qty,
         });
         if (!result.ok) {
           setError(
-            result.error === "NO_RATE"
-              ? "Немає ставки для цього тиражу / кольорів у довіднику"
-              : "Не вдалося додати нанесення",
+            result.error === "OVER_QTY"
+              ? `Не більше ${remaining} шт (залишок тиражу)`
+              : result.error === "NO_RATE"
+                ? "Немає ставки для цього тиражу / кольорів у довіднику"
+                : "Не вдалося додати нанесення",
           );
           return;
         }
@@ -221,16 +273,25 @@ export function OrderDecorationFormatPicker({
         return;
       }
 
+      const selectedFormat = formatOptions.find((row) => row.id === selected);
+      const customRate =
+        selectedFormat?.quoteIndividually
+          ? Math.max(0, Number(miscAmount) || 0)
+          : undefined;
       const result = await addOrderDecorationFormatAction({
         orderId,
         orderItemId,
         formatId: selected,
+        unitRate: customRate,
+        quantity: qty,
       });
       if (!result.ok) {
         setError(
-          result.error === "NO_RATE"
-            ? "Немає ставки для цього формату"
-            : "Не вдалося додати нанесення",
+          result.error === "OVER_QTY"
+            ? `Не більше ${remaining} шт (залишок тиражу)`
+            : result.error === "NO_RATE"
+              ? "Немає ставки для цього формату"
+              : "Не вдалося додати нанесення",
         );
         return;
       }
@@ -261,7 +322,23 @@ export function OrderDecorationFormatPicker({
               }
             }}
           />
-          {isMisc && !hideCosts ? (
+          <input
+            type="number"
+            min={0}
+            step="1"
+            inputMode="numeric"
+            placeholder="шт"
+            title={`Шт цього нанесення · залишок ${remaining} з тиражу ${quantity}`}
+            aria-label="Кількість шт"
+            value={lineQty}
+            disabled={pending}
+            onChange={(event) => {
+              setLineQty(event.target.value);
+              setError(null);
+            }}
+            className={cn(compactFieldClass, "w-[64px]")}
+          />
+          {(isMisc || needsCustomRate) && !hideCosts ? (
             <input
               type="number"
               min={0}
@@ -279,9 +356,9 @@ export function OrderDecorationFormatPicker({
               className={cn(compactFieldClass, "w-[72px]")}
             />
           ) : null}
-          {!hideCosts && dtfPreview ? (
+          {!hideCosts && formatPreview && !needsCustomRate ? (
             <p className="type-caption self-center text-[var(--color-text-secondary)]">
-              {formatMoneyUah(dtfPreview.unitRate)}/шт · тираж {quantity}
+              {formatMoneyUah(formatPreview.unitRate)}/шт
             </p>
           ) : null}
           {!hideCosts && screenPrintPreview ? (
@@ -299,7 +376,7 @@ export function OrderDecorationFormatPicker({
             type="button"
             size="sm"
             onClick={add}
-            disabled={pending || !selected}
+            disabled={pending || !selected || (!isMisc && remaining <= 0)}
             loading={pending}
             className="inline-flex shrink-0 items-center gap-1"
           >

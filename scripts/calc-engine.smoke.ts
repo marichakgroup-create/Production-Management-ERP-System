@@ -85,7 +85,7 @@ const sized = calculateCosting({
 
 // S uses shared 1×10×100 = 1000; XL uses specific 1.5×10×100 = 1500; total 2500
 assert.equal(sized.totalQuantity, 20);
-assert.equal(sized.materialsSubtotal, "2500.00");
+assert.equal(Number(sized.materialsSubtotal), 2500);
 
 console.log("size-scoped material smoke test passed");
 
@@ -198,7 +198,7 @@ const decoItem = {
 const noPriceListDraft = draftLineFromItem(decoItem, costCalcStub);
 assert.equal(noPriceListDraft.fromPriceList, false);
 assert.equal(noPriceListDraft.priceSource, "cost");
-assert.equal(noPriceListDraft.sellingPricePerUnit, 350.54);
+assert.equal(noPriceListDraft.sellingPricePerUnit, 350.5);
 assert.equal(noPriceListDraft.totalSellingValue, 35054);
 
 const sewingMarkupDraft = draftLineFromItem(
@@ -432,6 +432,8 @@ console.log("oversize 3XL+ coeffs smoke test passed");
 import {
   DEFAULT_DECORATION_FORMATS,
   DEFAULT_DECORATION_FORMAT_QTY_TIERS,
+  DEFAULT_EMBROIDERY_FORMATS,
+  DEFAULT_EMBROIDERY_FORMAT_QTY_TIERS,
   mapDecorationFormatTiers,
   resolveDecorationFormatRate,
 } from "../src/lib/decoration-format-pricing";
@@ -456,6 +458,26 @@ assert.equal(resolveDecorationFormatRate({ quantity: 50, tiers: tiers5 }), 35);
 assert.equal(resolveDecorationFormatRate({ quantity: 150, tiers: tiers5 }), 29);
 assert.equal(resolveDecorationFormatRate({ quantity: 200, tiers: tiers5 }), 25);
 assert.equal(resolveDecorationFormatRate({ quantity: 30, tiers: tiers10 }), 55);
+
+{
+  const small = DEFAULT_EMBROIDERY_FORMATS.find((row) => row.nameUk === "Малий логотип")!;
+  const chest = DEFAULT_EMBROIDERY_FORMATS.find(
+    (row) => row.nameUk === "Логотип на грудях / рукаві",
+  )!;
+  const embroideryTiers = (row: typeof small) =>
+    mapDecorationFormatTiers(
+      DEFAULT_EMBROIDERY_FORMAT_QTY_TIERS.map((minQuantity, index) => ({
+        minQuantity,
+        unitRate: row.rates[index]!,
+      })),
+    );
+  assert.equal(resolveDecorationFormatRate({ quantity: 10, tiers: embroideryTiers(small) }), 55);
+  assert.equal(resolveDecorationFormatRate({ quantity: 20, tiers: embroideryTiers(small) }), 55);
+  assert.equal(resolveDecorationFormatRate({ quantity: 49, tiers: embroideryTiers(small) }), 55);
+  assert.equal(resolveDecorationFormatRate({ quantity: 50, tiers: embroideryTiers(small) }), 50);
+  assert.equal(resolveDecorationFormatRate({ quantity: 30, tiers: embroideryTiers(chest) }), 70);
+  assert.equal(resolveDecorationFormatRate({ quantity: 80, tiers: embroideryTiers(chest) }), 60);
+}
 
 // 30 шт · два «5×5» + один «10×10» → 45×30 + 45×30 + 55×30
 {
@@ -547,6 +569,24 @@ assert.equal(resolveDecorationFormatRate({ quantity: 30, tiers: tiers10 }), 55);
   assert.equal(Number(calc.decorationsSubtotal), 500 + 35 * 80);
   assert.equal(Number(calc.decorationsSubtotal), 3300);
   console.log("decoration single + setup smoke passed:", calc.decorationsSubtotal);
+}
+
+{
+  const calc = calculateCosting({
+    sizes: [{ sizeCode: "M", quantity: 100 }],
+    materials: [],
+    operations: [],
+    decorations: [
+      { id: "a", setupCost: 0, unitRate: 10, quantity: 20 },
+      { id: "b", setupCost: 100, unitRate: 5, quantity: 30 },
+    ],
+    additionalCosts: [],
+    pricingMethod: "MARGIN",
+    targetRatePercent: 0,
+  });
+  assert.equal(Number(calc.decorationsSubtotal), 10 * 20 + 100 + 5 * 30);
+  assert.equal(Number(calc.decorationsSubtotal), 450);
+  console.log("decoration split qty smoke passed:", calc.decorationsSubtotal);
 }
 
 console.log("decoration format pricing smoke tests passed");

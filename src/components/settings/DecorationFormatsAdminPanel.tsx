@@ -18,7 +18,10 @@ import {
   TR,
 } from "@/components/ui/Table";
 import { saveDecorationFormatsMatrixAction } from "@/server/domains/decoration-formats/actions";
-import { DEFAULT_DECORATION_FORMAT_QTY_TIERS } from "@/lib/decoration-format-pricing";
+import {
+  defaultQtyTiersForKind,
+  type DecorationFormatKind,
+} from "@/lib/decoration-format-pricing";
 import type { DecorationFormatCatalogRow } from "@/server/domains/decoration-formats/service";
 import { cn } from "@/lib/utils";
 
@@ -36,32 +39,38 @@ const draftCell =
 
 const RATE_COL_WIDTH = "7.5rem";
 const NAME_COL_WIDTH = "14rem";
+const DETAIL_COL_WIDTH = "16rem";
 const ACTION_COL_WIDTH = "2.75rem";
 
 type EditorRow = {
   key: string;
   id: string | null;
   nameUk: string;
+  detailUk: string;
   /** Rates keyed by current minQuantity. */
   rates: Record<number, number>;
 };
 
-function tierMinsFromRows(rows: DecorationFormatCatalogRow[]): number[] {
+function tierMinsFromRows(
+  rows: DecorationFormatCatalogRow[],
+  kind: DecorationFormatKind,
+): number[] {
   const mins = new Set<number>();
   for (const row of rows) {
     for (const tier of row.tiers) mins.add(tier.minQuantity);
   }
-  if (mins.size === 0) return [...DEFAULT_DECORATION_FORMAT_QTY_TIERS];
+  if (mins.size === 0) return [...defaultQtyTiersForKind(kind)];
   return [...mins].sort((a, b) => a - b);
 }
 
 function toEditorRows(rows: DecorationFormatCatalogRow[]): EditorRow[] {
   return rows
-    .filter((row) => row.status === "ACTIVE")
+    .filter((row) => row.status === "ACTIVE" && !row.quoteIndividually)
     .map((row, index) => ({
       key: row.id || `row-${index}`,
       id: row.id.startsWith("fallback_") ? null : row.id,
       nameUk: row.nameUk,
+      detailUk: row.detailUk ?? "",
       rates: Object.fromEntries(row.tiers.map((t) => [t.minQuantity, t.unitRate])),
     }));
 }
@@ -71,6 +80,7 @@ function serialize(rows: EditorRow[], mins: number[]) {
     rows.map((row) => ({
       id: row.id,
       nameUk: row.nameUk.trim(),
+      detailUk: row.detailUk.trim(),
       rates: mins.map((min) => row.rates[min] ?? 0),
     })),
   );
@@ -98,11 +108,14 @@ function remapRates(
 
 export function DecorationFormatsAdminPanel({
   formats: initialFormats,
+  kind = "DTF",
 }: {
   formats: DecorationFormatCatalogRow[];
+  kind?: DecorationFormatKind;
 }) {
   const router = useRouter();
-  const [mins, setMins] = useState(() => tierMinsFromRows(initialFormats));
+  const showDetail = kind === "EMBROIDERY";
+  const [mins, setMins] = useState(() => tierMinsFromRows(initialFormats, kind));
   const [rows, setRows] = useState(() => toEditorRows(initialFormats));
   const [draftQty, setDraftQty] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -110,18 +123,18 @@ export function DecorationFormatsAdminPanel({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    setMins(tierMinsFromRows(initialFormats));
+    setMins(tierMinsFromRows(initialFormats, kind));
     setRows(toEditorRows(initialFormats));
-  }, [initialFormats]);
+  }, [initialFormats, kind]);
 
   const dirty = useMemo(() => {
-    const baselineMins = tierMinsFromRows(initialFormats);
+    const baselineMins = tierMinsFromRows(initialFormats, kind);
     const baseline = toEditorRows(initialFormats);
     return (
       JSON.stringify(mins) !== JSON.stringify(baselineMins) ||
       serialize(rows, mins) !== serialize(baseline, baselineMins)
     );
-  }, [rows, mins, initialFormats]);
+  }, [rows, mins, initialFormats, kind]);
 
   function setRate(key: string, minQuantity: number, unitRate: number) {
     setRows((prev) =>
@@ -137,6 +150,10 @@ export function DecorationFormatsAdminPanel({
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, nameUk } : row)));
   }
 
+  function setDetail(key: string, detailUk: string) {
+    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, detailUk } : row)));
+  }
+
   function removeRow(key: string) {
     setRows((prev) => prev.filter((row) => row.key !== key));
   }
@@ -149,6 +166,7 @@ export function DecorationFormatsAdminPanel({
         key,
         id: null,
         nameUk: "",
+        detailUk: "",
         rates: Object.fromEntries(mins.map((min) => [min, 0])),
       },
     ]);
@@ -228,7 +246,10 @@ export function DecorationFormatsAdminPanel({
     }
     const payload = rows.map((row, index) => ({
       id: row.id,
+      kind,
       nameUk: row.nameUk.trim(),
+      detailUk: row.detailUk.trim() || null,
+      quoteIndividually: false,
       sortOrder: index + 1,
       status: "ACTIVE" as const,
       tiers: mins.map((minQuantity) => ({
@@ -239,6 +260,7 @@ export function DecorationFormatsAdminPanel({
 
     startTransition(async () => {
       const fd = new FormData();
+      fd.set("kind", kind);
       fd.set("matrixJson", JSON.stringify(payload));
       const result = await saveDecorationFormatsMatrixAction(fd);
       if (!result.ok) {
@@ -259,8 +281,9 @@ export function DecorationFormatsAdminPanel({
           <Banner tone="success" title={message} />
         ) : (
           <Banner tone="info" title="Матриця формат × тираж">
-            Рядок — формат · стовпець — «від N шт» (editable) · клітинка — ₴/шт. Тираж менше
-            першого порогу бере ставку першого стовпця.
+            {kind === "EMBROIDERY"
+              ? "Рядок — категорія і габарити · стовпець — «від N шт» · клітинка — ₴/шт."
+              : "Рядок — формат · стовпець — «від N шт» (editable) · клітинка — ₴/шт. Тираж менше першого порогу бере ставку першого стовпця."}
           </Banner>
         )}
 
@@ -268,10 +291,19 @@ export function DecorationFormatsAdminPanel({
           <TableToolbar
             left={
               <div className="min-w-0">
-                <p className="type-subsection">Прайс ₴/шт за форматом</p>
+                <p className="type-subsection">
+                  {kind === "EMBROIDERY" ? "Прайс вишивки ₴/шт" : "Прайс ₴/шт за форматом"}
+                </p>
                 <p className="type-caption mt-0.5">
-                  {rows.length} формат{rows.length === 1 ? "" : "ів"} · {mins.length} сходів
-                  тиражу
+                  {rows.length}{" "}
+                  {kind === "EMBROIDERY"
+                    ? rows.length === 1
+                      ? "рядок"
+                      : "рядків"
+                    : rows.length === 1
+                      ? "формат"
+                      : "форматів"}{" "}
+                  · {mins.length} сходів тиражу
                 </p>
               </div>
             }
@@ -305,7 +337,7 @@ export function DecorationFormatsAdminPanel({
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={addRow} disabled={pending}>
                   <IconPlus size={14} />
-                  Формат
+                  {kind === "EMBROIDERY" ? "Рядок" : "Формат"}
                 </Button>
                 <Button
                   type="button"
@@ -322,16 +354,21 @@ export function DecorationFormatsAdminPanel({
           <div className="overflow-x-auto">
             {rows.length === 0 ? (
               <TableEmpty
-                colSpan={Math.max(mins.length, 1) + 2}
-                title="Немає форматів"
-                description="Додайте рядок формату. Стовпці тиражу можна міняти в шапці."
+                colSpan={Math.max(mins.length, 1) + (showDetail ? 3 : 2)}
+                title={kind === "EMBROIDERY" ? "Немає категорій вишивки" : "Немає форматів"}
+                description="Додайте рядок. Стовпці тиражу можна міняти в шапці."
               />
             ) : (
               <Table className="min-w-max table-fixed">
                 <THead>
                   <TH width={NAME_COL_WIDTH} stickyLeft className="min-w-[14rem]">
-                    Формат
+                    {kind === "EMBROIDERY" ? "Категорія" : "Формат"}
                   </TH>
+                  {showDetail ? (
+                    <TH width={DETAIL_COL_WIDTH} className="min-w-[14rem]">
+                      Габарити: ширина × висота
+                    </TH>
+                  ) : null}
                   {mins.map((minQuantity, index) => {
                     const nextMin = mins[index + 1] ?? null;
                     const range = bandLabel(minQuantity, nextMin);
@@ -395,10 +432,22 @@ export function DecorationFormatsAdminPanel({
                           value={row.nameUk}
                           disabled={pending}
                           onChange={(event) => setName(row.key, event.target.value)}
-                          placeholder="Назва формату"
+                          placeholder={kind === "EMBROIDERY" ? "Категорія" : "Назва формату"}
                           className={softLine}
                         />
                       </TD>
+                      {showDetail ? (
+                        <TD className="min-w-[14rem] py-1" style={{ width: DETAIL_COL_WIDTH }}>
+                          <input
+                            type="text"
+                            value={row.detailUk}
+                            disabled={pending}
+                            onChange={(event) => setDetail(row.key, event.target.value)}
+                            placeholder="До 5 × 5 см"
+                            className={softLine}
+                          />
+                        </TD>
+                      ) : null}
                       {mins.map((minQuantity, index) => {
                         const nextMin = mins[index + 1] ?? null;
                         return (

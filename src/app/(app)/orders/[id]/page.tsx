@@ -9,6 +9,7 @@ import { fixedCostOptionsFromDb } from "@/server/domains/fixed-costs/service";
 import { getScreenPrintCatalog } from "@/server/domains/screen-print/service";
 import { getDecorationFormatsCatalog } from "@/server/domains/decoration-formats/service";
 import { isMiscDecorationCostName } from "@/lib/decoration-format-pricing";
+import { parseFileSizeQuantities } from "@/lib/artwork-file-qty";
 import {
   resolveSewerCount,
   validateFixedCostParams,
@@ -19,6 +20,7 @@ import { Breadcrumbs, QuickAction, QuickActions } from "@/components/ui/ObjectHe
 import { Banner } from "@/components/ui/Banner";
 import { OrderWorkspaceTabs } from "@/components/orders/OrderWorkspaceTabs";
 import { OrderUnsavedProvider } from "@/components/orders/OrderUnsavedContext";
+import { OrderCommentBlock } from "@/components/orders/OrderCommentBlock";
 import {
   OrderChevronPipeline,
   OrderHeaderFacts,
@@ -351,13 +353,19 @@ export default async function OrderDetailPage({
     };
   }) : [];
 
-  const decorationRows = item ? item.decorations.map((row) => ({
-    id: row.id,
-    name: row.nameSnapshot,
-    setupCost: Number(row.setupCost),
-    unitRate: Number(row.unitRate),
-    totalCost: Number(row.setupCost) + Number(row.unitRate) * totalQuantity,
-  })) : [];
+  const decorationRows = item ? item.decorations.map((row) => {
+    const lineQty =
+      row.quantity != null ? row.quantity : totalQuantity;
+    return {
+      id: row.id,
+      name: row.nameSnapshot,
+      setupCost: Number(row.setupCost),
+      unitRate: Number(row.unitRate),
+      quantity: row.quantity,
+      comment: row.comment ?? null,
+      totalCost: Number(row.setupCost) + Number(row.unitRate) * lineQty,
+    };
+  }) : [];
 
   const fabricDeliveryRows = item ? item.materials
     .filter((row) => row.material?.type === "FABRIC")
@@ -984,20 +992,11 @@ export default async function OrderDetailPage({
           />
         }
         footer={
-          <p className="type-caption flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span>
-              <span className="text-[var(--color-text-tertiary)]">Коментар: </span>
-              {order.comment?.trim() || "—"}
-            </span>
-            {!locked ? (
-              <Link
-                href={tabHref("configuration")}
-                className="font-medium text-[var(--color-primary-700)] hover:underline"
-              >
-                Змінити
-              </Link>
-            ) : null}
-          </p>
+          <OrderCommentBlock
+            orderId={order.id}
+            comment={order.comment}
+            locked={locked}
+          />
         }
       />
 
@@ -1272,6 +1271,14 @@ export default async function OrderDetailPage({
                     decorations: artworkDecorations.map((decoration) => ({
                       id: decoration.id,
                       nameUk: decoration.nameSnapshot,
+                      quantity: decoration.quantity,
+                      comment: decoration.comment ?? null,
+                    })),
+                    totalQuantity: row.totalQuantity,
+                    sizes: row.sizes.map((size) => ({
+                      sizeCode: size.sizeCode,
+                      sizeNameUk: size.sizeNameUk,
+                      quantity: size.quantity,
                     })),
                   };
                 })}
@@ -1293,6 +1300,8 @@ export default async function OrderDetailPage({
                     orderItemNameUk: linked?.nameUk ?? null,
                     orderItemImageUrl: linked?.product?.imageUrl ?? null,
                     decorationNameUk: linkedDecoration?.nameSnapshot ?? null,
+                    pieceQuantity: file.pieceQuantity ?? null,
+                    sizeQuantities: parseFileSizeQuantities(file.sizeQuantities),
                   };
                 })}
               />

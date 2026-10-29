@@ -33,6 +33,16 @@ import {
   orderArtworkReady,
 } from "@/lib/order-files";
 import { decorationDisplayName } from "@/lib/decoration-format-pricing";
+import { decorationCostQuantity } from "@/lib/decoration-qty";
+import {
+  decorationAllocatedPieces,
+  fileAllocatedPieces,
+  parseFileSizeQuantities,
+  type ArtworkSizeQty,
+} from "@/lib/artwork-file-qty";
+import { isRealSizeCode } from "@/lib/order-item-sizes";
+import { updateOrderDecorationAction } from "@/server/domains/orders/actions";
+import { MiniRichText } from "@/components/ui/MiniRichText";
 
 export type OrderFileRow = {
   id: string;
@@ -47,11 +57,15 @@ export type OrderFileRow = {
   orderItemNameUk?: string | null;
   orderItemImageUrl?: string | null;
   decorationNameUk?: string | null;
+  pieceQuantity?: number | null;
+  sizeQuantities?: ArtworkSizeQty[];
 };
 
 export type OrderArtworkDecoration = {
   id: string;
   nameUk: string;
+  quantity?: number | null;
+  comment?: string | null;
 };
 
 export type OrderArtworkItem = {
@@ -61,6 +75,8 @@ export type OrderArtworkItem = {
   decorationsCount: number;
   decorationNames: string[];
   decorations: OrderArtworkDecoration[];
+  totalQuantity?: number;
+  sizes?: Array<{ sizeCode: string; sizeNameUk: string; quantity: number }>;
 };
 
 const selectClass = cn(controlClass, "h-8 min-w-0 px-2 text-[13px]");
@@ -277,7 +293,13 @@ export function OrderAttachments({
 
   function saveMeta(
     fileId: string,
-    next: { caption?: string; orderItemId?: string; orderItemDecorationId?: string },
+    next: {
+      caption?: string;
+      orderItemId?: string;
+      orderItemDecorationId?: string;
+      pieceQuantity?: number;
+      sizeQuantities?: ArtworkSizeQty[];
+    },
   ) {
     const formData = new FormData();
     formData.set("orderId", orderId);
@@ -287,10 +309,21 @@ export function OrderAttachments({
     if (next.orderItemDecorationId !== undefined) {
       formData.set("orderItemDecorationId", next.orderItemDecorationId);
     }
+    if (next.pieceQuantity !== undefined) {
+      formData.set("pieceQuantity", String(next.pieceQuantity));
+    }
+    if (next.sizeQuantities !== undefined) {
+      formData.set("sizeQuantities", JSON.stringify(next.sizeQuantities));
+    }
     startTransition(async () => {
       const result = await updateOrderFileMetaAction(formData);
       if (!result.ok) {
-        setError("Не вдалося оновити файл.");
+        setError(
+          result.error === "OVER_QTY"
+            ? "Шт макета не можуть перевищити нанесення / розмір."
+            : "Не вдалося оновити файл.",
+        );
+        router.refresh();
         return;
       }
       router.refresh();
@@ -328,9 +361,6 @@ export function OrderAttachments({
               <p className="inline-flex items-center gap-1.5 type-subsection">
                 <IconDecoration size={15} />
                 Нанесення — макети
-              </p>
-              <p className="type-caption mt-0.5">
-                Виріб → тип нанесення → файл. Без макета передати в цех не можна.
               </p>
             </div>
             <StatusBadge tone={artworkReady ? "success" : "warning"}>
@@ -409,7 +439,15 @@ export function OrderAttachments({
                         {item.nameUk}
                       </p>
                       <p className="type-caption">
-                        {item.decorations.length} нанесен.
+                        {item.decorations.length} нанесен. · {item.totalQuantity ?? 0} шт
+                        {(item.sizes ?? []).filter(
+                          (size) => isRealSizeCode(size.sizeCode) && size.quantity > 0,
+                        ).length > 0
+                          ? ` · ${(item.sizes ?? [])
+                              .filter((size) => isRealSizeCode(size.sizeCode) && size.quantity > 0)
+                              .map((size) => `${size.sizeNameUk} ${size.quantity}`)
+                              .join(", ")}`
+                          : ""}
                       </p>
                     </div>
                   </div>
@@ -424,12 +462,13 @@ export function OrderAttachments({
                       const slotFiles = files.filter(
                         (file) => file.orderItemDecorationId === decoration.id,
                       );
+                      const hasLinkedDecorationFiles = files.some(
+                        (file) => file.orderItemId === item.id && file.orderItemDecorationId,
+                      );
                       const legacyItemFiles =
                         slotFiles.length === 0 &&
-                        !files.some(
-                          (file) =>
-                            file.orderItemId === item.id && file.orderItemDecorationId,
-                        )
+                        !hasLinkedDecorationFiles &&
+                        decoration.id === item.decorations[0]?.id
                           ? files.filter(
                               (file) =>
                                 file.orderItemId === item.id &&
@@ -445,6 +484,14 @@ export function OrderAttachments({
                         item.decorations
                           .slice(0, index + 1)
                           .filter((row) => row.nameUk === decoration.nameUk).length;
+                      const decorationQty = decorationCostQuantity(
+                        { quantity: decoration.quantity, name: decoration.nameUk },
+                        item.totalQuantity ?? 0,
+                      );
+                      const allocated = decorationAllocatedPieces(shownFiles);
+                      const realSizes = (item.sizes ?? []).filter(
+                        (size) => isRealSizeCode(size.sizeCode) && size.quantity > 0,
+                      );
 
                       return (
                         <li
@@ -460,6 +507,10 @@ export function OrderAttachments({
                                     #{duplicateIndex}
                                   </span>
                                 ) : null}
+                                <span className="type-caption ml-1.5 font-normal tabular">
+                                  {decorationQty} шт
+                                  {allocated > 0 ? ` · у макетах ${allocated}` : ""}
+                                </span>
                               </p>
                             </div>
                             <StatusBadge tone={needs ? "warning" : "success"}>
@@ -482,25 +533,49 @@ export function OrderAttachments({
                               </Button>
                             ) : null}
                           </div>
+                          <div className="mt-2">
+                            <p className="type-caption mb-1">Коментар</p>
+                            <MiniRichText
+                              value={decoration.comment}
+                              disabled={locked || pending}
+                              placeholder="Примітка для друку: колір, розміщення, кількість…"
+                              onChange={(next) => {
+                                const formData = new FormData();
+                                formData.set("orderId", orderId);
+                                formData.set("id", decoration.id);
+                                formData.set("comment", next);
+                                startTransition(async () => {
+                                  await updateOrderDecorationAction(formData);
+                                  router.refresh();
+                                });
+                              }}
+                            />
+                          </div>
 
                           {shownFiles.length > 0 ? (
                             <ul className="mt-2 space-y-1.5 border-t border-[var(--color-divider)] pt-2">
                               {shownFiles.map((file) => (
                                 <li
                                   key={file.id}
-                                  className="flex flex-wrap items-center gap-2 text-[13px]"
+                                  className="flex min-w-0 items-center gap-2 overflow-hidden text-[13px]"
                                 >
                                   <a
                                     href={file.url}
                                     target="_blank"
                                     rel="noreferrer"
+                                    title={file.fileName}
                                     className="min-w-0 flex-1 truncate font-medium text-[var(--color-text-primary)] hover:text-[var(--color-primary-700)] hover:underline"
                                   >
                                     {file.fileName}
                                   </a>
-                                  <span className="type-caption tabular shrink-0">
-                                    {formatBytes(file.sizeBytes)}
-                                  </span>
+                                  <FileMaketQty
+                                    file={file}
+                                    realSizes={realSizes}
+                                    decorationQty={decorationQty}
+                                    locked={Boolean(locked)}
+                                    pending={pending}
+                                    onSave={(next) => saveMeta(file.id, next)}
+                                  />
                                   {!locked ? (
                                     <Button
                                       type="button"
@@ -663,6 +738,102 @@ export function OrderAttachments({
         ) : null}
       </TableCard>
     </div>
+  );
+}
+
+function FileMaketQty({
+  file,
+  realSizes,
+  decorationQty,
+  locked,
+  pending,
+  onSave,
+}: {
+  file: OrderFileRow;
+  realSizes: Array<{ sizeCode: string; sizeNameUk: string; quantity: number }>;
+  decorationQty: number;
+  locked: boolean;
+  pending: boolean;
+  onSave: (next: { pieceQuantity?: number; sizeQuantities?: ArtworkSizeQty[] }) => void;
+}) {
+  const sized = parseFileSizeQuantities(file.sizeQuantities);
+  const qtyByCode = Object.fromEntries(sized.map((row) => [row.sizeCode, row.quantity]));
+  const piece = file.pieceQuantity ?? fileAllocatedPieces(file);
+
+  if (realSizes.length > 0) {
+    return (
+      <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
+        {realSizes.map((size) => (
+          <label
+            key={size.sizeCode}
+            className="inline-flex items-center gap-1 type-caption"
+            title={`Макс. ${size.quantity} шт цього розміру`}
+          >
+            <span>{size.sizeNameUk}</span>
+            {locked ? (
+              <span className="tabular">{qtyByCode[size.sizeCode] ?? 0}</span>
+            ) : (
+              <input
+                key={`${file.id}-${size.sizeCode}-${qtyByCode[size.sizeCode] ?? 0}`}
+                type="number"
+                min={0}
+                max={size.quantity}
+                defaultValue={qtyByCode[size.sizeCode] ?? 0}
+                disabled={pending}
+                aria-label={`${size.sizeNameUk} шт на макеті`}
+                onBlur={(event) => {
+                  const nextQty = Math.max(0, Math.floor(Number(event.target.value) || 0));
+                  const current = qtyByCode[size.sizeCode] ?? 0;
+                  if (nextQty === current) return;
+                  const next = realSizes.map((row) => ({
+                    sizeCode: row.sizeCode,
+                    quantity:
+                      row.sizeCode === size.sizeCode
+                        ? nextQty
+                        : Math.max(0, Math.floor(Number(qtyByCode[row.sizeCode]) || 0)),
+                  }));
+                  onSave({ sizeQuantities: next });
+                }}
+                className="h-7 w-11 rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12px] tabular outline-none focus:border-[var(--color-primary-500)] disabled:opacity-60"
+              />
+            )}
+          </label>
+        ))}
+        <span className="type-caption tabular text-[var(--color-text-tertiary)]">
+          {fileAllocatedPieces({
+            pieceQuantity: piece,
+            sizeQuantities: sized,
+          })}
+          /{decorationQty} шт
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <label className="inline-flex shrink-0 items-center gap-1.5 type-caption">
+      <span>шт макета</span>
+      {locked ? (
+        <span className="tabular">{piece}</span>
+      ) : (
+        <input
+          key={`${file.id}-piece-${piece}`}
+          type="number"
+          min={0}
+          max={decorationQty}
+          defaultValue={piece}
+          disabled={pending}
+          aria-label="Штук цього макета"
+          onBlur={(event) => {
+            const nextQty = Math.max(0, Math.floor(Number(event.target.value) || 0));
+            if (nextQty === piece) return;
+            onSave({ pieceQuantity: nextQty });
+          }}
+          className="h-7 w-14 rounded-[6px] border border-[var(--color-border)] bg-white px-1 text-right text-[12px] tabular outline-none focus:border-[var(--color-primary-500)] disabled:opacity-60"
+        />
+      )}
+      <span className="tabular text-[var(--color-text-tertiary)]">/ {decorationQty}</span>
+    </label>
   );
 }
 

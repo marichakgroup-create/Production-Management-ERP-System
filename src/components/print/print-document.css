@@ -300,6 +300,25 @@
   white-space: pre-wrap;
 }
 
+.print-doc-rich {
+  font-size: 9.5pt;
+  line-height: 1.35;
+}
+
+.print-doc-rich p {
+  margin: 0 0 1.5mm;
+}
+
+.print-doc-rich ul,
+.print-doc-rich ol {
+  margin: 0 0 1.5mm;
+  padding-left: 4mm;
+}
+
+.print-doc-rich li {
+  margin: 0;
+}
+
 .print-doc-footer {
   margin-top: 6mm;
   padding-top: 4mm;

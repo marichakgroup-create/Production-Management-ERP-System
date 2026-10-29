@@ -26,12 +26,14 @@ export async function saveDecorationFormatsMatrixAction(formData: FormData) {
   await assertSessionPermission("manageCatalogs");
 
   const raw = String(formData.get("matrixJson") ?? "");
+  const kindRaw = String(formData.get("kind") ?? "DTF");
+  const kind = kindRaw === "EMBROIDERY" ? "EMBROIDERY" : "DTF";
   try {
     const matrix = JSON.parse(raw) as DecorationFormatMatrixInput[];
     if (!Array.isArray(matrix)) {
       return { ok: false as const, error: "VALIDATION" as const };
     }
-    await saveDecorationFormatsMatrix(matrix);
+    await saveDecorationFormatsMatrix(matrix, kind);
   } catch {
     return { ok: false as const, error: "VALIDATION" as const };
   }
@@ -59,6 +61,9 @@ export async function addOrderDecorationFormatAction(input: {
   orderId: string;
   orderItemId: string;
   formatId: string;
+  quantity?: number;
+  /** Required when the catalog row is quoted individually. */
+  unitRate?: number;
 }) {
   const session = await auth();
   if (!session?.user) throw new Error("UNAUTHORIZED");
@@ -73,21 +78,37 @@ export async function addOrderDecorationFormatAction(input: {
     return { ok: false as const, error: "NOT_FOUND" as const };
   }
 
-  const resolved = await resolveFormatUnitRate(input.formatId, item.totalQuantity);
+  const rateQty = Math.max(1, Math.floor(Number(input.quantity) || item.totalQuantity));
+  const resolved = await resolveFormatUnitRate(input.formatId, rateQty);
   if (!resolved) {
     return { ok: false as const, error: "NO_RATE" as const };
   }
 
-  await addOrderItemDecorationWithRates({
-    orderItemId: input.orderItemId,
-    nameUk: decorationFormatLineName(resolved.nameUk),
-    setupCost: 0,
-    unitRate: resolved.unitRate,
-    decorationFormatId: input.formatId,
-  });
+  const unitRate = resolved.quoteIndividually
+    ? Math.max(0, Number(input.unitRate) || 0)
+    : resolved.unitRate;
+
+  try {
+    await addOrderItemDecorationWithRates({
+      orderItemId: input.orderItemId,
+      nameUk: decorationFormatLineName(resolved.nameUk, {
+        kind: resolved.kind,
+        detailUk: resolved.detailUk,
+      }),
+      setupCost: 0,
+      unitRate,
+      quantity: input.quantity,
+      decorationFormatId: input.formatId,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "OVER_QTY") {
+      return { ok: false as const, error: "OVER_QTY" as const };
+    }
+    throw error;
+  }
 
   revalidatePath(`/orders/${input.orderId}`);
-  return { ok: true as const, unitRate: resolved.unitRate };
+  return { ok: true as const, unitRate };
 }
 
 /** Unplanned decoration cost for the tirage — unitRate × qty (not приладка). */
@@ -95,6 +116,7 @@ export async function addOrderMiscDecorationCostAction(input: {
   orderId: string;
   orderItemId: string;
   amount?: number;
+  quantity?: number;
 }) {
   const session = await auth();
   if (!session?.user) throw new Error("UNAUTHORIZED");
@@ -116,6 +138,7 @@ export async function addOrderMiscDecorationCostAction(input: {
     nameUk: MISC_DECORATION_COST_NAME,
     setupCost: 0,
     unitRate: amount,
+    quantity: input.quantity,
     decorationFormatId: null,
   });
 

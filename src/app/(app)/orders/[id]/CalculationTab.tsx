@@ -407,7 +407,7 @@ export function CalculationTab({
                     <TD className="font-medium">{row.name}</TD>
                     <TD className="type-caption">
                       приладка {formatMoneyUah(row.setupCost)} + {formatMoneyUah(row.unitRate)} ×{" "}
-                      {totalQuantity}
+                      {row.quantity ?? totalQuantity}
                     </TD>
                     <TD numeric className="text-[var(--color-text-secondary)]">
                       {formatMoneyUah(perUnit(row.totalCost))}

@@ -69,6 +69,7 @@ export function DraftCompositionEditor({
    * `inline` — sticky under BOM (default / in-order flows).
    */
   tirageDock = "inline",
+  hideTirage = false,
 }: {
   product: CatalogProduct;
   composition: DraftComposition;
@@ -97,6 +98,8 @@ export function DraftCompositionEditor({
   enableLinePricingControls?: boolean;
   showSubtotals?: boolean;
   tirageDock?: "inline" | "fixed";
+  /** Hide qty / confirm dock — line already in the order list. */
+  hideTirage?: boolean;
 }) {
   const productSizes = product.sizes.length
     ? product.sizes
@@ -267,7 +270,7 @@ export function DraftCompositionEditor({
   );
 
   return (
-    <div className={cn("space-y-3", tirageDock === "fixed" && "pb-[11rem]")}>
+    <div className={cn("space-y-3", tirageDock === "fixed" && !hideTirage && "pb-[11rem]")}>
       <div className="flex flex-wrap items-start justify-between gap-2 rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 shadow-[var(--shadow-card)]">
         <div className="flex min-w-0 flex-1 gap-3">
           <ProductThumb
@@ -298,16 +301,18 @@ export function DraftCompositionEditor({
             <p className="type-caption mt-0.5 truncate">
               {productLabel}
               {inList
-                ? " · збережено нижче в «Позиції замовлення»"
+                ? " · у списку позицій"
                 : enableLinePricingControls && !choicesComplete
                   ? " · оберіть колір і ПДВ у рядках з маркером"
-                  : tirageDock === "fixed"
-                    ? " · тираж — у панелі внизу екрана"
-                    : " · вкажіть тираж і натисніть кнопку нижче"}
+                  : hideTirage
+                    ? ""
+                    : tirageDock === "fixed"
+                      ? " · тираж — у панелі внизу екрана"
+                      : " · вкажіть тираж і натисніть кнопку нижче"}
             </p>
           </div>
         </div>
-        {tirageDock === "inline" ? (
+        {tirageDock === "inline" && !hideTirage ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1.5">
             <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
               Скасувати
@@ -338,7 +343,7 @@ export function DraftCompositionEditor({
         fabricGlobals={fabricGlobals}
       />
 
-      {tirageDock === "inline" ? (
+      {hideTirage ? null : tirageDock === "inline" ? (
         <div className="sticky bottom-14 z-10 space-y-2 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 shadow-[var(--shadow-card)]">
           {tirageBody}
         </div>

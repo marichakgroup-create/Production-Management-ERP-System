@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/ui/Page";
 import { TableCard, TableToolbar } from "@/components/ui/Table";
-import { IconPrint, IconQuote, IconSpec } from "@/components/ui/Icons";
+import { IconDecoration, IconPrint, IconQuote, IconSpec } from "@/components/ui/Icons";
 import { formatDateUk } from "@/lib/utils";
 import {
   OrderAttachments,
@@ -62,6 +62,7 @@ export function FilesTab({
   artworkItems,
   files,
   locked,
+  needsArtwork = false,
 }: {
   orderId: string;
   itemId?: string;
@@ -104,6 +105,14 @@ export function FilesTab({
           tone={quotationFrozen ? "success" : kpReady ? "success" : "warning"}
           href={`/orders/${orderId}/quotation`}
           disabled={!kpReady}
+        />
+        <DocumentRow
+          icon={<IconDecoration size={18} />}
+          title="Завдання на нанесення"
+          description="Для підрядника: вироби, шт, розміри, макети і коментарі"
+          status={needsArtwork ? "За макетами" : "Готово"}
+          tone={needsArtwork ? "warning" : "success"}
+          href={`/orders/${orderId}/print-brief`}
         />
         <DocumentRow
           icon={<IconSpec size={18} />}

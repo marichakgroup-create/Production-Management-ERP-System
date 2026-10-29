@@ -7,6 +7,7 @@ import { roundMoneyUah } from "@/lib/utils";
 export type OrderLineDecoration = {
   setupCost: number;
   unitRate: number;
+  quantity?: number | null;
 };
 
 export type CommercialOrderLinePrice = {
@@ -48,7 +49,11 @@ export function buildCommercialOrderLinePrice(args: {
 
   let decorationTotal = 0;
   for (const row of args.decorations) {
-    decorationTotal += Number(row.setupCost) + Number(row.unitRate) * quantity;
+    const lineQty =
+      row.quantity != null && Number.isFinite(row.quantity)
+        ? Math.max(0, Math.floor(row.quantity))
+        : quantity;
+    decorationTotal += Number(row.setupCost) + Number(row.unitRate) * lineQty;
   }
   const decorationPerUnit = decorationTotal / quantity;
 

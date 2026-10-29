@@ -124,7 +124,7 @@ async function main() {
 
   await ensureDecorationFormatsCatalog();
   const formats = await prisma.decorationFormat.findMany({
-    where: { status: "ACTIVE" },
+    where: { status: "ACTIVE", kind: "DTF" },
     orderBy: { sortOrder: "asc" },
     include: { tiers: { orderBy: { minQuantity: "asc" } } },
   });

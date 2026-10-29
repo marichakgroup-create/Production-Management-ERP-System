@@ -76,6 +76,7 @@ export async function syncOrderScreenPrintAction(input: {
   enabled: boolean;
   colorCount: number;
   selectedCodes: string[];
+  quantity?: number;
 }) {
   const session = await auth();
   if (!session?.user) throw new Error("UNAUTHORIZED");
@@ -96,7 +97,8 @@ export async function syncOrderScreenPrintAction(input: {
   }
 
   const catalog = await getScreenPrintCatalog();
-  const quantity = item.sizes.reduce((sum, row) => sum + row.quantity, 0);
+  const itemQty = item.sizes.reduce((sum, row) => sum + row.quantity, 0);
+  const quantity = Math.max(1, Math.floor(Number(input.quantity) || itemQty));
   const resolved = resolveScreenPrintUnitRate({
     quantity,
     colorCount: input.colorCount,
@@ -113,12 +115,20 @@ export async function syncOrderScreenPrintAction(input: {
     applied: resolved.applied,
   });
 
-  await addOrderItemDecorationWithRates({
-    orderItemId: input.orderItemId,
-    nameUk,
-    setupCost: 0,
-    unitRate: resolved.unitRate,
-  });
+  try {
+    await addOrderItemDecorationWithRates({
+      orderItemId: input.orderItemId,
+      nameUk,
+      setupCost: 0,
+      unitRate: resolved.unitRate,
+      quantity,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "OVER_QTY") {
+      return { ok: false as const, error: "OVER_QTY" as const };
+    }
+    throw error;
+  }
 
   revalidatePath(`/orders/${input.orderId}`);
   return {

@@ -33,6 +33,8 @@ export type DecorationLineInput = {
   id: string;
   setupCost: number | string;
   unitRate: number | string;
+  /** Pieces this line covers. Null/omit = whole item tirage. */
+  quantity?: number | string | null;
 };
 
 export type AdditionalCostInput = {
@@ -137,9 +139,13 @@ export function calculateCosting(input: CalculationInput): CalculationResult {
 
   let decorations = new Decimal(0);
   for (const line of input.decorations) {
+    const lineQty =
+      line.quantity != null && line.quantity !== ""
+        ? d(line.quantity)
+        : d(totalQuantity);
     decorations = decorations
       .plus(d(line.setupCost))
-      .plus(d(line.unitRate).mul(totalQuantity));
+      .plus(d(line.unitRate).mul(Decimal.max(0, lineQty)));
   }
 
   let additional = new Decimal(0);

@@ -847,17 +847,55 @@ async function main() {
       { nameUk: "A4 — до 21 × 30 см", rates: [110, 100, 95, 90] },
       { nameUk: "A3 — до 30 × 42 см", rates: [190, 175, 160, 150] },
     ];
-    const existingFormats = await prisma.decorationFormat.count();
+    const existingFormats = await prisma.decorationFormat.count({ where: { kind: "DTF" } });
     if (existingFormats === 0) {
       for (let i = 0; i < formats.length; i++) {
         const row = formats[i]!;
         await prisma.decorationFormat.create({
           data: {
+            kind: "DTF",
             nameUk: row.nameUk,
             sortOrder: i + 1,
             status: "ACTIVE",
             tiers: {
               create: qtyTiers.map((minQuantity, ti) => ({
+                minQuantity,
+                unitRate: row.rates[ti]!,
+              })),
+            },
+          },
+        });
+      }
+    }
+
+    const embroideryTiers = [20, 50] as const;
+    const embroidery: Array<{
+      nameUk: string;
+      detailUk: string;
+      rates: [number, number];
+    }> = [
+      { nameUk: "Малий логотип", detailUk: "До 5 × 5 см", rates: [55, 50] },
+      { nameUk: "Логотип на грудях / рукаві", detailUk: "До 10 × 5 см", rates: [70, 60] },
+      { nameUk: "Збільшений логотип на грудях", detailUk: "До 10 × 10 см", rates: [100, 80] },
+      { nameUk: "Видовжений напис на спині", detailUk: "До 25 × 5 см", rates: [120, 100] },
+      { nameUk: "Великий логотип на спині", detailUk: "До 25 × 10 см", rates: [180, 160] },
+    ];
+    const existingEmbroidery = await prisma.decorationFormat.count({
+      where: { kind: "EMBROIDERY" },
+    });
+    if (existingEmbroidery === 0) {
+      for (let i = 0; i < embroidery.length; i++) {
+        const row = embroidery[i]!;
+        await prisma.decorationFormat.create({
+          data: {
+            kind: "EMBROIDERY",
+            nameUk: row.nameUk,
+            detailUk: row.detailUk,
+            quoteIndividually: false,
+            sortOrder: i + 1,
+            status: "ACTIVE",
+            tiers: {
+              create: embroideryTiers.map((minQuantity, ti) => ({
                 minQuantity,
                 unitRate: row.rates[ti]!,
               })),
