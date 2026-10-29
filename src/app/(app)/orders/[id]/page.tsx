@@ -944,13 +944,15 @@ export default async function OrderDetailPage({
                     </GeneratingDocumentLink>
                   ) : null}
                   {action.specificationReady ? (
-                    <QuickAction
-                      icon={<IconSpec size={15} />}
+                    <GeneratingDocumentLink
                       href={`/orders/${order.id}/specification`}
                       hint="orderSpecification"
+                      label="Генеруємо специфікацію…"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
                     >
+                      <IconSpec size={15} />
                       Специфікація
-                    </QuickAction>
+                    </GeneratingDocumentLink>
                   ) : null}
                 </QuickActions>
                 {order.status === "APPROVED" && canRunCalc && !locked ? (
@@ -971,17 +973,19 @@ export default async function OrderDetailPage({
                     disabledReason="Заповніть кількості, матеріали та операції по всіх позиціях."
                   />
                 ) : showHeaderCta && (canRunCalc || canApprove || action.key === "spec" || action.key === "closed") ? (
-                  <Link
-                    href={
-                      action.key === "spec" || action.key === "closed"
-                        ? `/orders/${order.id}/specification`
-                        : nextHref
-                    }
-                    className={headerPrimary ? "btn-primary" : "btn-secondary"}
-                    target={action.key === "spec" || action.key === "closed" ? "_blank" : undefined}
-                  >
-                    {action.label}
-                  </Link>
+                  action.key === "spec" || action.key === "closed" ? (
+                    <GeneratingDocumentLink
+                      href={`/orders/${order.id}/specification`}
+                      label="Генеруємо специфікацію…"
+                      className={headerPrimary ? "btn-primary" : "btn-secondary"}
+                    >
+                      {action.label}
+                    </GeneratingDocumentLink>
+                  ) : (
+                    <Link href={nextHref} className={headerPrimary ? "btn-primary" : "btn-secondary"}>
+                      {action.label}
+                    </Link>
+                  )
                 ) : null}
               </>
             }
@@ -1247,11 +1251,16 @@ export default async function OrderDetailPage({
             ) : null}
 
             {activeTab === "files" ? (
-              <FilesTab
-                showPrintDocs={false}
-                orderId={order.id}
-                itemId={item.id}
-                hasApprovedVersion={hasAnyApprovedVersion}
+            <FilesTab
+              showPrintDocs={false}
+              orderId={order.id}
+              itemId={item.id}
+              specItems={workingItems.map((row) => ({
+                id: row.id,
+                nameUk: row.nameUk,
+                totalQuantity: row.totalQuantity,
+              }))}
+              hasApprovedVersion={hasAnyApprovedVersion}
                 quotationReady={action.quotationReady}
                 quotationFrozen={
                   order.status === "HANDED_TO_PRODUCTION" || order.status === "CLOSED"
@@ -1315,6 +1324,11 @@ export default async function OrderDetailPage({
               <OrderDocumentsCard
                 orderId={order.id}
                 itemId={item.id}
+                specItems={workingItems.map((row) => ({
+                  id: row.id,
+                  nameUk: row.nameUk,
+                  totalQuantity: row.totalQuantity,
+                }))}
                 hasApprovedVersion={hasAnyApprovedVersion}
                 quotationReady={action.quotationReady}
                 quotationFrozen={

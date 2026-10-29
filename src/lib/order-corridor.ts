@@ -130,7 +130,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
   );
   // КП is live from current order composition until production freeze.
   const quotationReady = input.items.some((item) => item.totalQuantity > 0);
-  const specificationReady = specLocked || input.status === "HANDED_TO_PRODUCTION";
+  const specificationReady = specLocked || quotationReady;
   const focusItemId = blocking?.id;
 
   if (input.status === "CANCELLED") {
@@ -221,7 +221,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       tab: "configuration",
       focusItemId,
       quotationReady,
-      specificationReady: false,
+      specificationReady,
     };
   }
 
@@ -240,7 +240,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       tab: "configuration",
       focusItemId,
       quotationReady,
-      specificationReady: false,
+      specificationReady,
     };
   }
 
@@ -258,7 +258,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       hrefQuery: "action=save",
       focusItemId,
       quotationReady,
-      specificationReady: false,
+      specificationReady,
     };
   }
 
@@ -275,7 +275,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       tab: "versions",
       focusItemId,
       quotationReady: true,
-      specificationReady: false,
+      specificationReady,
     };
   }
 
@@ -295,7 +295,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
         tab: "configuration",
         focusItemId: sizesFocus,
         quotationReady: true,
-        specificationReady: false,
+        specificationReady,
       };
     }
 
@@ -316,7 +316,7 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
           "У складі є друк або вишивка. Додайте макет у вкладці «Документи» для кожної позиції з нанесенням — без нього цех не зможе виконати роботу.",
         tab: "files",
         quotationReady: true,
-        specificationReady: false,
+        specificationReady,
       };
     }
 
@@ -331,11 +331,11 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       detail: missing.length
         ? `Погоджено й розміри готові. Перед передачею вкажіть: ${missing.join(", ")}.`
         : many
-          ? "Усе готово. Натисніть «Передати у виробництво» — специфікація сформується сама."
-          : "Натисніть «Передати у виробництво» — специфікація сформується сама.",
+          ? "Усе готово. Натисніть «Передати у виробництво» — специфікація зафіксується."
+          : "Натисніть «Передати у виробництво» — специфікація зафіксується.",
       tab: "versions",
       quotationReady: true,
-      specificationReady: false,
+      specificationReady,
     };
   }
 
