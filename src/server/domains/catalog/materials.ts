@@ -485,6 +485,12 @@ export async function resyncFabricPurchasePrices() {
     where: { type: "FABRIC", status: "ACTIVE" },
   });
 
+  const sameNullable = (left: unknown, right: unknown) => {
+    if (left == null && right == null) return true;
+    if (left == null || right == null) return false;
+    return Number(left) === Number(right);
+  };
+
   let count = 0;
   for (const row of fabrics) {
     const hasKgBasis =
@@ -520,6 +526,13 @@ export async function resyncFabricPurchasePrices() {
       globals,
     );
     if (derived.purchasePrice <= 0) continue;
+    const samePrice =
+      Number(row.purchasePrice) === derived.purchasePrice &&
+      sameNullable(row.priceKgUsdCargo, derived.priceKgUsdCargo) &&
+      sameNullable(row.priceMeterUahNoVat, derived.priceMeterUahNoVat) &&
+      sameNullable(row.priceMeterUahVat, derived.priceMeterUahVat) &&
+      sameNullable(row.metersPerRoll, derived.metersPerRoll);
+    if (samePrice) continue;
     await prisma.material.update({
       where: { id: row.id },
       data: {
@@ -528,6 +541,9 @@ export async function resyncFabricPurchasePrices() {
         priceMeterUahNoVat: derived.priceMeterUahNoVat,
         priceMeterUahVat: derived.priceMeterUahVat,
         metersPerRoll: derived.metersPerRoll,
+        // Keep catalog "змінено" as last edit inside the material card,
+        // not a company-wide Ціноутворення resync.
+        updatedAt: row.updatedAt,
       },
     });
     count += 1;
