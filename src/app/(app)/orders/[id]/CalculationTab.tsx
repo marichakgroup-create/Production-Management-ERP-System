@@ -16,18 +16,11 @@ import { Banner } from "@/components/ui/Banner";
 import { formatMoneyUah } from "@/lib/utils";
 import type { CalculationResult } from "@/server/domains/calculation/engine";
 import type { DecorationRow, FabricDeliveryRow, MaterialRow, OperationRow } from "./ConfigurationTab";
-import {
-  isOversizeCode,
-  resolveSizeCoeffs,
-  type SizeCoeffRule,
-} from "@/lib/size-coeffs";
+import { isOversizeCode } from "@/lib/size-coeffs";
 import {
   oversizeClientExtraPerUnit,
   oversizeSurchargeComment,
 } from "@/lib/oversize-surcharge";
-import { lineCostOnSizes, linesForSize } from "@/lib/size-bom";
-import { isCutOperationName } from "@/lib/cut-rate";
-import { isDeliveryOperationName } from "@/lib/quantity-tiers";
 import {
   FIXED_COST_LINE_NAME_UK,
   fixedCostValidationMessage,
@@ -37,22 +30,6 @@ import {
 import {
   OrderFixedCostError,
 } from "@/components/orders/OrderSewerCountControl";
-
-/** Orange uplift chip, same tone as «+» on oversize size tabs. */
-function OversizeUpliftChip({
-  amount,
-  sizesLabel,
-}: {
-  amount: number;
-  sizesLabel: string;
-}) {
-  if (!(amount > 0.05) || !sizesLabel) return null;
-  return (
-    <span className="mt-0.5 block text-[11px] font-semibold tabular text-[var(--color-warning-text)]">
-      +{formatMoneyUah(amount)} ({sizesLabel})
-    </span>
-  );
-}
 
 /**
  * Line-item breakdown for the calculation tab.
@@ -82,7 +59,6 @@ export function CalculationTab({
   commercialProfitTotal,
   priceSource,
   sizeQuantities = [],
-  sizeRules = null,
 }: {
   calc: CalculationResult;
   totalQuantity: number;
@@ -113,7 +89,6 @@ export function CalculationTab({
   commercialProfitTotal?: number;
   priceSource?: "pricelist" | "sewing_markup" | "cost" | "proposal";
   sizeQuantities?: Array<{ sizeCode: string; quantity: number }>;
-  sizeRules?: SizeCoeffRule[] | null;
 }) {
   const perUnit = (value: number) => (totalQuantity > 0 ? value / totalQuantity : 0);
   const costPerUnit = Number(calc.costPerUnit);
@@ -145,53 +120,7 @@ export function CalculationTab({
   const oversizeRows = sizeQuantities.filter(
     (row) => row.quantity > 0 && isOversizeCode(row.sizeCode),
   );
-  const oversizeSizesLabel = oversizeRows.map((row) => row.sizeCode).join(" ");
   const oversizeQty = oversizeRows.reduce((sum, row) => sum + row.quantity, 0);
-
-  const materialSiblings = materials.map((row) => ({
-    id: row.id,
-    groupKey: row.groupKey,
-    sizeCode: row.sizeCode,
-  }));
-  const materialsOversizeUplift = materials.reduce((sum, row) => {
-    const base = lineCostOnSizes(
-      {
-        id: row.id,
-        groupKey: row.groupKey,
-        sizeCode: row.sizeCode,
-        consumption: row.consumption,
-        waste: row.waste,
-        price: row.price,
-        applySizeCoeff: false,
-      },
-      materialSiblings,
-      sizeQuantities,
-      sizeRules,
-    );
-    return sum + Math.max(0, row.totalCost - base);
-  }, 0);
-
-  const operationSiblings = operations.map((row) => ({
-    id: row.id,
-    groupKey: row.groupKey,
-    sizeCode: row.sizeCode,
-  }));
-  const operationsOversizeUplift = operations.reduce((sum, row) => {
-    if (isCutOperationName(row.name) || isDeliveryOperationName(row.name)) return sum;
-    let uplift = 0;
-    for (const size of sizeQuantities) {
-      if (size.quantity <= 0 || !isOversizeCode(size.sizeCode)) continue;
-      if (!linesForSize(operationSiblings, size.sizeCode).some((line) => line.id === row.id)) {
-        continue;
-      }
-      const coeff = resolveSizeCoeffs(size.sizeCode, sizeRules).operationCoeff;
-      if (coeff <= 1) continue;
-      uplift += row.unitCost * size.quantity * (coeff - 1);
-    }
-    return sum + uplift;
-  }, 0);
-
-  const costOversizeUplift = materialsOversizeUplift + operationsOversizeUplift;
   const oversizeSellingComment =
     oversizeQty > 0 ? oversizeSurchargeComment(oversizeClientExtraPerUnit(productPerUnit)) : null;
 
@@ -225,6 +154,11 @@ export function CalculationTab({
           <p className="type-caption">Ціна продукту / од.</p>
           <p className="mt-0.5 text-[15px] font-semibold tabular">{formatMoneyUah(productPerUnit)}</p>
           <p className="type-caption mt-0.5">без нанесення</p>
+          {oversizeSellingComment ? (
+            <p className="type-caption mt-0.5 font-medium text-[var(--color-warning-text)]">
+              {oversizeSellingComment}
+            </p>
+          ) : null}
         </div>
         <div>
           <p className="type-caption">Нанесення / од.</p>
@@ -239,11 +173,6 @@ export function CalculationTab({
           <p className="type-caption">Ціна клієнту / од.</p>
           <p className="mt-0.5 text-[15px] font-semibold tabular">{formatMoneyUah(sellingPerUnit)}</p>
           <p className="type-caption mt-0.5">{priceSourceLabel}</p>
-          {oversizeSellingComment ? (
-            <p className="type-caption mt-0.5 font-medium text-[var(--color-warning-text)]">
-              {oversizeSellingComment}
-            </p>
-          ) : null}
           {totalQuantity > 1 ? (
             <p className="type-caption mt-0.5">разом {formatMoneyUah(sellingTotal)}</p>
           ) : null}
@@ -328,15 +257,7 @@ export function CalculationTab({
               <TableSectionSubtotal
                 label="Разом матеріали"
                 perUnit={formatMoneyUah(perUnit(materialsSubtotal))}
-                total={
-                  <>
-                    {formatMoneyUah(materialsSubtotal)}
-                    <OversizeUpliftChip
-                      amount={materialsOversizeUplift}
-                      sizesLabel={oversizeSizesLabel}
-                    />
-                  </>
-                }
+                total={formatMoneyUah(materialsSubtotal)}
               />
             ) : null}
 
@@ -363,15 +284,7 @@ export function CalculationTab({
               <TableSectionSubtotal
                 label="Разом операції"
                 perUnit={formatMoneyUah(perUnit(operationsSubtotal))}
-                total={
-                  <>
-                    {formatMoneyUah(operationsSubtotal)}
-                    <OversizeUpliftChip
-                      amount={operationsOversizeUplift}
-                      sizesLabel={oversizeSizesLabel}
-                    />
-                  </>
-                }
+                total={formatMoneyUah(operationsSubtotal)}
               />
             ) : null}
 
@@ -490,13 +403,7 @@ export function CalculationTab({
               <TD numeric className="text-[var(--color-text-secondary)]">
                 {formatMoneyUah(costPerUnit)}
               </TD>
-              <TD numeric>
-                {formatMoneyUah(costTotal)}
-                <OversizeUpliftChip
-                  amount={costOversizeUplift}
-                  sizesLabel={oversizeSizesLabel}
-                />
-              </TD>
+              <TD numeric>{formatMoneyUah(costTotal)}</TD>
             </tr>
             <tr>
               <TD colSpan={2} className="text-[var(--color-text-secondary)]">
@@ -516,6 +423,11 @@ export function CalculationTab({
               </TD>
               <TD numeric className="text-[var(--color-text-secondary)]">
                 {formatMoneyUah(productPerUnit)}
+                {oversizeSellingComment ? (
+                  <span className="mt-0.5 block text-[11px] font-semibold text-[var(--color-warning-text)]">
+                    {oversizeSellingComment}
+                  </span>
+                ) : null}
               </TD>
               <TD numeric className="text-[var(--color-text-secondary)]">
                 {formatMoneyUah(productPerUnit * totalQuantity)}

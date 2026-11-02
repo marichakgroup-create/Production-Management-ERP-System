@@ -1228,7 +1228,6 @@ export default async function OrderDetailPage({
                   sizeCode: size.sizeCode,
                   quantity: size.quantity,
                 }))}
-                sizeRules={pricing.sizeRules ?? null}
                 pricingMethod={pricing.pricingMethod}
                 targetRatePercent={pricing.targetRatePercent}
                 minimumMarginPercent={pricing.minimumMarginPercent}
