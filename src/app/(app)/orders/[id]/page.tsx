@@ -697,6 +697,10 @@ export default async function OrderDetailPage({
             ? `v${row.versions[0].versionNumber}`
             : "немає",
       unitPrice: row.totalQuantity > 0 ? (draft?.sellingPricePerUnit ?? null) : null,
+      productPrice:
+        row.totalQuantity > 0 && draft?.basePricePerUnit != null ? draft.basePricePerUnit : null,
+      decorationPrice:
+        row.totalQuantity > 0 && draft?.decorationPerUnit != null ? draft.decorationPerUnit : null,
       lineTotal: row.totalQuantity > 0 ? (draft?.totalSellingValue ?? null) : null,
       need: itemNeed(
         {
@@ -775,6 +779,17 @@ export default async function OrderDetailPage({
         }
       : calc;
   const clientPricePerUnit = activeDraft?.sellingPricePerUnit ?? (calc ? Number(calc.sellingPricePerUnit) : 0);
+  const decorationPricePerUnit = Math.max(0, activeDraft?.decorationPerUnit ?? 0);
+  const hasDecoration = decorationPricePerUnit > 0.05;
+  const productPricePerUnit = hasDecoration
+    ? Math.max(
+        0,
+        activeDraft?.basePricePerUnit != null && activeDraft.basePricePerUnit > 0
+          ? activeDraft.basePricePerUnit
+          : clientPricePerUnit - decorationPricePerUnit,
+      )
+    : clientPricePerUnit;
+  const decorationTotal = decorationPricePerUnit * totalQuantity;
   const clientTotal = activeDraft?.totalSellingValue ?? (calc ? Number(calc.totalSellingValue) : 0);
   const costPerUnit = activeDraft?.costPerUnit ?? (calc ? Number(calc.costPerUnit) : 0);
   const costTotal = costPerUnit * totalQuantity;
@@ -799,9 +814,14 @@ export default async function OrderDetailPage({
       <div className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5">
         <p className="type-caption">Ціна для клієнта</p>
         <p className="text-[20px] font-semibold tabular">
-          {formatMoneyUah(clientPricePerUnit)}
+          {formatMoneyUah(productPricePerUnit)}
           <span className="ml-1 text-[12px] font-normal text-[var(--color-text-quiet)]">/ од.</span>
         </p>
+        {hasDecoration ? (
+          <p className="mt-0.5 text-[13px] font-medium tabular text-[var(--color-text-secondary)]">
+            + нанесення {formatMoneyUah(decorationPricePerUnit)}
+          </p>
+        ) : null}
         <p className="type-caption mt-0.5">{priceSourceLabel}</p>
         {activeDraft?.oversizeSurcharge && activeDraft.oversizeSurcharge.total > 0.05 ? (
           <p className="type-caption mt-1 font-medium text-[var(--color-warning-text)]">
@@ -815,7 +835,12 @@ export default async function OrderDetailPage({
             <dd className="tabular">{formatMoneyUah(costPerUnit)}</dd>
           </div>
           <div className="flex justify-between gap-2">
-            <dt className="text-[var(--color-text-secondary)]">Націнка / од.</dt>
+            <dt className="text-[var(--color-text-secondary)]">
+              Націнка / од.
+              {hasDecoration ? (
+                <span className="type-caption mt-0.5 block font-normal">з нанесенням</span>
+              ) : null}
+            </dt>
             <dd className="tabular font-medium text-[var(--color-success-text)]">
               {formatMoneyUah(profitPerUnit)}
             </dd>
@@ -828,7 +853,14 @@ export default async function OrderDetailPage({
             <>
               <div className="flex justify-between gap-2 border-t border-[var(--color-divider)] pt-1.5">
                 <dt className="text-[var(--color-text-secondary)]">Разом продаж</dt>
-                <dd className="tabular font-semibold">{formatMoneyUah(clientTotal)}</dd>
+                <dd className="text-right tabular font-semibold">
+                  {formatMoneyUah(clientTotal)}
+                  {hasDecoration ? (
+                    <span className="type-caption mt-0.5 block font-normal text-[var(--color-text-secondary)]">
+                      нанесення {formatMoneyUah(decorationTotal)}
+                    </span>
+                  ) : null}
+                </dd>
               </div>
               <div className="flex justify-between gap-2">
                 <dt className="text-[var(--color-text-secondary)]">Разом собівартість</dt>

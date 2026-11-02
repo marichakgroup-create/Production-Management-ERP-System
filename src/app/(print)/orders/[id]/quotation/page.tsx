@@ -258,13 +258,13 @@ export default async function QuotationPage({
     }),
   );
 
-  const grandTotal = pricedLines.reduce((sum, row) => sum + row.totalSellingValue, 0);
   const productTotal = tableRows
     .filter((row) => row.kind === "product")
     .reduce((sum, row) => sum + row.lineTotal, 0);
   const decorationTotal = tableRows
     .filter((row) => row.kind === "decoration")
     .reduce((sum, row) => sum + row.lineTotal, 0);
+  const payableTotal = productTotal + decorationTotal;
   const companyName = company?.legalName ?? "Виробнича компанія";
   const companyLines = [
     company?.address,
@@ -411,7 +411,7 @@ export default async function QuotationPage({
                   <td colSpan={4} className="num">
                     Разом до сплати
                   </td>
-                  <td className="num print-doc-total-value">{formatMoneyUah(grandTotal)}</td>
+                  <td className="num print-doc-total-value">{formatMoneyUah(payableTotal)}</td>
                 </tr>
               </>
             }

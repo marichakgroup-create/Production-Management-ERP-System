@@ -10,6 +10,7 @@ import {
   oversizeSurchargeBySize,
   oversizeSurchargeComment,
 } from "@/lib/oversize-surcharge";
+import { decorationDisplayName } from "@/lib/decoration-format-pricing";
 import { roundMoneyUah } from "@/lib/utils";
 
 export type QuotationSizeRow = {
@@ -66,7 +67,8 @@ function roundMoney(value: number) {
 }
 
 function decorationName(row: QuotationDecorationLine) {
-  return row.nameSnapshot.trim();
+  const raw = row.nameSnapshot.trim();
+  return decorationDisplayName(raw) || raw;
 }
 
 function positiveSizes(

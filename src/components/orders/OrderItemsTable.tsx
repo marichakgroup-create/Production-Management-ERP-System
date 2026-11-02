@@ -36,6 +36,10 @@ export type OrderItemRow = {
   decorationsCount: number;
   versionLabel: string;
   unitPrice: number | null;
+  /** Garment price without branding, when it differs from unitPrice. */
+  productPrice?: number | null;
+  /** Branding price per piece, shown under the garment price. */
+  decorationPrice?: number | null;
   /** Selling total for the line tirage (shown under unit price). */
   lineTotal?: number | null;
   need: ItemNeed;
@@ -191,7 +195,18 @@ export function OrderItemsTable({
                   <TD numeric nowrap>
                     {row.unitPrice != null ? (
                       <span className="inline-flex flex-col items-end gap-0.5">
-                        <span className="font-medium">{formatMoneyUah(row.unitPrice)}</span>
+                        <span className="font-medium">
+                          {formatMoneyUah(
+                            row.decorationPrice != null && row.decorationPrice > 0.05 && row.productPrice != null
+                              ? row.productPrice
+                              : row.unitPrice,
+                          )}
+                        </span>
+                        {row.decorationPrice != null && row.decorationPrice > 0.05 ? (
+                          <span className="type-caption text-[var(--color-text-secondary)]">
+                            + нанесення {formatMoneyUah(row.decorationPrice)}
+                          </span>
+                        ) : null}
                         {row.lineTotal != null && row.quantity > 1 ? (
                           <span className="type-caption">
                             разом {formatMoneyUah(row.lineTotal)}
