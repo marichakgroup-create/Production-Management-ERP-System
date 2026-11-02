@@ -7,6 +7,7 @@ import { Banner } from "@/components/ui/Banner";
 import { SidePanel } from "@/components/ui/Overlay";
 import { UnsavedChangesDialog } from "@/components/ui/UnsavedChangesDialog";
 import { useUnsavedCloseGuard } from "@/hooks/useUnsavedCloseGuard";
+import { useOrderUnsavedWorkspaceDirty } from "@/components/orders/OrderUnsavedContext";
 import { SizeRun } from "@/components/orders/SizeRun";
 import { ProductCatalogPanel, type CatalogProduct } from "@/components/orders/ProductCatalogPanel";
 import { addOrderItemAction } from "@/server/domains/orders/actions";
@@ -80,6 +81,7 @@ export function AddOrderItemPanel({
     pending,
     onDiscard: reset,
   });
+  useOrderUnsavedWorkspaceDirty(dirty);
 
   function selectProduct(id: string) {
     setProductId(id);

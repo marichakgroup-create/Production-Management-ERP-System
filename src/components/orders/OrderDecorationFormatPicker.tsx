@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Select, type SelectOption } from "@/components/ui/Select";
 import { IconPlus } from "@/components/ui/Icons";
 import { SoftBusy } from "@/components/ui/SoftBusy";
+import { useOrderUnsavedWorkspaceDirty } from "@/components/orders/OrderUnsavedContext";
 import {
   addOrderDecorationFormatAction,
   addOrderMiscDecorationCostAction,
@@ -76,6 +77,9 @@ export function OrderDecorationFormatPicker({
   const [coefCodes, setCoefCodes] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  useOrderUnsavedWorkspaceDirty(
+    Boolean(selected) || Boolean(miscAmount.trim()) || coefCodes.length > 0,
+  );
 
   useEffect(() => {
     setLineQty(String(remaining));

@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/Field";
 import { Banner } from "@/components/ui/Banner";
 import { UnsavedChangesDialog } from "@/components/ui/UnsavedChangesDialog";
 import { useUnsavedCloseGuard } from "@/hooks/useUnsavedCloseGuard";
+import { useOrderUnsavedWorkspaceDirty } from "@/components/orders/OrderUnsavedContext";
 import { formatMoneyUah, formatUnit } from "@/lib/utils";
 import { materialQtyUnitShort } from "@/lib/material-pack-labels";
 import {
@@ -424,6 +425,7 @@ export function OrderMaterialDetailPanel({
     pending,
     onDiscard: discardClose,
   });
+  useOrderUnsavedWorkspaceDirty(isDirty);
 
   function apply() {
     if (!detail) return;

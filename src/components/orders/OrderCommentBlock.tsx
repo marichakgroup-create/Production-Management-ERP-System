@@ -8,6 +8,7 @@ import { MiniRichText, type MiniRichTextHandle } from "@/components/ui/MiniRichT
 import { updateOrderCommentAction } from "@/server/domains/orders/actions";
 import { cn } from "@/lib/utils";
 import { richTextIsEmpty, sanitizeRichHtml } from "@/lib/rich-text";
+import { useOrderUnsavedWorkspaceDirty } from "@/components/orders/OrderUnsavedContext";
 
 function previewText(html: string | null | undefined): string {
   const plain = sanitizeRichHtml(html)
@@ -36,6 +37,7 @@ export function OrderCommentBlock({
   const empty = richTextIsEmpty(comment);
   const preview = previewText(comment);
   const expanded = open || editing;
+  useOrderUnsavedWorkspaceDirty(editing && !pending);
 
   function commit(next: string) {
     const formData = new FormData();

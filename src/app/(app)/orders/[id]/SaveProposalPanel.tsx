@@ -8,6 +8,7 @@ import { FormGroup, Textarea } from "@/components/ui/Field";
 import { SidePanel } from "@/components/ui/Overlay";
 import { UnsavedChangesDialog } from "@/components/ui/UnsavedChangesDialog";
 import { useUnsavedCloseGuard } from "@/hooks/useUnsavedCloseGuard";
+import { useOrderUnsavedWorkspaceDirty } from "@/components/orders/OrderUnsavedContext";
 import { IconPlus } from "@/components/ui/Icons";
 import { saveProposalAction } from "@/server/domains/orders/actions";
 import { formatMoneyUah, roundMoneyUah } from "@/lib/utils";
@@ -126,6 +127,7 @@ export function SaveProposalPanel({
     pending,
     onDiscard: resetAndClose,
   });
+  useOrderUnsavedWorkspaceDirty(dirty);
 
   const lines = useMemo(() => {
     const discount = parseDiscount(discountPercent);
