@@ -213,7 +213,7 @@ function buildDecorationRows(input: {
         sizeSurchargeComment: null,
       };
     })
-    .filter((row): row is QuotationSizeRow => Boolean(row));
+    .filter((row): row is NonNullable<typeof row> => row != null);
 
   if (priced.length > 0) return priced;
 

@@ -295,12 +295,9 @@ export function overlayDraftLineFromProposal(
 ) {
   const quantity = Math.max(0, item.totalQuantity);
   const costPerUnit = Number(costCalc.costPerUnit);
-  const storedSelling =
-    fallback != null && Number.isFinite(fallback.sellingPricePerUnit)
-      ? fallback.sellingPricePerUnit
-      : null;
 
-  if (storedSelling != null) {
+  if (fallback != null && Number.isFinite(fallback.sellingPricePerUnit)) {
+    const storedSelling = fallback.sellingPricePerUnit;
     const savedQty =
       fallback.totalQuantity != null && fallback.totalQuantity > 0
         ? fallback.totalQuantity
