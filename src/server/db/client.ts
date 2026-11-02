@@ -1,6 +1,23 @@
+import { createRequire } from "node:module";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool, type PoolClient } from "pg";
+
+const requireFromProject = createRequire(`${process.cwd()}/package.json`);
+
+type PrismaModule = {
+  PrismaClient: typeof PrismaClient;
+  Prisma: typeof Prisma;
+};
+
+/**
+ * Turbopack keeps the first `import "@prisma/client"` for the life of the
+ * process. `prisma generate` rewrites `node_modules/.prisma/client` on disk,
+ * but that binding stays stale until we drop Node's require cache and load it
+ * again. The static import is the fast path; this slot is replaced only after
+ * a freshness check fails.
+ */
+let activePrismaModule: PrismaModule = { PrismaClient, Prisma };
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -10,8 +27,9 @@ const globalForPrisma = globalThis as unknown as {
 
 /**
  * Bump when Prisma schema changes so HMR drops the cached singleton.
- * After `prisma generate`, a long-lived `next dev` may still need a full
- * process restart — Node keeps the old `@prisma/client` module in memory.
+ * A long-lived `next dev` may still hold the previous `@prisma/client`
+ * module; `getPrismaClient` reloads the generated client from disk when
+ * the freshness check fails.
  */
 const PRISMA_CLIENT_VERSION = "20261102150000_order_company_settings";
 
@@ -29,47 +47,73 @@ const REQUIRED_DELEGATES = [
   "sizeChartVariant",
 ] as const;
 
-function materialClientHasTagColor(): boolean {
+function enumHasField(
+  prismaNamespace: typeof Prisma,
+  enumName: "MaterialScalarFieldEnum" | "OrderItemDecorationScalarFieldEnum" | "OrderScalarFieldEnum",
+  field: string,
+): boolean {
   try {
-    return "tagColor" in (Prisma.MaterialScalarFieldEnum ?? {});
+    const enumObject = prismaNamespace[enumName] as Record<string, string> | undefined;
+    return !!enumObject && field in enumObject;
   } catch {
     return false;
   }
 }
 
-function decorationHasQuantityField(): boolean {
-  try {
-    return "quantity" in (Prisma.OrderItemDecorationScalarFieldEnum ?? {});
-  } catch {
-    return false;
+function missingSchemaPieces(mod: PrismaModule, client: PrismaClient | undefined): string[] {
+  const missing: string[] = [];
+  if (!client) {
+    missing.push("client");
+    return missing;
   }
+  for (const name of REQUIRED_DELEGATES) {
+    if (!(name in client)) missing.push(`delegate:${name}`);
+  }
+  if (!enumHasField(mod.Prisma, "MaterialScalarFieldEnum", "tagColor")) {
+    missing.push("Material.tagColor");
+  }
+  if (!enumHasField(mod.Prisma, "OrderItemDecorationScalarFieldEnum", "quantity")) {
+    missing.push("OrderItemDecoration.quantity");
+  }
+  if (!enumHasField(mod.Prisma, "OrderScalarFieldEnum", "companySettingsId")) {
+    missing.push("Order.companySettingsId");
+  }
+  if (!enumHasField(mod.Prisma, "OrderScalarFieldEnum", "paymentMethod")) {
+    missing.push("Order.paymentMethod");
+  }
+  return missing;
 }
 
 export function orderHasCompanySettingsField(): boolean {
-  try {
-    return "companySettingsId" in (Prisma.OrderScalarFieldEnum ?? {});
-  } catch {
-    return false;
-  }
+  return enumHasField(activePrismaModule.Prisma, "OrderScalarFieldEnum", "companySettingsId");
 }
 
-function orderHasPaymentMethodField(): boolean {
-  try {
-    return "paymentMethod" in (Prisma.OrderScalarFieldEnum ?? {});
-  } catch {
-    return false;
+/**
+ * Drop the generated client from Node's require cache and load the copy
+ * currently on disk. Specifier is built at runtime so the bundler does not
+ * pin this call to the module instance captured at startup.
+ */
+function reloadPrismaModule(): PrismaModule {
+  const cache = requireFromProject.cache;
+  if (cache) {
+    for (const key of Object.keys(cache)) {
+      const normalized = key.split("\\").join("/");
+      const isGeneratedClient = normalized.includes("/.prisma/client/");
+      const isClientEntry =
+        normalized.includes("/@prisma/client/") && !normalized.includes("/@prisma/client/runtime/");
+      if (isGeneratedClient || isClientEntry) {
+        delete cache[key];
+      }
+    }
   }
-}
 
-function clientHasCurrentDelegates(client: PrismaClient | undefined): boolean {
-  if (!client) return false;
-  return (
-    REQUIRED_DELEGATES.every((name) => name in client) &&
-    materialClientHasTagColor() &&
-    decorationHasQuantityField() &&
-    orderHasCompanySettingsField() &&
-    orderHasPaymentMethodField()
-  );
+  const specifier = ["@", "prisma/client"].join("");
+  const loaded = requireFromProject(specifier) as PrismaModule;
+  activePrismaModule = {
+    PrismaClient: loaded.PrismaClient,
+    Prisma: loaded.Prisma,
+  };
+  return activePrismaModule;
 }
 
 function dropCachedClient(reason: string) {
@@ -145,7 +189,7 @@ function createPrismaClient() {
   }
 
   const adapter = new PrismaPg(pool);
-  return new PrismaClient({
+  return new activePrismaModule.PrismaClient({
     adapter,
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
@@ -153,7 +197,7 @@ function createPrismaClient() {
 
 function getPrismaClient(): PrismaClient {
   const versionMismatch = globalForPrisma.prismaClientVersion !== PRISMA_CLIENT_VERSION;
-  const delegatesStale = !clientHasCurrentDelegates(globalForPrisma.prisma);
+  const delegatesStale = missingSchemaPieces(activePrismaModule, globalForPrisma.prisma).length > 0;
 
   if (globalForPrisma.prisma && (versionMismatch || delegatesStale)) {
     dropCachedClient(versionMismatch ? "schema fingerprint changed" : "missing delegates");
@@ -162,12 +206,19 @@ function getPrismaClient(): PrismaClient {
   if (!globalForPrisma.prisma) {
     globalForPrisma.prismaClientVersion = PRISMA_CLIENT_VERSION;
     globalForPrisma.prisma = createPrismaClient();
-    if (!clientHasCurrentDelegates(globalForPrisma.prisma)) {
-      dropCachedClient("constructed client still missing delegates");
-      throw new Error(
-        "Prisma client loaded without current schema fields. " +
-          "The Node process still has a stale @prisma/client — fully restart `npm run dev`.",
-      );
+    let missing = missingSchemaPieces(activePrismaModule, globalForPrisma.prisma);
+    if (missing.length > 0) {
+      dropCachedClient(`loaded client missing ${missing.join(", ")}`);
+      reloadPrismaModule();
+      globalForPrisma.prisma = createPrismaClient();
+      missing = missingSchemaPieces(activePrismaModule, globalForPrisma.prisma);
+      if (missing.length > 0) {
+        dropCachedClient("reloaded client still missing schema");
+        throw new Error(
+          "Prisma client loaded without current schema fields " +
+            `(${missing.join(", ")}). Run \`npx prisma generate\` and restart \`npm run dev\`.`,
+        );
+      }
     }
   }
 
