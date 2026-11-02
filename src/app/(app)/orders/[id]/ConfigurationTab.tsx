@@ -48,6 +48,7 @@ import {
   isOversizeCode,
   OVERSIZE_RANGE_LABEL,
 } from "@/lib/size-coeffs";
+import { OVERSIZE_CLIENT_SURCHARGE_PERCENT } from "@/lib/oversize-surcharge";
 import { ALL_SIZES } from "@/lib/size-bom";
 import { operationMethodLabel } from "@/lib/operation-labels";
 import { OrderFixedCostError } from "@/components/orders/OrderSewerCountControl";
@@ -318,6 +319,15 @@ export function ConfigurationTab({
   const hasOversizeQty = editableSizes.some(
     (size) => isOversizeCode(size.sizeCode) && (quantities[size.sizeCode] ?? 0) > 0,
   );
+  const oversizeCaptions = useMemo(
+    () =>
+      Object.fromEntries(
+        editableSizes
+          .filter((size) => isOversizeCode(size.sizeCode))
+          .map((size) => [size.sizeCode, `+${OVERSIZE_CLIENT_SURCHARGE_PERCENT}%`]),
+      ),
+    [editableSizes],
+  );
 
   function decorationLabel(name: string) {
     if (isDecorationFormatLineName(name)) {
@@ -490,6 +500,7 @@ export function ConfigurationTab({
                     nameUk: size.sizeNameUk,
                   }))}
                   quantities={quantities}
+                  captions={oversizeCaptions}
                   disabled={sizesLocked || isBusy("sizes")}
                   quiet
                   onChange={(code, quantity) => {

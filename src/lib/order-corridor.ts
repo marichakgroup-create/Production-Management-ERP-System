@@ -320,19 +320,15 @@ export function corridorFor(input: CorridorFacts): CorridorStep {
       };
     }
 
-    const missing: string[] = [];
-    if (!input.deadline) missing.push("дедлайн");
     return {
       key: "handover",
       index: 4,
       of: LIVE_STEPS,
       label: "Виробництво",
-      title: missing.length ? "Ще не все для цеху" : "Передати у виробництво",
-      detail: missing.length
-        ? `Погоджено й розміри готові. Перед передачею вкажіть: ${missing.join(", ")}.`
-        : many
-          ? "Усе готово. Натисніть «Передати у виробництво» — специфікація зафіксується."
-          : "Натисніть «Передати у виробництво» — специфікація зафіксується.",
+      title: "Передати у виробництво",
+      detail: many
+        ? "Усе готово. Натисніть «Передати у виробництво» — специфікація зафіксується. Дедлайн і спосіб оплати можна вказати в вікні передачі."
+        : "Натисніть «Передати у виробництво» — специфікація зафіксується. Дедлайн і спосіб оплати можна вказати в вікні передачі.",
       tab: "versions",
       quotationReady: true,
       specificationReady,

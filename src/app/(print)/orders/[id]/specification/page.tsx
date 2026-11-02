@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getOrder } from "@/server/domains/orders/service";
-import { prisma } from "@/server/db/client";
+import { resolveCompanySettings } from "@/server/domains/settings/company";
 import { PrintToolbar } from "@/components/print/PrintToolbar";
 import {
   PrintDocHeader,
@@ -328,12 +328,13 @@ export default async function SpecificationPage({
 }) {
   const { id } = await params;
   const { item: itemParam } = await searchParams;
-  const [order, company, pricing] = await Promise.all([
+  const [order, pricing] = await Promise.all([
     getOrder(id),
-    prisma.companySettings.findFirst(),
     getPricingForOrder(id),
   ]);
   if (!order) notFound();
+  const company =
+    order.companySettings ?? (await resolveCompanySettings(order.companySettingsId));
 
   const workingItems = order.items.filter((row) => !row.superseded);
   const scopedItems = itemParam

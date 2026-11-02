@@ -21,6 +21,10 @@ import {
   resolveSizeCoeffs,
   type SizeCoeffRule,
 } from "@/lib/size-coeffs";
+import {
+  oversizeClientExtraPerUnit,
+  oversizeSurchargeComment,
+} from "@/lib/oversize-surcharge";
 import { lineCostOnSizes, linesForSize } from "@/lib/size-bom";
 import { isCutOperationName } from "@/lib/cut-rate";
 import { isDeliveryOperationName } from "@/lib/quantity-tiers";
@@ -107,7 +111,7 @@ export function CalculationTab({
   commercialMarginPercent?: number;
   commercialProfitPerUnit?: number;
   commercialProfitTotal?: number;
-  priceSource?: "pricelist" | "sewing_markup" | "cost";
+  priceSource?: "pricelist" | "sewing_markup" | "cost" | "proposal";
   sizeQuantities?: Array<{ sizeCode: string; quantity: number }>;
   sizeRules?: SizeCoeffRule[] | null;
 }) {
@@ -131,15 +135,18 @@ export function CalculationTab({
     commercialMarginPercent ??
     (sellingTotal > 0 ? (profitTotal / sellingTotal) * 100 : Number(calc.marginPercent));
   const priceSourceLabel =
-    priceSource === "pricelist" || hasCommercialPriceList
-      ? "з базового прайсу"
-      : priceSource === "sewing_markup"
-        ? "націнка на пошив"
-        : "як собівартість";
+    priceSource === "proposal"
+      ? "з пропозиції"
+      : priceSource === "pricelist" || hasCommercialPriceList
+        ? "з базового прайсу"
+        : priceSource === "sewing_markup"
+          ? "націнка на пошив"
+          : "як собівартість";
   const oversizeRows = sizeQuantities.filter(
     (row) => row.quantity > 0 && isOversizeCode(row.sizeCode),
   );
   const oversizeSizesLabel = oversizeRows.map((row) => row.sizeCode).join(" ");
+  const oversizeQty = oversizeRows.reduce((sum, row) => sum + row.quantity, 0);
 
   const materialSiblings = materials.map((row) => ({
     id: row.id,
@@ -185,6 +192,8 @@ export function CalculationTab({
   }, 0);
 
   const costOversizeUplift = materialsOversizeUplift + operationsOversizeUplift;
+  const oversizeSellingComment =
+    oversizeQty > 0 ? oversizeSurchargeComment(oversizeClientExtraPerUnit(productPerUnit)) : null;
 
   const fixedCostTotal = fixedCostAllocation?.fixedCostTotal ?? 0;
   const otherAdditionalCosts = Math.max(
@@ -230,6 +239,11 @@ export function CalculationTab({
           <p className="type-caption">Ціна клієнту / од.</p>
           <p className="mt-0.5 text-[15px] font-semibold tabular">{formatMoneyUah(sellingPerUnit)}</p>
           <p className="type-caption mt-0.5">{priceSourceLabel}</p>
+          {oversizeSellingComment ? (
+            <p className="type-caption mt-0.5 font-medium text-[var(--color-warning-text)]">
+              {oversizeSellingComment}
+            </p>
+          ) : null}
           {totalQuantity > 1 ? (
             <p className="type-caption mt-0.5">разом {formatMoneyUah(sellingTotal)}</p>
           ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isOversizeCode } from "@/lib/size-coeffs";
 
 export type SizeRunItem = { code: string; nameUk: string };
 
@@ -27,6 +28,7 @@ export function SizeRun({
   withHiddenFields,
   dense = true,
   quiet = false,
+  captions,
 }: {
   sizes: SizeRunItem[];
   quantities: Record<string, number>;
@@ -35,6 +37,8 @@ export function SizeRun({
   withHiddenFields?: boolean;
   dense?: boolean;
   quiet?: boolean;
+  /** Extra line under a size (e.g. «+267 ₴» for 3XL+). */
+  captions?: Record<string, string>;
 }) {
   const [localQty, setLocalQty] = useState<Record<string, number>>(() =>
     buildQuantityMap(sizes, quantities),
@@ -91,13 +95,19 @@ export function SizeRun({
           </>
         ) : null;
 
+        const caption = captions?.[size.code];
+        const oversize = isOversizeCode(size.code);
+        const labelClass = oversize
+          ? "text-[var(--color-warning-text)]"
+          : "text-[var(--color-text-tertiary)]";
+
         if (!compact) {
           return (
             <label key={size.code} className="inline-flex items-center gap-1.5">
               {hidden}
               <span
-                className="max-w-[9rem] shrink-0 text-[11px] font-medium text-[var(--color-text-tertiary)]"
-                title={size.nameUk}
+                className={`max-w-[9rem] shrink-0 text-[11px] font-medium ${labelClass}`}
+                title={caption ? `${size.nameUk} ${caption}` : size.nameUk}
               >
                 {size.nameUk}
               </span>
@@ -106,6 +116,11 @@ export function SizeRun({
                 aria-label={size.nameUk}
                 className={`${inputClass} w-14`}
               />
+              {caption ? (
+                <span className="text-[10px] font-semibold tabular text-[var(--color-warning-text)]">
+                  {caption}
+                </span>
+              ) : null}
             </label>
           );
         }
@@ -114,8 +129,8 @@ export function SizeRun({
           <label key={size.code} className={`block shrink-0 ${quiet ? "w-[44px]" : dense ? "w-[52px]" : "w-[72px]"}`}>
             {hidden}
             <span
-              className={`mb-0.5 block text-center font-medium tracking-[0.03em] text-[var(--color-text-tertiary)] uppercase ${quiet ? "text-[10px]" : "text-[10.5px] font-semibold"}`}
-              title={size.nameUk}
+              className={`mb-0.5 block text-center font-medium tracking-[0.03em] uppercase ${quiet ? "text-[10px]" : "text-[10.5px] font-semibold"} ${labelClass}`}
+              title={caption ? `${size.nameUk} ${caption}` : size.nameUk}
             >
               {size.nameUk}
             </span>
@@ -124,6 +139,11 @@ export function SizeRun({
               aria-label={size.nameUk}
               className={`${inputClass} w-full`}
             />
+            {caption ? (
+              <span className="mt-0.5 block text-center text-[9px] font-semibold leading-tight tabular text-[var(--color-warning-text)]">
+                {caption}
+              </span>
+            ) : null}
           </label>
         );
       })}

@@ -29,6 +29,12 @@ export function ClientCreatePanel({
       email?: string | null;
       isPrimary?: boolean;
     }>;
+    legalEntities?: Array<{
+      id: string;
+      nameUk: string;
+      details?: string | null;
+      isPrimary?: boolean;
+    }>;
   }) => void;
   triggerLabel?: string;
   variant?: "primary" | "secondary" | "ghost";
@@ -59,6 +65,14 @@ export function ClientCreatePanel({
                 phone: person.phone != null ? String(person.phone) : null,
                 email: person.email != null ? String(person.email) : null,
                 isPrimary: Boolean(person.isPrimary),
+              }))
+            : [],
+          legalEntities: Array.isArray(result.legalEntities)
+            ? (result.legalEntities as Array<Record<string, unknown>>).map((row) => ({
+                id: String(row.id ?? ""),
+                nameUk: String(row.nameUk ?? ""),
+                details: row.details != null ? String(row.details) : null,
+                isPrimary: Boolean(row.isPrimary),
               }))
             : [],
         })

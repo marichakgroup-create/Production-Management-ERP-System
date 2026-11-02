@@ -1,4 +1,4 @@
-import { parseProposalItemSnapshot } from "@/lib/proposal-snapshot";
+import { parseProposalItemSnapshot, proposalClientSplit } from "@/lib/proposal-snapshot";
 import { formatSizeRun } from "@/lib/size-bom";
 
 export type ProposalLineVersion = {
@@ -11,8 +11,13 @@ export type ProposalLineVersion = {
   versionNumber: number;
   sellingPricePerUnit: number;
   totalSellingValue: number;
+  productPerUnit: number;
+  decorationPerUnit: number;
+  productTotal: number;
+  decorationTotal: number;
   marginPercent: number;
   costPerUnit: number;
+  snapshotJson?: unknown;
 };
 
 export type OrderProposalGroup = {
@@ -25,6 +30,8 @@ export type OrderProposalGroup = {
   isApproved: boolean;
   lines: ProposalLineVersion[];
   totalSellingValue: number;
+  totalProductValue: number;
+  totalDecorationValue: number;
   totalQuantity: number;
   isComplete: boolean;
 };
@@ -65,17 +72,28 @@ function toLine(item: ItemInput, version: VersionInput): ProposalLineVersion {
       : item.sizes?.length
         ? formatSizeRun(item.sizes)
         : undefined;
+  const totalQuantity = snap?.totalQuantity ?? item.totalQuantity;
+  const totalSellingValue = Number(version.totalSellingValue);
+  const split = proposalClientSplit(version.snapshotJson, {
+    totalQuantity,
+    totalSellingValue,
+  });
   return {
     id: version.id,
     orderItemId: item.id,
     itemNameUk: item.nameUk,
-    totalQuantity: snap?.totalQuantity ?? item.totalQuantity,
+    totalQuantity,
     sizeRun: sizeRun || undefined,
     versionNumber: version.versionNumber,
     sellingPricePerUnit: Number(version.sellingPricePerUnit),
-    totalSellingValue: Number(version.totalSellingValue),
+    totalSellingValue,
+    productPerUnit: split.productPerUnit,
+    decorationPerUnit: split.decorationPerUnit,
+    productTotal: split.productTotal,
+    decorationTotal: split.decorationTotal,
     marginPercent: Number(version.marginPercent),
     costPerUnit: Number(version.costPerUnit),
+    snapshotJson: version.snapshotJson,
   };
 }
 
@@ -115,6 +133,8 @@ export function buildOrderProposals(items: ItemInput[]): OrderProposalGroup[] {
       isApproved: bucket.versions.every(({ version }) => version.isApproved),
       lines: lines.sort((a, b) => a.itemNameUk.localeCompare(b.itemNameUk, "uk")),
       totalSellingValue: lines.reduce((sum, line) => sum + line.totalSellingValue, 0),
+      totalProductValue: lines.reduce((sum, line) => sum + line.productTotal, 0),
+      totalDecorationValue: lines.reduce((sum, line) => sum + line.decorationTotal, 0),
       totalQuantity: lines.reduce((sum, line) => sum + line.totalQuantity, 0),
       isComplete: matchesWorking || (workingItemIds.size === 0 && uniqueItems.size > 0),
     });
@@ -134,6 +154,8 @@ export function buildOrderProposals(items: ItemInput[]): OrderProposalGroup[] {
         isApproved: version.isApproved,
         lines: [line],
         totalSellingValue: line.totalSellingValue,
+        totalProductValue: line.productTotal,
+        totalDecorationValue: line.decorationTotal,
         totalQuantity: line.totalQuantity,
         isComplete: items.length === 1,
       });
@@ -158,4 +180,29 @@ export function quotationProposal(items: ItemInput[]) {
   const approved = approvedProposal(items);
   if (approved) return approved;
   return latestCompleteProposal(items);
+}
+
+export function displayProposalForOrder(
+  items: ItemInput[],
+  order: { status: string; activeProposalRevision?: number | null },
+) {
+  const proposals = buildOrderProposals(items);
+  const activeRevision = Number(order.activeProposalRevision);
+  if (Number.isFinite(activeRevision)) {
+    const active = proposals.find((row) => Number(row.revision) === activeRevision);
+    if (active) return active;
+  }
+  if (
+    order.status === "PENDING_APPROVAL" ||
+    order.status === "APPROVED" ||
+    order.status === "HANDED_TO_PRODUCTION" ||
+    order.status === "CLOSED"
+  ) {
+    return (
+      proposals.find((row) => row.isComplete && row.isApproved) ??
+      proposals.find((row) => row.isComplete) ??
+      null
+    );
+  }
+  return null;
 }

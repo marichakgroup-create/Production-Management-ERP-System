@@ -68,38 +68,72 @@ export async function updatePricingSettingsAction(formData: FormData) {
 }
 
 const companySchema = z.object({
+  id: z.string().trim().optional().nullable(),
   legalName: z.string().trim().min(1),
   address: z.string().trim().optional().nullable(),
   phone: z.string().trim().optional().nullable(),
   email: z.string().trim().optional().nullable(),
   taxId: z.string().trim().optional().nullable(),
   quotationFooter: z.string().trim().optional().nullable(),
+  isDefault: z.boolean().optional(),
 });
 
-export async function updateCompanySettingsAction(formData: FormData) {
-  const session = await auth();
-  if (!session?.user) throw new Error("UNAUTHORIZED");
-  await assertSessionPermission("managePricingRules");
-
-  const parsed = companySchema.safeParse({
+function parseCompanyForm(formData: FormData) {
+  return companySchema.safeParse({
+    id: formData.get("id") || null,
     legalName: formData.get("legalName"),
     address: formData.get("address") || null,
     phone: formData.get("phone") || null,
     email: formData.get("email") || null,
     taxId: formData.get("taxId") || null,
     quotationFooter: formData.get("quotationFooter") || null,
+    isDefault: formData.get("isDefault") === "on" || formData.get("isDefault") === "true",
   });
+}
 
+export async function saveCompanySettingsAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("managePricingRules");
+
+  const parsed = parseCompanyForm(formData);
   if (!parsed.success) return { ok: false as const, error: "VALIDATION" as const };
 
-  const existing = await prisma.companySettings.findFirst();
-  if (existing) {
-    await prisma.companySettings.update({ where: { id: existing.id }, data: parsed.data });
-  } else {
-    await prisma.companySettings.create({ data: parsed.data });
-  }
+  const { createCompany, updateCompany } = await import("@/server/domains/settings/company");
+  const id = parsed.data.id?.trim() || "";
+  const saved = id
+    ? await updateCompany(id, parsed.data)
+    : await createCompany(parsed.data);
 
   revalidatePath("/settings/company");
+  revalidatePath("/orders");
+  return { ok: true as const, id: saved.id };
+}
+
+/** @deprecated use saveCompanySettingsAction */
+export async function updateCompanySettingsAction(formData: FormData) {
+  return saveCompanySettingsAction(formData);
+}
+
+export async function deleteCompanySettingsAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("managePricingRules");
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false as const, error: "VALIDATION" as const };
+  const { deleteCompany } = await import("@/server/domains/settings/company");
+  try {
+    await deleteCompany(id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "LAST_COMPANY" || message === "NOT_FOUND") {
+      return { ok: false as const, error: message };
+    }
+    throw error;
+  }
+  revalidatePath("/settings/company");
+  revalidatePath("/orders");
   return { ok: true as const };
 }
 

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getOrder } from "@/server/domains/orders/service";
-import { prisma } from "@/server/db/client";
+import { resolveCompanySettings } from "@/server/domains/settings/company";
 import {
   buildCalcFromOrderItem,
   calcOptionsFromProduct,
@@ -18,9 +18,12 @@ import {
   PrintDocTable,
   PrintDocument,
 } from "@/components/print/PrintDocument";
-import { formatDateUk, formatMoneyUah } from "@/lib/utils";
-import { quotationProposal } from "@/lib/order-proposals";
-import { draftLineFromItem } from "@/lib/order-item-commercial";
+import { formatDateUk, formatMoneyUah, roundMoneyUah } from "@/lib/utils";
+import { displayProposalForOrder, quotationProposal } from "@/lib/order-proposals";
+import {
+  draftLineFromItem,
+  overlayDraftLineFromProposal,
+} from "@/lib/order-item-commercial";
 import {
   buildQuotationSizeRows,
   quotationNeedsBaseSizeDisclaimer,
@@ -41,13 +44,14 @@ export default async function QuotationPage({
 }) {
   const { id } = await params;
   const { item: itemParam } = await searchParams;
-  const [order, company, pricing, fixedCosts] = await Promise.all([
+  const [order, pricing, fixedCosts] = await Promise.all([
     getOrder(id),
-    prisma.companySettings.findFirst(),
     getPricingForOrder(id),
     fixedCostOptionsFromDb(),
   ]);
   if (!order) notFound();
+  const company =
+    order.companySettings ?? (await resolveCompanySettings(order.companySettingsId));
 
   const workingItems = order.items.filter((row) => !row.superseded);
   const scopedItems = itemParam
@@ -121,6 +125,30 @@ export default async function QuotationPage({
         : "зафіксовано",
     ];
   } else {
+    const proposalItems = order.items.map((row) => ({
+      id: row.id,
+      nameUk: row.nameUk,
+      totalQuantity: row.totalQuantity,
+      superseded: row.superseded,
+      versions: row.versions.map((version) => ({
+        id: version.id,
+        orderItemId: row.id,
+        versionNumber: version.versionNumber,
+        label: version.label,
+        comment: version.comment,
+        isApproved: version.isApproved,
+        createdAt: version.createdAt,
+        proposalRevision: version.proposalRevision,
+        proposalLabel: version.proposalLabel,
+        sellingPricePerUnit: version.sellingPricePerUnit,
+        totalSellingValue: version.totalSellingValue,
+        marginPercent: version.marginPercent,
+        costPerUnit: version.costPerUnit,
+        author: version.author,
+        snapshotJson: version.snapshotJson,
+      })),
+    }));
+    const displayProposal = displayProposalForOrder(proposalItems, order);
     pricedLines = scopedItems
       .filter((item) => item.totalQuantity > 0)
       .map((item) => {
@@ -128,7 +156,17 @@ export default async function QuotationPage({
           ...calcOptionsFromProduct(item.product),
           fixedCosts,
         });
-        const draft = draftLineFromItem(item, lineCalc);
+        const live = draftLineFromItem(item, lineCalc);
+        const proposalLine = displayProposal?.lines.find((line) => line.orderItemId === item.id);
+        const draft = proposalLine
+          ? overlayDraftLineFromProposal(
+              item,
+              lineCalc,
+              live,
+              proposalLine.snapshotJson,
+              proposalLine,
+            )
+          : live;
         return {
           item,
           unitPrice: draft.sellingPricePerUnit,
@@ -144,7 +182,17 @@ export default async function QuotationPage({
               })),
               decorations: item.decorations.map((row) => ({
                 nameSnapshot: row.nameSnapshot,
+                setupCost: Number(row.setupCost),
+                unitRate: Number(row.unitRate),
+                quantity: row.quantity,
               })),
+            },
+            commercial: {
+              basePricePerUnit: draft.basePricePerUnit,
+              decorationPerUnit: draft.decorationPerUnit,
+              decorationTotal: roundMoneyUah(
+                draft.decorationPerUnit * item.totalQuantity,
+              ),
             },
           },
         };
@@ -154,7 +202,9 @@ export default async function QuotationPage({
 
     docMeta = [
       `на ${formatDateUk(new Date())}`,
-      "за поточним складом замовлення",
+      displayProposal?.revision != null
+        ? `пропозиція v${displayProposal.revision} · поточний склад`
+        : "за поточним складом замовлення",
     ];
   }
 
@@ -183,7 +233,11 @@ export default async function QuotationPage({
       })),
       fallbackDecorations: item.decorations.map((row) => ({
         nameSnapshot: row.nameSnapshot,
+        setupCost: Number(row.setupCost),
+        unitRate: Number(row.unitRate),
+        quantity: row.quantity,
       })),
+      decorationPerUnit: snapshot.commercial?.decorationPerUnit ?? null,
       fallbackTotalQuantity: item.totalQuantity,
       materials: item.materials.map((row) => ({
         sizeCode: row.sizeCode,
@@ -200,10 +254,17 @@ export default async function QuotationPage({
         unitRate: row.unitRate != null ? Number(row.unitRate) : null,
       })),
       sizeRules: pricing.sizeRules,
+      productPricePerUnit: snapshot.commercial?.basePricePerUnit ?? null,
     }),
   );
 
   const grandTotal = pricedLines.reduce((sum, row) => sum + row.totalSellingValue, 0);
+  const productTotal = tableRows
+    .filter((row) => row.kind === "product")
+    .reduce((sum, row) => sum + row.lineTotal, 0);
+  const decorationTotal = tableRows
+    .filter((row) => row.kind === "decoration")
+    .reduce((sum, row) => sum + row.lineTotal, 0);
   const companyName = company?.legalName ?? "Виробнича компанія";
   const companyLines = [
     company?.address,
@@ -212,6 +273,11 @@ export default async function QuotationPage({
   ].filter((line): line is string => Boolean(line));
 
   const runningTitle = `КП ${order.number} · ${companyName}`;
+  const orderLegal =
+    order.clientLegalDetail ??
+    order.client.legalEntities.find((row) => row.isPrimary) ??
+    order.client.legalEntities[0] ??
+    null;
 
   return (
     <>
@@ -254,6 +320,20 @@ export default async function QuotationPage({
                       {order.clientContact?.email || order.client.email}
                     </PrintDocMuted>
                   ) : null}
+                  {orderLegal?.nameUk ? (
+                    <p className="mt-1">
+                      <strong>{orderLegal.nameUk}</strong>
+                    </p>
+                  ) : null}
+                  {orderLegal?.details?.trim() ? (
+                    <PrintDocMuted>
+                      {orderLegal.details.trim().split("\n").map((line, index) => (
+                        <span key={`${index}-${line.slice(0, 24)}`} className="block">
+                          {line}
+                        </span>
+                      ))}
+                    </PrintDocMuted>
+                  ) : null}
                 </>
               ),
             },
@@ -290,14 +370,20 @@ export default async function QuotationPage({
                 {tableRows.map((row) => (
                   <tr key={row.key}>
                     <td>
-                      <strong>{row.nameUk}</strong>
-                      {row.decorationsLabel ? (
-                        <span className="print-doc-item-sub">{row.decorationsLabel}</span>
-                      ) : null}
+                      {row.kind === "product" ? (
+                        <strong>{row.nameUk}</strong>
+                      ) : (
+                        row.nameUk
+                      )}
                     </td>
                     <td>{row.sizeNameUk ?? "—"}</td>
                     <td className="num">{row.quantity} шт</td>
-                    <td className="num">{formatMoneyUah(row.unitPrice)}</td>
+                    <td className="num">
+                      {formatMoneyUah(row.unitPrice)}
+                      {row.sizeSurchargeComment ? (
+                        <span className="print-doc-item-sub">{row.sizeSurchargeComment}</span>
+                      ) : null}
+                    </td>
                     <td className="num">
                       <strong>{formatMoneyUah(row.lineTotal)}</strong>
                     </td>
@@ -306,12 +392,28 @@ export default async function QuotationPage({
               </>
             }
             foot={
-              <tr>
-                <td colSpan={4} className="num">
-                  Разом до сплати
-                </td>
-                <td className="num print-doc-total-value">{formatMoneyUah(grandTotal)}</td>
-              </tr>
+              <>
+                <tr>
+                  <td colSpan={4} className="num">
+                    Разом виріб
+                  </td>
+                  <td className="num">{formatMoneyUah(productTotal)}</td>
+                </tr>
+                {decorationTotal > 0.05 ? (
+                  <tr>
+                    <td colSpan={4} className="num">
+                      Разом нанесення
+                    </td>
+                    <td className="num">{formatMoneyUah(decorationTotal)}</td>
+                  </tr>
+                ) : null}
+                <tr>
+                  <td colSpan={4} className="num">
+                    Разом до сплати
+                  </td>
+                  <td className="num print-doc-total-value">{formatMoneyUah(grandTotal)}</td>
+                </tr>
+              </>
             }
           />
         </PrintDocSection>

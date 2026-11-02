@@ -26,7 +26,12 @@ import {
   resolveFixedCostAllocationForOrderItem,
 } from "@/server/domains/calculation/from-entities";
 import { fixedCostOptionsFromDb } from "@/server/domains/fixed-costs/service";
-import { commercialPriceForOrderItem, draftLineFromItem, mergeCommercialAndCost } from "@/lib/order-item-commercial";
+import {
+  commercialPriceForOrderItem,
+  draftLineFromItem,
+  quoteClientLine,
+} from "@/lib/order-item-commercial";
+import { roundMoneyUah } from "@/lib/utils";
 import { isCutOperationName, resolveCutUnitRateForProduct } from "@/lib/cut-rate";
 import { isScreenPrintDecorationName } from "@/lib/screen-print-pricing";
 import {
@@ -447,9 +452,14 @@ export async function getOrder(id: string) {
           contacts: {
             orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
           },
+          legalEntities: {
+            orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+          },
         },
       },
       clientContact: true,
+      clientLegalDetail: true,
+      companySettings: true,
       manager: { select: { id: true, name: true, email: true } },
       items: {
         orderBy: { createdAt: "asc" },
@@ -748,6 +758,8 @@ export async function createOrderWithProduct(input: {
 export async function createOrderWithProducts(input: {
   clientId: string;
   clientContactId?: string | null;
+  clientLegalDetailId?: string | null;
+  companySettingsId?: string | null;
   managerId: string;
   title?: string | null;
   deadline?: Date | null;
@@ -811,6 +823,34 @@ export async function createOrderWithProducts(input: {
     resolvedContactId = primary?.id ?? null;
   }
 
+  let resolvedLegalId: string | null = input.clientLegalDetailId?.trim() || null;
+  if (resolvedLegalId) {
+    const legal = await prisma.clientLegalDetail.findFirst({
+      where: { id: resolvedLegalId, clientId: input.clientId },
+      select: { id: true },
+    });
+    if (!legal) throw new Error("CLIENT_LEGAL_INVALID");
+  } else {
+    const primaryLegal = await prisma.clientLegalDetail.findFirst({
+      where: { clientId: input.clientId },
+      orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { nameUk: "asc" }],
+      select: { id: true },
+    });
+    resolvedLegalId = primaryLegal?.id ?? null;
+  }
+
+  let resolvedCompanyId: string | null = input.companySettingsId?.trim() || null;
+  if (resolvedCompanyId) {
+    const company = await prisma.companySettings.findUnique({
+      where: { id: resolvedCompanyId },
+      select: { id: true },
+    });
+    if (!company) throw new Error("COMPANY_INVALID");
+  } else {
+    const { getDefaultCompany } = await import("@/server/domains/settings/company");
+    resolvedCompanyId = (await getDefaultCompany())?.id ?? null;
+  }
+
   const [fabricGlobals, pricingDefaults] = await Promise.all([
     getFabricPricingGlobals(),
     getPricingDefaults(),
@@ -827,6 +867,8 @@ export async function createOrderWithProducts(input: {
         number,
         clientId: input.clientId,
         clientContactId: resolvedContactId,
+        clientLegalDetailId: resolvedLegalId,
+        companySettingsId: resolvedCompanyId,
         managerId: input.managerId,
         title: input.title || primaryName,
         status: "DRAFT",
@@ -3138,6 +3180,8 @@ export async function saveProposal(input: {
   lines: Array<{
     orderItemId: string;
     manualSellingPricePerUnit?: number | null;
+    manualBasePricePerUnit?: number | null;
+    manualDecorationPerUnit?: number | null;
     discountPercent?: number | null;
   }>;
 }) {
@@ -3191,10 +3235,9 @@ export async function saveProposal(input: {
     const versions = [];
     for (const item of items) {
       const line = lineMap.get(item.id)!;
-      const manualSellingPricePerUnit =
-        line.manualSellingPricePerUnit != null && !Number.isNaN(line.manualSellingPricePerUnit)
-          ? line.manualSellingPricePerUnit
-          : null;
+      const finitePrice = (value: number | null | undefined) =>
+        value != null && Number.isFinite(value) ? value : null;
+      const manualSellingPricePerUnit = finitePrice(line.manualSellingPricePerUnit);
       const calcOptions = {
         ...calcOptionsFromProduct(item.product),
         fixedCosts,
@@ -3204,35 +3247,41 @@ export async function saveProposal(input: {
         ? resolveFixedCostAllocationForOrderItem(item, fixedCosts, calcOptions, pricing.sizeRules)
         : null;
 
+      const catalog = draftLineFromItem(item, costCalc);
       const commercial = commercialPriceForOrderItem(item, {
-        discountPercent: line.discountPercent,
-        fallbackPricePerUnit: manualSellingPricePerUnit ?? Number(costCalc.sellingPricePerUnit),
+        fallbackPricePerUnit: Number(costCalc.sellingPricePerUnit),
       });
 
-      let sellingPricePerUnit: number;
-      let totalSellingValue: number;
-      let marginPercent: number;
-      let profitAmount: number;
-
-      if (manualSellingPricePerUnit != null) {
-        sellingPricePerUnit = manualSellingPricePerUnit;
-        totalSellingValue = manualSellingPricePerUnit * item.totalQuantity;
-        profitAmount = totalSellingValue - Number(costCalc.totalCost);
-        marginPercent =
-          totalSellingValue > 0 ? (profitAmount / totalSellingValue) * 100 : 0;
-      } else if (commercial?.fromPriceList) {
-        const merged = mergeCommercialAndCost(commercial, costCalc, item.totalQuantity);
-        sellingPricePerUnit = merged.sellingPricePerUnit;
-        totalSellingValue = merged.totalSellingValue;
-        marginPercent = merged.marginPercent;
-        profitAmount = totalSellingValue - Number(costCalc.totalCost);
-      } else {
-        const draft = draftLineFromItem(item, costCalc, line.discountPercent);
-        sellingPricePerUnit = draft.sellingPricePerUnit;
-        totalSellingValue = draft.totalSellingValue;
-        marginPercent = draft.marginPercent;
-        profitAmount = totalSellingValue - Number(costCalc.totalCost);
+      let productPre = finitePrice(line.manualBasePricePerUnit);
+      let decorationPre = finitePrice(line.manualDecorationPerUnit);
+      if (productPre == null && decorationPre == null && manualSellingPricePerUnit != null) {
+        decorationPre = catalog.decorationPerUnit ?? 0;
+        productPre = roundMoneyUah(Math.max(0, manualSellingPricePerUnit - decorationPre));
       }
+      if (productPre == null) productPre = catalog.basePricePerUnit ?? 0;
+      if (decorationPre == null) decorationPre = catalog.decorationPerUnit ?? 0;
+
+      const quoted = quoteClientLine({
+        quantity: item.totalQuantity,
+        productPricePerUnit: productPre,
+        decorationPerUnit: decorationPre,
+        discountPercent: line.discountPercent,
+        sizes: item.sizes,
+        costPerUnit: Number(costCalc.costPerUnit),
+      });
+
+      const sellingPricePerUnit = quoted.sellingPricePerUnit;
+      const totalSellingValue = quoted.totalSellingValue;
+      const marginPercent = quoted.marginPercent;
+      const profitAmount = totalSellingValue - Number(costCalc.totalCost);
+      const snapshotCommercial = {
+        ...(commercial ?? {}),
+        fromPriceList: commercial?.fromPriceList ?? catalog.fromPriceList,
+        basePricePerUnit: quoted.productPricePerUnit,
+        decorationPerUnit: quoted.decorationPerUnit,
+        decorationTotal: roundMoneyUah(quoted.decorationPerUnit * item.totalQuantity),
+        discountPercent: quoted.discountPercent,
+      };
 
       const calc = {
         ...costCalc,
@@ -3278,8 +3327,16 @@ export async function saveProposal(input: {
             },
             calc,
             pricing,
-            commercial: commercial ?? null,
-            manualSellingPricePerUnit,
+            commercial: snapshotCommercial,
+            quote: {
+              productPricePerUnit: quoted.productPricePerUnit,
+              decorationPerUnit: quoted.decorationPerUnit,
+              oversizeSurcharge: quoted.oversizeSurcharge,
+            },
+            manualSellingPricePerUnit: sellingPricePerUnit,
+            manualBasePricePerUnit: productPre,
+            manualDecorationPerUnit: decorationPre,
+            oversizeSurcharge: quoted.oversizeSurcharge,
             proposalRevision,
             fixedCosts: fixedCostAllocation
               ? {
@@ -3847,10 +3904,13 @@ export async function duplicateOrder(input: { orderId: string; userId: string })
         number,
         clientId: source.clientId,
         clientContactId: source.clientContactId,
+        clientLegalDetailId: source.clientLegalDetailId,
+        companySettingsId: source.companySettingsId,
         managerId: input.userId,
         title: source.title,
         status: "DRAFT",
         deadline: source.deadline,
+        paymentMethod: source.paymentMethod,
         comment: source.comment,
         targetMarginPercent: source.targetMarginPercent,
       },
@@ -3949,6 +4009,117 @@ export async function duplicateOrder(input: { orderId: string; userId: string })
   });
 
   return created;
+}
+
+export async function updateOrderClientParty(
+  orderId: string,
+  input: { clientContactId?: string | null; clientLegalDetailId?: string | null },
+) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, clientId: true, status: true },
+  });
+  if (!order) throw new Error("ORDER_NOT_FOUND");
+  if (
+    order.status === "HANDED_TO_PRODUCTION" ||
+    order.status === "CLOSED" ||
+    order.status === "CANCELLED"
+  ) {
+    throw new Error("ORDER_LOCKED");
+  }
+
+  const data: {
+    clientContactId?: string | null;
+    clientLegalDetailId?: string | null;
+  } = {};
+
+  if (input.clientContactId !== undefined) {
+    const contactId = input.clientContactId?.trim() || null;
+    if (contactId) {
+      const contact = await prisma.clientContact.findFirst({
+        where: { id: contactId, clientId: order.clientId },
+        select: { id: true },
+      });
+      if (!contact) throw new Error("CLIENT_CONTACT_INVALID");
+    }
+    data.clientContactId = contactId;
+  }
+
+  if (input.clientLegalDetailId !== undefined) {
+    const legalId = input.clientLegalDetailId?.trim() || null;
+    if (legalId) {
+      const legal = await prisma.clientLegalDetail.findFirst({
+        where: { id: legalId, clientId: order.clientId },
+        select: { id: true },
+      });
+      if (!legal) throw new Error("CLIENT_LEGAL_INVALID");
+    }
+    data.clientLegalDetailId = legalId;
+  }
+
+  if (Object.keys(data).length === 0) return order;
+  return prisma.order.update({
+    where: { id: orderId },
+    data,
+  });
+}
+
+export async function updateOrderCompany(orderId: string, companySettingsId: string | null) {
+  await assertOrderScheduleEditable(orderId);
+  let resolved: string | null = companySettingsId?.trim() || null;
+  if (resolved) {
+    const company = await prisma.companySettings.findUnique({
+      where: { id: resolved },
+      select: { id: true },
+    });
+    if (!company) throw new Error("COMPANY_INVALID");
+  }
+  return prisma.order.update({
+    where: { id: orderId },
+    data: { companySettingsId: resolved },
+  });
+}
+
+function parseOrderDeadline(raw: string | null | undefined): Date | null {
+  const value = (raw ?? "").trim();
+  if (!value) return null;
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (isoDate) {
+    return new Date(Date.UTC(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3])));
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function assertOrderScheduleEditable(orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { status: true },
+  });
+  if (!order) throw new Error("ORDER_NOT_FOUND");
+  if (order.status === "CLOSED" || order.status === "CANCELLED") {
+    throw new Error("ORDER_LOCKED");
+  }
+}
+
+export async function updateOrderDeadlineAndPayment(
+  orderId: string,
+  input: { deadline?: string | null; paymentMethod?: string | null },
+) {
+  await assertOrderScheduleEditable(orderId);
+  const data: { deadline?: Date | null; paymentMethod?: string | null } = {};
+  if (input.deadline !== undefined) {
+    data.deadline = parseOrderDeadline(input.deadline);
+  }
+  if (input.paymentMethod !== undefined) {
+    const text = (input.paymentMethod ?? "").trim();
+    data.paymentMethod = text ? text.slice(0, 500) : null;
+  }
+  if (Object.keys(data).length === 0) return;
+  return prisma.order.update({
+    where: { id: orderId },
+    data,
+  });
 }
 
 export async function updateOrderComment(orderId: string, comment: string | null) {

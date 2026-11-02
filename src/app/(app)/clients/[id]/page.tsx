@@ -178,6 +178,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         />
         <Table>
           <THead>
+            <TH width="108px">Створено</TH>
             <TH width="140px">Номер</TH>
             <TH>Виріб</TH>
             <TH>Контакт</TH>
@@ -194,13 +195,16 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <TBody>
             {client.orders.length === 0 ? (
               <TableEmpty
-                colSpan={7}
+                colSpan={8}
                 title="Замовлень ще немає"
                 description="Створіть перше замовлення для цього клієнта."
               />
             ) : (
               client.orders.map((order) => (
                 <TR key={order.id}>
+                  <TD nowrap className="tabular type-caption text-[var(--color-text-secondary)]">
+                    {formatDateUk(order.createdAt)}
+                  </TD>
                   <TD nowrap>
                     <Link
                       href={`/orders/${order.id}`}

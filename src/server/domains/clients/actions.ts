@@ -48,6 +48,12 @@ export async function createClientAction(formData: FormData) {
       email: person.email,
       isPrimary: person.isPrimary,
     })),
+    legalEntities: client.legalEntities.map((row) => ({
+      id: row.id,
+      nameUk: row.nameUk,
+      details: row.details,
+      isPrimary: row.isPrimary,
+    })),
   };
 }
 

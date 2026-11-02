@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getOrder } from "@/server/domains/orders/service";
-import { prisma } from "@/server/db/client";
+import { resolveCompanySettings } from "@/server/domains/settings/company";
 import { PrintToolbar } from "@/components/print/PrintToolbar";
 import {
   PrintDocHeader,
@@ -29,11 +29,10 @@ export default async function PrintBriefPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [order, company] = await Promise.all([
-    getOrder(id),
-    prisma.companySettings.findFirst(),
-  ]);
+  const order = await getOrder(id);
   if (!order) notFound();
+  const company =
+    order.companySettings ?? (await resolveCompanySettings(order.companySettingsId));
 
   const items = order.items.filter((row) => !row.superseded);
   const companyName = company?.legalName ?? "Виробництво";

@@ -1,14 +1,25 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Overlay";
 import { Banner } from "@/components/ui/Banner";
 import { Checkbox } from "@/components/ui/Field";
 import { IconAlert, IconCheckCircle, IconHandover } from "@/components/ui/Icons";
 import { handOverAction } from "@/server/domains/orders/actions";
 import { formatMoneyUah } from "@/lib/utils";
+
+function toDateInputValue(value: Date | string | null | undefined) {
+  if (!value) return "";
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export type ReadinessCheck = { key: string; label: string; done: boolean; hint?: string };
 
@@ -29,6 +40,8 @@ export function HandoverDialog({
   totalQuantity,
   totalValue,
   checks,
+  deadline,
+  paymentMethod,
   disabled,
 }: {
   orderId: string;
@@ -37,13 +50,23 @@ export function HandoverDialog({
   totalQuantity: number;
   totalValue: number;
   checks: ReadinessCheck[];
+  deadline?: Date | string | null;
+  paymentMethod?: string | null;
   disabled?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
+  const [deadlineValue, setDeadlineValue] = useState(() => toDateInputValue(deadline));
+  const [paymentValue, setPaymentValue] = useState(paymentMethod ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!open) return;
+    setDeadlineValue(toDateInputValue(deadline));
+    setPaymentValue(paymentMethod ?? "");
+  }, [open, deadline, paymentMethod]);
 
   const blocking = checks.filter((check) => !check.done);
   const ready = blocking.length === 0;
@@ -61,6 +84,8 @@ export function HandoverDialog({
     setError(null);
     const formData = new FormData();
     formData.set("orderId", orderId);
+    formData.set("deadline", deadlineValue);
+    formData.set("paymentMethod", paymentValue);
     startTransition(async () => {
       const result = await handOverAction(formData);
       if (!result.ok) {
@@ -132,6 +157,28 @@ export function HandoverDialog({
               <p className="type-caption tabular">{totalQuantity} шт</p>
             </div>
           </div>
+
+          <section>
+            <h3 className="type-group-label mb-2">Умови замовлення</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="Дедлайн"
+                type="date"
+                optional
+                value={deadlineValue}
+                onChange={(event) => setDeadlineValue(event.target.value)}
+                hint={deadlineValue ? "Можна змінити або залишити порожнім" : "Можна додати зараз або пізніше"}
+              />
+              <Input
+                label="Спосіб оплати"
+                optional
+                placeholder="Наприклад: 50% передоплата"
+                value={paymentValue}
+                onChange={(event) => setPaymentValue(event.target.value)}
+                hint="Короткий коментар для шапки замовлення"
+              />
+            </div>
+          </section>
 
           <section>
             <h3 className="type-group-label mb-2 flex items-center justify-between gap-3">

@@ -700,6 +700,7 @@ model ClientLegalDetail {
   updatedAt DateTime @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  orders Order[]
 
   @@index([clientId])
   @@map("client_legal_details")
@@ -711,23 +712,31 @@ model Order {
   clientId         String
   /// Selected contact person for this order (from client.contacts).
   clientContactId  String?     @map("client_contact_id")
+  /// Selected legal / banking реквізити for this order (from client.legalEntities).
+  clientLegalDetailId String?  @map("client_legal_detail_id")
   managerId        String
   title            String?
   status           OrderStatus @default(DRAFT)
   requestedDate    DateTime?
   approvedDate     DateTime?
   deadline         DateTime?
+  /// Free-text payment terms for the client (shown on the order header).
+  paymentMethod    String?     @map("payment_method")
   comment          String?
   /// Order-level target margin/markup override. Null = use project PricingSettings.
   targetMarginPercent Decimal? @db.Decimal(8, 4)
   /// Which saved proposal revision is currently loaded into live order items.
   activeProposalRevision Int?  @map("active_proposal_revision")
+  /// Seller legal entity used on КП / специфікація.
+  companySettingsId String?    @map("company_settings_id")
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
   client        Client         @relation(fields: [clientId], references: [id])
   clientContact ClientContact? @relation(fields: [clientContactId], references: [id], onDelete: SetNull)
+  clientLegalDetail ClientLegalDetail? @relation(fields: [clientLegalDetailId], references: [id], onDelete: SetNull)
   manager       User           @relation("OrderManager", fields: [managerId], references: [id])
+  companySettings CompanySettings? @relation(fields: [companySettingsId], references: [id], onDelete: SetNull)
   items         OrderItem[]
   files         FileAsset[]
 
@@ -735,6 +744,8 @@ model Order {
   @@index([deadline])
   @@index([clientId])
   @@index([clientContactId])
+  @@index([clientLegalDetailId])
+  @@index([companySettingsId])
   @@map("orders")
 }
 
@@ -1017,7 +1028,10 @@ model CompanySettings {
   taxId        String?
   logoUrl      String?
   quotationFooter String?
+  isDefault    Boolean  @default(false) @map("is_default")
   updatedAt    DateTime @updatedAt
+
+  orders Order[]
 
   @@map("company_settings")
 }

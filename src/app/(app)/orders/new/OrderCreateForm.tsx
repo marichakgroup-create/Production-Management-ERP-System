@@ -49,6 +49,13 @@ type ClientContactOption = {
   isPrimary?: boolean;
 };
 
+type ClientLegalOption = {
+  id: string;
+  nameUk: string;
+  details?: string | null;
+  isPrimary?: boolean;
+};
+
 type ClientOption = {
   id: string;
   label: string;
@@ -56,6 +63,7 @@ type ClientOption = {
   phone?: string | null;
   email?: string | null;
   contacts?: ClientContactOption[];
+  legalEntities?: ClientLegalOption[];
 };
 type SizeOption = { id: string; label: string; code?: string; variantId?: string };
 
@@ -91,6 +99,7 @@ function newKey() {
 
 export function OrderCreateForm({
   clients: initialClients,
+  companies = [],
   products: initialProducts,
   sizeOptions,
   sizeVariants = [],
@@ -105,6 +114,7 @@ export function OrderCreateForm({
   initialProductId,
 }: {
   clients: ClientOption[];
+  companies?: Array<{ id: string; legalName: string; isDefault: boolean }>;
   products: CatalogProduct[];
   sizeOptions: SizeOption[];
   sizeVariants?: Array<{ id: string; nameUk: string }>;
@@ -127,6 +137,10 @@ export function OrderCreateForm({
   const [decorationCatalog, setDecorationCatalog] = useState(initialDecorationCatalog);
   const [clientId, setClientId] = useState(initialClientId || "");
   const [clientContactId, setClientContactId] = useState("");
+  const [clientLegalDetailId, setClientLegalDetailId] = useState("");
+  const [companySettingsId, setCompanySettingsId] = useState(
+    () => companies.find((row) => row.isDefault)?.id ?? companies[0]?.id ?? "",
+  );
   const [deadline, setDeadline] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [stagingProductId, setStagingProductId] = useState(initialProductId || "");
@@ -156,20 +170,26 @@ export function OrderCreateForm({
   );
   const selectedClient = clients.find((client) => client.id === clientId);
   const clientPeople = selectedClient?.contacts ?? [];
+  const clientLegalEntities = selectedClient?.legalEntities ?? [];
+  const selectedLegal = clientLegalEntities.find((row) => row.id === clientLegalDetailId) ?? null;
 
   useEffect(() => {
     if (!selectedClient) {
       setClientContactId("");
+      setClientLegalDetailId("");
       return;
     }
     const people = selectedClient.contacts ?? [];
-    if (people.length === 0) {
-      setClientContactId("");
-      return;
-    }
     setClientContactId((prev) => {
+      if (people.length === 0) return "";
       if (prev && people.some((person) => person.id === prev)) return prev;
       return people.find((person) => person.isPrimary)?.id ?? people[0]?.id ?? "";
+    });
+    const legal = selectedClient.legalEntities ?? [];
+    setClientLegalDetailId((prev) => {
+      if (legal.length === 0) return "";
+      if (prev && legal.some((row) => row.id === prev)) return prev;
+      return legal.find((row) => row.isPrimary)?.id ?? legal[0]?.id ?? "";
     });
   }, [selectedClient]);
 
@@ -472,9 +492,12 @@ export function OrderCreateForm({
                 ? "Додайте хоча б одну позицію до списку."
                 : result.error === "PRODUCT_ARCHIVED" || result.error === "PRODUCT_NOT_FOUND"
                   ? "Обраний виріб недоступний — оберіть інший з каталогу."
-                  : result.error === "CREATE_FAILED"
-                    ? "Не вдалося зберегти замовлення. Перевірте матеріали й розміри та спробуйте ще раз."
-                    : "Перевірте обовʼязкові поля — замовлення не створено.",
+                  : result.error === "CLIENT_CONTACT_INVALID" ||
+                      result.error === "CLIENT_LEGAL_INVALID"
+                    ? "Контакт або реквізити не належать обраному клієнту."
+                    : result.error === "CREATE_FAILED"
+                      ? "Не вдалося зберегти замовлення. Перевірте матеріали й розміри та спробуйте ще раз."
+                      : "Перевірте обовʼязкові поля — замовлення не створено.",
           );
           return;
         }
@@ -515,21 +538,42 @@ export function OrderCreateForm({
                         phone: client.phone ?? null,
                         email: client.email ?? null,
                         contacts: client.contacts ?? [],
+                        legalEntities: client.legalEntities ?? [],
                       };
                       return prev.some((row) => row.id === client.id)
                         ? prev.map((row) => (row.id === client.id ? next : row))
                         : [...prev, next];
                     });
                     setClientId(client.id);
-                    const primary =
+                    const primaryContact =
                       client.contacts?.find((person) => person.isPrimary) ??
                       client.contacts?.[0];
-                    setClientContactId(primary?.id ?? "");
+                    setClientContactId(primaryContact?.id ?? "");
+                    const primaryLegal =
+                      client.legalEntities?.find((row) => row.isPrimary) ??
+                      client.legalEntities?.[0];
+                    setClientLegalDetailId(primaryLegal?.id ?? "");
                   }}
                 />
               }
             >
               <div className="grid gap-2 sm:grid-cols-2">
+                {companies.length > 0 ? (
+                  <Select
+                    name="companySettingsId"
+                    label="Компанія"
+                    value={companySettingsId}
+                    onChange={(event) => setCompanySettingsId(event.target.value)}
+                  >
+                    {companies.map((row) => (
+                      <option key={row.id} value={row.id}>
+                        {row.isDefault ? `${row.legalName} (основна)` : row.legalName}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <input type="hidden" name="companySettingsId" value="" />
+                )}
                 <Select
                   name="clientId"
                   label="Замовник"
@@ -583,10 +627,53 @@ export function OrderCreateForm({
                   </div>
                 )}
 
+                {selectedClient && clientLegalEntities.length > 0 ? (
+                  <Select
+                    name="clientLegalDetailId"
+                    label="Реквізити"
+                    value={clientLegalDetailId}
+                    onChange={(event) => setClientLegalDetailId(event.target.value)}
+                    hideSelectedDescription
+                  >
+                    {clientLegalEntities.map((row) => (
+                      <option
+                        key={row.id}
+                        value={row.id}
+                        data-description={
+                          [
+                            row.isPrimary ? "основні" : null,
+                            row.details?.replace(/\s+/g, " ").trim() || null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || undefined
+                        }
+                      >
+                        {row.nameUk}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <div className="min-w-0 self-end">
+                    <input type="hidden" name="clientLegalDetailId" value="" />
+                    <p className="type-caption pb-2">
+                      {selectedClient
+                        ? "Немає реквізитів — додайте в картці клієнта."
+                        : "Оберіть клієнта, щоб вказати реквізити."}
+                    </p>
+                  </div>
+                )}
+
+                {selectedLegal?.details?.trim() ? (
+                  <p className="type-caption sm:col-span-2 whitespace-pre-wrap text-[var(--color-text-secondary)]">
+                    {selectedLegal.details.trim()}
+                  </p>
+                ) : null}
+
                 <Input
                   name="deadline"
                   label="Дедлайн"
                   type="date"
+                  optional
                   value={deadline}
                   onChange={(event) => setDeadline(event.target.value)}
                 />

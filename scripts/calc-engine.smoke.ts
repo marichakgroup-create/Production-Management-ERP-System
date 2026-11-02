@@ -225,6 +225,43 @@ const priceListDraft = draftLineFromItem(
 assert.equal(priceListDraft.fromPriceList, true);
 assert.equal(priceListDraft.totalSellingValue, 39000);
 assert.equal(priceListDraft.sellingPricePerUnit, 390);
+
+const oversizePriceListDraft = draftLineFromItem(
+  {
+    ...decoItem,
+    sizes: [
+      { sizeCode: "L", quantity: 90 },
+      { sizeCode: "4XL", quantity: 10 },
+    ],
+    product: {
+      isBaseModel: true,
+      commercialPriceTiers: [{ minQuantity: 30, pricePerUnit: 350 }],
+    },
+  },
+  costCalcStub,
+);
+assert.ok(oversizePriceListDraft.oversizeSurcharge);
+assert.equal(oversizePriceListDraft.oversizeSurcharge!.percent, 20);
+assert.equal(oversizePriceListDraft.oversizeSurcharge!.perUnit, 70);
+assert.equal(oversizePriceListDraft.oversizeSurcharge!.quantity, 10);
+assert.equal(oversizePriceListDraft.totalSellingValue, 39700);
+assert.equal(oversizePriceListDraft.basePricePerUnit, 350);
+
+import { quoteClientLine } from "../src/lib/order-item-commercial";
+
+const quotedOversize = quoteClientLine({
+  quantity: 10,
+  productPricePerUnit: 100,
+  decorationPerUnit: 40,
+  discountPercent: 10,
+  oversizeQuantity: 10,
+  costPerUnit: 50,
+});
+assert.equal(quotedOversize.productPricePerUnit, 90);
+assert.equal(quotedOversize.decorationPerUnit, 36);
+assert.equal(quotedOversize.oversizeSurcharge.perUnit, 18);
+assert.equal(quotedOversize.oversizeSurcharge.total, 180);
+assert.equal(quotedOversize.totalSellingValue, 1440);
 console.log("commercial draft line smoke test passed");
 
 import {

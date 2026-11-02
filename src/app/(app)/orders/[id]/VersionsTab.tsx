@@ -50,6 +50,8 @@ export function VersionsTab({
   readiness,
   autoSave = false,
   draftDrift = false,
+  deadline = null,
+  paymentMethod = null,
 }: {
   orderId: string;
   orderNumber: string;
@@ -73,6 +75,8 @@ export function VersionsTab({
   readiness: ReadinessCheck[];
   autoSave?: boolean;
   draftDrift?: boolean;
+  deadline?: Date | string | null;
+  paymentMethod?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -251,7 +255,12 @@ export function VersionsTab({
                         {proposal.totalQuantity} шт
                       </TD>
                       <TD numeric className="font-medium tabular">
-                        {formatMoneyUah(proposal.totalSellingValue)}
+                        <p>{formatMoneyUah(proposal.totalSellingValue)}</p>
+                        <p className="type-caption mt-0.5 font-normal text-[var(--color-text-secondary)]">
+                          Виріб {formatMoneyUah(proposal.totalProductValue)}
+                          <span className="mx-1 text-[var(--color-divider)]">·</span>
+                          Нанесення {formatMoneyUah(proposal.totalDecorationValue)}
+                        </p>
                       </TD>
                       <TD nowrap>
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -325,8 +334,18 @@ export function VersionsTab({
                               {line.totalQuantity} шт
                             </TD>
                             <TD numeric className="tabular">
-                              {formatMoneyUah(line.sellingPricePerUnit)} / од. →{" "}
-                              {formatMoneyUah(line.totalSellingValue)}
+                              <p>
+                                {formatMoneyUah(line.sellingPricePerUnit)} / од. →{" "}
+                                {formatMoneyUah(line.totalSellingValue)}
+                              </p>
+                              <p className="type-caption mt-0.5 text-[var(--color-text-secondary)]">
+                                Виріб {formatMoneyUah(line.productPerUnit)} / од. →{" "}
+                                {formatMoneyUah(line.productTotal)}
+                              </p>
+                              <p className="type-caption text-[var(--color-text-secondary)]">
+                                Нанесення {formatMoneyUah(line.decorationPerUnit)} / од. →{" "}
+                                {formatMoneyUah(line.decorationTotal)}
+                              </p>
                             </TD>
                             <TD numeric className="tabular">
                               {line.marginPercent.toFixed(1)}%
@@ -391,6 +410,8 @@ export function VersionsTab({
                 totalQuantity={orderTotalQuantity}
                 totalValue={approved?.totalSellingValue ?? orderTotalValue}
                 checks={readiness}
+                deadline={deadline}
+                paymentMethod={paymentMethod}
                 disabled={!canApprove}
               />
             )}
@@ -403,7 +424,7 @@ export function VersionsTab({
         onClose={() => setApproveTarget(null)}
         title={`Погодити пропозицію v${approveTarget?.revision ?? ""}?`}
         description="Погоджена пропозиція — основа для передачі у виробництво; КП до цього з поточного складу"
-        width="md"
+        width="lg"
         footer={
           <>
             <Button variant="ghost" onClick={() => setApproveTarget(null)} disabled={pending}>
@@ -426,8 +447,9 @@ export function VersionsTab({
                   <tr className="border-b border-[var(--color-table-section-border)]">
                     <th className="px-3 py-2 text-left">Виріб</th>
                     <th className="px-3 py-2 text-right">К-сть</th>
-                    <th className="px-3 py-2 text-right">Ціна/од.</th>
-                    <th className="px-3 py-2 text-right">Сума</th>
+                    <th className="px-3 py-2 text-right">Виріб</th>
+                    <th className="px-3 py-2 text-right">Нанесення</th>
+                    <th className="px-3 py-2 text-right">Разом</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -436,7 +458,10 @@ export function VersionsTab({
                       <td className="px-3 py-2">{line.itemNameUk}</td>
                       <td className="px-3 py-2 text-right tabular">{line.totalQuantity}</td>
                       <td className="px-3 py-2 text-right tabular">
-                        {formatMoneyUah(line.sellingPricePerUnit)}
+                        {formatMoneyUah(line.productTotal)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular">
+                        {formatMoneyUah(line.decorationTotal)}
                       </td>
                       <td className="px-3 py-2 text-right font-medium tabular">
                         {formatMoneyUah(line.totalSellingValue)}
@@ -447,6 +472,10 @@ export function VersionsTab({
               </table>
             </div>
             <p className="type-body-secondary text-right">
+              Виріб {formatMoneyUah(approveTarget.totalProductValue)}
+              <span className="mx-2 text-[var(--color-divider)]">·</span>
+              Нанесення {formatMoneyUah(approveTarget.totalDecorationValue)}
+              <span className="mx-2 text-[var(--color-divider)]">·</span>
               Разом:{" "}
               <span className="font-semibold text-[var(--color-text-primary)] tabular">
                 {formatMoneyUah(approveTarget.totalSellingValue)}

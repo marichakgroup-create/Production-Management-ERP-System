@@ -52,6 +52,9 @@ import {
   updateOrderStatus,
   updateOrderTargetMargin,
   updateOrderComment,
+  updateOrderClientParty,
+  updateOrderCompany,
+  updateOrderDeadlineAndPayment,
 } from "@/server/domains/orders/service";
 import {
   buildCalcFromOrderItem,
@@ -117,8 +120,16 @@ const createOrderSchema = z.object({
     (value) => (typeof value === "string" && value.trim() === "" ? null : value),
     z.string().trim().min(1).optional().nullable(),
   ),
+  clientLegalDetailId: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().trim().min(1).optional().nullable(),
+  ),
   productId: z.string().optional().nullable(),
   title: z.string().optional().nullable(),
+  companySettingsId: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().trim().min(1).optional().nullable(),
+  ),
   deadline: z.string().optional().nullable(),
   comment: z.string().optional().nullable(),
   targetMarginPercent: z.coerce.number().min(0).max(99).optional().nullable(),
@@ -203,6 +214,8 @@ export async function createOrderAction(formData: FormData) {
   const parsed = createOrderSchema.safeParse({
     clientId: formData.get("clientId"),
     clientContactId: formData.get("clientContactId") || null,
+    clientLegalDetailId: formData.get("clientLegalDetailId") || null,
+    companySettingsId: formData.get("companySettingsId") || null,
     productId: formData.get("productId") || null,
     title: formData.get("title") || null,
     deadline: formData.get("deadline") || null,
@@ -321,6 +334,8 @@ export async function createOrderAction(formData: FormData) {
     ({ order } = await createOrderWithProducts({
       clientId: parsed.data.clientId,
       clientContactId: parsed.data.clientContactId ?? null,
+      clientLegalDetailId: parsed.data.clientLegalDetailId ?? null,
+      companySettingsId: parsed.data.companySettingsId ?? null,
       managerId: session.user.id,
       title: parsed.data.title,
       deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : null,
@@ -335,7 +350,9 @@ export async function createOrderAction(formData: FormData) {
     if (
       message === "PRODUCT_NOT_FOUND" ||
       message === "ITEMS_REQUIRED" ||
-      message === "CLIENT_CONTACT_INVALID"
+      message === "CLIENT_CONTACT_INVALID" ||
+      message === "CLIENT_LEGAL_INVALID" ||
+      message === "COMPANY_INVALID"
     ) {
       return { ok: false as const, error: message };
     }
@@ -1042,12 +1059,16 @@ export async function saveProposalAction(formData: FormData) {
   let lines: Array<{
     orderItemId: string;
     manualSellingPricePerUnit?: number | null;
+    manualBasePricePerUnit?: number | null;
+    manualDecorationPerUnit?: number | null;
     discountPercent?: number | null;
   }>;
   try {
     lines = JSON.parse(linesJson) as Array<{
       orderItemId: string;
       manualSellingPricePerUnit?: number | null;
+      manualBasePricePerUnit?: number | null;
+      manualDecorationPerUnit?: number | null;
       discountPercent?: number | null;
     }>;
   } catch {
@@ -1211,6 +1232,14 @@ export async function handOverAction(formData: FormData) {
 
   const orderId = String(formData.get("orderId") ?? "");
   try {
+    if (formData.has("deadline") || formData.has("paymentMethod")) {
+      await updateOrderDeadlineAndPayment(orderId, {
+        deadline: formData.has("deadline") ? String(formData.get("deadline") ?? "") : undefined,
+        paymentMethod: formData.has("paymentMethod")
+          ? String(formData.get("paymentMethod") ?? "")
+          : undefined,
+      });
+    }
     await handOverToProduction(orderId, session.user.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "ERROR";
@@ -1366,6 +1395,55 @@ export async function updateOrderMarginAction(formData: FormData) {
   return { ok: true as const };
 }
 
+export async function updateOrderCompanyAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+  try {
+    await updateOrderCompany(
+      orderId,
+      String(formData.get("companySettingsId") ?? "").trim() || null,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "ORDER_LOCKED") return { ok: false as const, error: "ORDER_LOCKED" as const };
+    if (message === "COMPANY_INVALID") return { ok: false as const, error: "VALIDATION" as const };
+    throw error;
+  }
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/orders");
+  return { ok: true as const };
+}
+
+export async function updateOrderDeadlineAndPaymentAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+  try {
+    await updateOrderDeadlineAndPayment(orderId, {
+      deadline: formData.has("deadline") ? String(formData.get("deadline") ?? "") : undefined,
+      paymentMethod: formData.has("paymentMethod")
+        ? String(formData.get("paymentMethod") ?? "")
+        : undefined,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "ORDER_LOCKED") return { ok: false as const, error: "ORDER_LOCKED" as const };
+    if (message === "ORDER_NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" as const };
+    throw error;
+  }
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/orders");
+  revalidatePath("/overview");
+  return { ok: true as const };
+}
+
 export async function updateOrderCommentAction(formData: FormData) {
   const session = await auth();
   if (!session?.user) throw new Error("UNAUTHORIZED");
@@ -1383,6 +1461,44 @@ export async function updateOrderCommentAction(formData: FormData) {
     throw error;
   }
   revalidatePath(`/orders/${orderId}`);
+  return { ok: true as const };
+}
+
+export async function updateOrderClientPartyAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+  await assertCanEditOrderQuantities(orderId);
+
+  const patch: { clientContactId?: string | null; clientLegalDetailId?: string | null } = {};
+  if (formData.has("clientContactId")) {
+    patch.clientContactId = String(formData.get("clientContactId") ?? "").trim() || null;
+  }
+  if (formData.has("clientLegalDetailId")) {
+    patch.clientLegalDetailId = String(formData.get("clientLegalDetailId") ?? "").trim() || null;
+  }
+
+  try {
+    await updateOrderClientParty(orderId, patch);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (
+      message === "ORDER_LOCKED" ||
+      message === "ORDER_NOT_FOUND" ||
+      message === "CLIENT_CONTACT_INVALID" ||
+      message === "CLIENT_LEGAL_INVALID"
+    ) {
+      return { ok: false as const, error: message };
+    }
+    throw error;
+  }
+
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath(`/orders/${orderId}/quotation`);
+  revalidatePath(`/orders/${orderId}/specification`);
   return { ok: true as const };
 }
 

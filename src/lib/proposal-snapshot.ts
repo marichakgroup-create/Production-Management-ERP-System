@@ -25,11 +25,63 @@ export type ProposalVersionSnapshot = {
   item?: ProposalItemSnapshot | null;
   calc?: unknown;
   pricing?: unknown;
-  commercial?: unknown;
+  commercial?: {
+    basePricePerUnit?: number;
+    decorationPerUnit?: number;
+    decorationTotal?: number;
+    discountPercent?: number;
+    sellingPricePerUnit?: number;
+    totalSellingValue?: number;
+  } | null;
+  quote?: {
+    productPricePerUnit?: number;
+    decorationPerUnit?: number;
+    oversizeSurcharge?: { total?: number; perUnit?: number; quantity?: number };
+  } | null;
+  oversizeSurcharge?: { total?: number; perUnit?: number; quantity?: number } | null;
   manualSellingPricePerUnit?: number | null;
+  manualBasePricePerUnit?: number | null;
+  manualDecorationPerUnit?: number | null;
   proposalRevision?: number | null;
   fixedCosts?: unknown;
 };
+
+export type ProposalClientSplit = {
+  productTotal: number;
+  decorationTotal: number;
+  productPerUnit: number;
+  decorationPerUnit: number;
+};
+
+/** Product / branding ₴/од. after discount, before 3XL+ extra. */
+export function proposalClientUnitPrices(snapshotJson: unknown): {
+  productPricePerUnit: number;
+  decorationPerUnit: number;
+} | null {
+  const root =
+    snapshotJson && typeof snapshotJson === "object"
+      ? (snapshotJson as ProposalVersionSnapshot)
+      : null;
+  if (!root) return null;
+  const quote = root.quote;
+  if (quote && (quote.productPricePerUnit != null || quote.decorationPerUnit != null)) {
+    return {
+      productPricePerUnit: Math.max(0, num(quote.productPricePerUnit)),
+      decorationPerUnit: Math.max(0, num(quote.decorationPerUnit)),
+    };
+  }
+  const commercial = root.commercial;
+  if (!commercial || commercial.basePricePerUnit == null) return null;
+  const quotedSnapshot =
+    root.manualBasePricePerUnit != null || root.oversizeSurcharge != null;
+  const factor = quotedSnapshot
+    ? 1
+    : 1 - Math.max(0, Math.min(99, num(commercial.discountPercent))) / 100;
+  return {
+    productPricePerUnit: Math.max(0, num(commercial.basePricePerUnit) * factor),
+    decorationPerUnit: Math.max(0, num(commercial.decorationPerUnit) * factor),
+  };
+}
 
 function num(value: unknown, fallback = 0): number {
   if (value == null || value === "") return fallback;
@@ -54,6 +106,65 @@ export function snapshotSizes(raw: unknown): ProposalItemSnapshot["sizes"] {
       quantity: Math.max(0, Math.round(num(r.quantity))),
     };
   }).filter((row) => row.sizeCode);
+}
+
+function decorationMoneyFromRows(rows: Array<Record<string, unknown>>, quantity: number) {
+  return rows.reduce((sum, row) => {
+    const setup = num(row.setupCost);
+    const unit = num(row.unitRate);
+    const qty =
+      row.quantity != null && Number.isFinite(Number(row.quantity)) && Number(row.quantity) > 0
+        ? Math.floor(Number(row.quantity))
+        : quantity;
+    return sum + setup + unit * qty;
+  }, 0);
+}
+
+/** Product vs branding money from a saved proposal snapshot. */
+export function proposalClientSplit(
+  snapshotJson: unknown,
+  fallback: { totalQuantity: number; totalSellingValue: number },
+): ProposalClientSplit {
+  const quantity = Math.max(0, fallback.totalQuantity);
+  const totalSelling = num(fallback.totalSellingValue);
+  const root =
+    snapshotJson && typeof snapshotJson === "object"
+      ? (snapshotJson as ProposalVersionSnapshot)
+      : null;
+  const commercial = root?.commercial;
+  const quote = root?.quote;
+  const item = parseProposalItemSnapshot(snapshotJson);
+
+  const quotedSnapshot =
+    quote != null ||
+    root?.manualBasePricePerUnit != null ||
+    root?.oversizeSurcharge != null;
+  const discountFactor = quotedSnapshot
+    ? 1
+    : 1 - Math.max(0, Math.min(99, num(commercial?.discountPercent))) / 100;
+
+  let decorationTotal = 0;
+  if (quote?.decorationPerUnit != null && quantity > 0) {
+    decorationTotal = num(quote.decorationPerUnit) * quantity;
+  } else if (commercial?.decorationPerUnit != null && quantity > 0) {
+    decorationTotal = num(commercial.decorationPerUnit) * discountFactor * quantity;
+  } else if (commercial?.decorationTotal != null) {
+    decorationTotal = num(commercial.decorationTotal) * discountFactor;
+  } else if (item?.decorations.length) {
+    decorationTotal = decorationMoneyFromRows(item.decorations, quantity) * discountFactor;
+  }
+
+  decorationTotal = Math.max(0, decorationTotal);
+  if (decorationTotal > totalSelling && totalSelling > 0) {
+    decorationTotal = totalSelling;
+  }
+  const productTotal = Math.max(0, totalSelling - decorationTotal);
+  return {
+    productTotal,
+    decorationTotal,
+    productPerUnit: quantity > 0 ? productTotal / quantity : 0,
+    decorationPerUnit: quantity > 0 ? decorationTotal / quantity : 0,
+  };
 }
 
 export function parseProposalItemSnapshot(raw: unknown): ProposalItemSnapshot | null {

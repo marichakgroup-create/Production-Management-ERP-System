@@ -311,13 +311,12 @@ export async function getOwnerDashboard(input: {
     if (!hasApproved(order)) missing.push("погоджена пропозиція");
     if (!hasQty(order)) missing.push("розміри й кількість");
     if (!composed(order)) missing.push("норми й ціни складу");
-    if (!order.deadline) missing.push("дедлайн");
     if (needsDecorationFile(order)) missing.push("файл нанесення");
     return missing;
   };
 
   const readinessPercent = (order: Row) => {
-    const checks = 5;
+    const checks = 4;
     return Math.round(((checks - readinessMissing(order).length) / checks) * 100);
   };
 

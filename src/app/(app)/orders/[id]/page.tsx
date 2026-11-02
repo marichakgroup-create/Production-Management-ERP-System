@@ -15,13 +15,20 @@ import {
   validateFixedCostParams,
   type FixedCostValidationError,
 } from "@/lib/fixed-costs";
-import { draftLineFromItem } from "@/lib/order-item-commercial";
+import {
+  draftLineFromItem,
+  overlayDraftLineFromProposal,
+} from "@/lib/order-item-commercial";
 import { Breadcrumbs, QuickAction, QuickActions } from "@/components/ui/ObjectHeader";
 import { GeneratingDocumentLink } from "@/components/print/GeneratingDocumentLink";
 import { Banner } from "@/components/ui/Banner";
 import { OrderWorkspaceTabs } from "@/components/orders/OrderWorkspaceTabs";
 import { OrderUnsavedProvider } from "@/components/orders/OrderUnsavedContext";
 import { OrderCommentBlock } from "@/components/orders/OrderCommentBlock";
+import { OrderClientPartyFields } from "@/components/orders/OrderClientPartyFields";
+import { OrderDeadlinePaymentFields } from "@/components/orders/OrderDeadlinePaymentFields";
+import { OrderCompanyField } from "@/components/orders/OrderCompanyField";
+import { listCompanies } from "@/server/domains/settings/company";
 import {
   OrderChevronPipeline,
   OrderHeaderFacts,
@@ -38,6 +45,7 @@ import {
   IconSpec,
   IconVersions,
 } from "@/components/ui/Icons";
+import { oversizeSurchargeComment } from "@/lib/oversize-surcharge";
 import { formatDateUk, formatMoneyUah, formatUnit } from "@/lib/utils";
 import { materialOptionDescription, materialSupplierNames } from "@/lib/material-catalog-options";
 import { formatSizeRun, lineCostOnSizes, uniqueBomCount } from "@/lib/size-bom";
@@ -60,6 +68,7 @@ import { orderArtworkReady } from "@/lib/order-files";
 import {
   approvedProposal,
   buildOrderProposals,
+  displayProposalForOrder,
   latestCompleteProposal,
 } from "@/lib/order-proposals";
 import { listEntityActivity } from "@/server/domains/activity/service";
@@ -136,6 +145,7 @@ export default async function OrderDetailPage({
     screenPrintCatalog,
     decorationFormats,
     sizeChartVariants,
+    companies,
   ] = await Promise.all([
       listMaterials(),
       listUnits(),
@@ -148,6 +158,7 @@ export default async function OrderDetailPage({
       getScreenPrintCatalog(),
       getDecorationFormatsCatalog(),
       listSizeChartVariants(),
+      listCompanies(),
     ]);
 
   const sizeCharts = sizeChartVariants.map((variant) => ({
@@ -448,12 +459,17 @@ export default async function OrderDetailPage({
       ),
     ),
   ];
-  const draftLines = workingItems.map((row) => {
+  const displayProposal = displayProposalForOrder(proposalItems, order);
+  const liveDraftLines = workingItems.map((row) => {
     const lineCalc = buildCalcFromOrderItem(row, pricing, {
       ...calcOptionsFromProduct(row.product),
       fixedCosts,
     });
-    const draft = draftLineFromItem(row, lineCalc);
+    const live = draftLineFromItem(row, lineCalc);
+    const proposalLine = displayProposal?.lines.find((line) => line.orderItemId === row.id);
+    const draft = proposalLine
+      ? overlayDraftLineFromProposal(row, lineCalc, live, proposalLine.snapshotJson, proposalLine)
+      : live;
     return {
       orderItemId: row.id,
       nameUk: row.nameUk,
@@ -463,17 +479,21 @@ export default async function OrderDetailPage({
       sellingPricePerUnit: draft.sellingPricePerUnit,
       marginPercent: draft.marginPercent,
       totalSellingValue: draft.totalSellingValue,
+      liveSellingValue: live.totalSellingValue,
       fromPriceList: draft.fromPriceList,
       basePricePerUnit: draft.basePricePerUnit,
       decorationPerUnit: draft.decorationPerUnit,
       priceSource: draft.priceSource,
+      oversizeSurcharge: draft.oversizeSurcharge ?? null,
     };
   });
+  const draftLines = liveDraftLines;
   const hasCommercialPriceList = draftLines.some((line) => line.fromPriceList);
   const orderDraftTotal = draftLines.reduce((sum, line) => sum + line.totalSellingValue, 0);
+  const liveCatalogTotal = liveDraftLines.reduce((sum, line) => sum + line.liveSellingValue, 0);
   const draftDrift =
     latestProposal != null &&
-    Math.abs(latestProposal.totalSellingValue - orderDraftTotal) > 0.009;
+    Math.abs(latestProposal.totalSellingValue - liveCatalogTotal) > 0.009;
 
   const approvedVersion = versions.find((version) => version.isApproved);
   const allItemsApproved = Boolean(approvedProposalGroup) && order.status === "APPROVED";
@@ -541,12 +561,6 @@ export default async function OrderDetailPage({
       label: "Заповнено операції",
       done: operationRows.length > 0,
       hint: `${operationRows.length} позицій`,
-    },
-    {
-      key: "deadline",
-      label: "Встановлено дедлайн",
-      done: Boolean(order.deadline),
-      hint: order.deadline ? formatDateUk(order.deadline) : "Дата не вказана",
     },
   ];
 
@@ -655,11 +669,7 @@ export default async function OrderDetailPage({
   const headerPrimary = action.key !== "handover" || handoverReady;
   const withRail = canViewCosts && activeTab !== "configuration";
   const itemRows = workingItems.map((row) => {
-    const lineCalc = buildCalcFromOrderItem(row, pricing, {
-      ...calcOptionsFromProduct(row.product),
-      fixedCosts,
-    });
-    const draft = draftLineFromItem(row, lineCalc);
+    const draft = draftLines.find((line) => line.orderItemId === row.id);
     return {
       id: row.id,
       nameUk: row.nameUk,
@@ -686,8 +696,8 @@ export default async function OrderDetailPage({
           : row.versions[0]
             ? `v${row.versions[0].versionNumber}`
             : "немає",
-      unitPrice: row.totalQuantity > 0 ? draft.sellingPricePerUnit : null,
-      lineTotal: row.totalQuantity > 0 ? draft.totalSellingValue : null,
+      unitPrice: row.totalQuantity > 0 ? (draft?.sellingPricePerUnit ?? null) : null,
+      lineTotal: row.totalQuantity > 0 ? (draft?.totalSellingValue ?? null) : null,
       need: itemNeed(
         {
           id: row.id,
@@ -721,15 +731,17 @@ export default async function OrderDetailPage({
 
   const orderFacts = [
     { label: "Менеджер", value: order.manager.name },
-    { label: "Дедлайн", value: formatDateUk(order.deadline) },
     ...(canViewCosts
       ? [
           {
             label: "Сума",
-            value: formatMoneyUah(orderApprovedTotal),
-            hint: approvedProposalGroup
-              ? `пропозиція v${approvedProposalGroup.revision}`
-              : "чернетка",
+            value: formatMoneyUah(displayProposal?.totalSellingValue ?? orderApprovedTotal),
+            hint:
+              displayProposal?.revision != null
+                ? `пропозиція v${displayProposal.revision}`
+                : approvedProposalGroup
+                  ? `пропозиція v${approvedProposalGroup.revision}`
+                  : "чернетка",
           },
         ]
       : []),
@@ -749,31 +761,19 @@ export default async function OrderDetailPage({
       : []),
   ];
 
-  const orderContact =
-    order.clientContact ??
-    order.client.contacts.find((person) => person.isPrimary) ??
-    order.client.contacts[0] ??
-    null;
-  const contactName =
-    orderContact?.nameUk?.trim() || order.client.contactPerson?.trim() || "—";
-  const contactRole = orderContact?.roleUk?.trim() || null;
-  const clientFacts = [
-    {
-      label: "Контакт",
-      value: contactName,
-      hint: contactRole ?? undefined,
-    },
-    {
-      label: "Телефон",
-      value: orderContact?.phone?.trim() || order.client.phone?.trim() || "—",
-    },
-    {
-      label: "Email",
-      value: orderContact?.email?.trim() || order.client.email?.trim() || "—",
-    },
-  ];
-
   const activeDraft = item ? draftLines.find((line) => line.orderItemId === item.id) : null;
+  const clientCalc =
+    calc && activeDraft
+      ? {
+          ...calc,
+          sellingPricePerUnit: activeDraft.sellingPricePerUnit.toFixed(1),
+          totalSellingValue: activeDraft.totalSellingValue.toFixed(1),
+          marginPercent: activeDraft.marginPercent.toFixed(1),
+          profitAmount: (
+            activeDraft.totalSellingValue - Number(calc.totalCost)
+          ).toFixed(1),
+        }
+      : calc;
   const clientPricePerUnit = activeDraft?.sellingPricePerUnit ?? (calc ? Number(calc.sellingPricePerUnit) : 0);
   const clientTotal = activeDraft?.totalSellingValue ?? (calc ? Number(calc.totalSellingValue) : 0);
   const costPerUnit = activeDraft?.costPerUnit ?? (calc ? Number(calc.costPerUnit) : 0);
@@ -784,13 +784,17 @@ export default async function OrderDetailPage({
     activeDraft?.marginPercent ??
     (clientTotal > 0 ? (profitTotal / clientTotal) * 100 : 0);
   const priceSourceLabel =
-    activeDraft?.priceSource === "pricelist"
-      ? "з базового прайсу виробу"
-      : activeDraft?.priceSource === "sewing_markup"
-        ? "націнка на пошив за тиражем"
-        : "немає прайсу — як собівартість";
+    activeDraft?.priceSource === "proposal"
+      ? displayProposal?.revision != null
+        ? `з пропозиції v${displayProposal.revision}`
+        : "з пропозиції"
+      : activeDraft?.priceSource === "pricelist"
+        ? "з базового прайсу виробу"
+        : activeDraft?.priceSource === "sewing_markup"
+          ? "націнка на пошив за тиражем"
+          : "немає прайсу — як собівартість";
 
-  const moneyRail = canViewCosts && calc ? (
+  const moneyRail = canViewCosts && clientCalc ? (
     <aside className="space-y-3 xl:sticky xl:top-[72px] xl:h-fit">
       <div className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5">
         <p className="type-caption">Ціна для клієнта</p>
@@ -799,6 +803,12 @@ export default async function OrderDetailPage({
           <span className="ml-1 text-[12px] font-normal text-[var(--color-text-quiet)]">/ од.</span>
         </p>
         <p className="type-caption mt-0.5">{priceSourceLabel}</p>
+        {activeDraft?.oversizeSurcharge && activeDraft.oversizeSurcharge.total > 0.05 ? (
+          <p className="type-caption mt-1 font-medium text-[var(--color-warning-text)]">
+            {oversizeSurchargeComment(activeDraft.oversizeSurcharge.perUnit)} ·{" "}
+            {activeDraft.oversizeSurcharge.quantity} шт
+          </p>
+        ) : null}
         <dl className="mt-3 space-y-1.5 border-t border-[var(--color-divider)] pt-3 text-[13px]">
           <div className="flex justify-between gap-2">
             <dt className="text-[var(--color-text-secondary)]">Собівартість / од.</dt>
@@ -833,7 +843,7 @@ export default async function OrderDetailPage({
             </>
           ) : null}
         </dl>
-        {activeDraft?.priceSource === "cost" ? (
+        {activeDraft?.priceSource === "cost" && !displayProposal ? (
           <p className="type-caption mt-2 text-[var(--color-warning-text)]">
             Зафіксуйте прайс у картці виробу («Прайс і крій»), щоб ціна відрізнялась від собівартості.
           </p>
@@ -842,7 +852,7 @@ export default async function OrderDetailPage({
       <div className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5">
         <h2 className="type-subsection mb-3">Структура собівартості</h2>
         <CostStructure
-          calc={calc}
+          calc={clientCalc}
           fabricDeliveryAmount={fabricDeliveryAmount}
           fixedCostAmount={fixedCostAllocation?.fixedCostTotal ?? 0}
         />
@@ -894,7 +904,35 @@ export default async function OrderDetailPage({
                 ) : null}
               </>
             }
-            meta={<OrderHeaderFacts title="Замовлення" facts={orderFacts} columns={3} />}
+            meta={
+              <div className="space-y-3">
+                <OrderHeaderFacts title="Замовлення" facts={orderFacts} columns={3} />
+                <OrderCompanyField
+                  orderId={order.id}
+                  selectedId={order.companySettingsId}
+                  companies={companies.map((row) => ({
+                    id: row.id,
+                    legalName: row.legalName,
+                    isDefault: row.isDefault,
+                  }))}
+                  canEdit={
+                    accessHas(access, "manageOrders") &&
+                    order.status !== "CLOSED" &&
+                    order.status !== "CANCELLED"
+                  }
+                />
+                <OrderDeadlinePaymentFields
+                  orderId={order.id}
+                  deadline={order.deadline}
+                  paymentMethod={order.paymentMethod}
+                  canEdit={
+                    accessHas(access, "manageOrders") &&
+                    order.status !== "CLOSED" &&
+                    order.status !== "CANCELLED"
+                  }
+                />
+              </div>
+            }
             aside={
               <div className="space-y-2.5">
                 <div>
@@ -908,7 +946,26 @@ export default async function OrderDetailPage({
                     {order.client.companyName}
                   </Link>
                 </div>
-                <OrderHeaderFacts facts={clientFacts} columns={2} />
+                <OrderClientPartyFields
+                  orderId={order.id}
+                  canEdit={canEditQuantities}
+                  contacts={order.client.contacts.map((person) => ({
+                    id: person.id,
+                    nameUk: person.nameUk,
+                    roleUk: person.roleUk,
+                    phone: person.phone,
+                    email: person.email,
+                    isPrimary: person.isPrimary,
+                  }))}
+                  legalEntities={order.client.legalEntities.map((row) => ({
+                    id: row.id,
+                    nameUk: row.nameUk,
+                    details: row.details,
+                    isPrimary: row.isPrimary,
+                  }))}
+                  selectedContactId={order.clientContactId}
+                  selectedLegalId={order.clientLegalDetailId}
+                />
               </div>
             }
             actions={
@@ -1153,9 +1210,9 @@ export default async function OrderDetailPage({
         ) : (
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
             <div className="min-w-0">
-              {activeTab === "calculation" && calc ? (
+              {activeTab === "calculation" && clientCalc ? (
                 <CalculationTab
-                calc={calc}
+                calc={clientCalc}
                 totalQuantity={totalQuantity}
                 materials={materialRows}
                 operations={operationRows}
@@ -1228,6 +1285,8 @@ export default async function OrderDetailPage({
                 readiness={readiness}
                 autoSave={actionParam === "save"}
                 draftDrift={draftDrift}
+                deadline={order.deadline}
+                paymentMethod={order.paymentMethod}
               />
             ) : null}
 

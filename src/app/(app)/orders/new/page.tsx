@@ -1,4 +1,5 @@
 import { listClients } from "@/server/domains/clients/service";
+import { listCompanies } from "@/server/domains/settings/company";
 import { listProducts, listSizes, listSizeChartVariantsForProduct, toCompositionTemplate } from "@/server/domains/products/service";
 import { getFabricPricingGlobals, listMaterials, listUnits } from "@/server/domains/catalog/materials";
 import { listDecorations, listOperations } from "@/server/domains/catalog/operations";
@@ -18,6 +19,7 @@ export default async function NewOrderPage({
   const [
     access,
     clients,
+    companies,
     products,
     pricing,
     sizes,
@@ -30,6 +32,7 @@ export default async function NewOrderPage({
   ] = await Promise.all([
     getCurrentUserAccess(),
     listClients(),
+    listCompanies(),
     listProducts(),
     getPricingDefaults(),
     listSizes(),
@@ -50,6 +53,11 @@ export default async function NewOrderPage({
         initialProductId={params.productId}
         companyCostMode={fabricGlobals.materialCostVatMode}
         showCosts={showCosts}
+        companies={companies.map((row) => ({
+          id: row.id,
+          legalName: row.legalName,
+          isDefault: row.isDefault,
+        }))}
         clients={clients.map((client) => ({
           id: client.id,
           label: client.companyName,
@@ -63,6 +71,12 @@ export default async function NewOrderPage({
             phone: person.phone,
             email: person.email,
             isPrimary: person.isPrimary,
+          })),
+          legalEntities: client.legalEntities.map((row) => ({
+            id: row.id,
+            nameUk: row.nameUk,
+            details: row.details,
+            isPrimary: row.isPrimary,
           })),
         }))}
         sizeOptions={sizes.map((size) => ({

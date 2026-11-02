@@ -13,7 +13,7 @@ const globalForPrisma = globalThis as unknown as {
  * After `prisma generate`, a long-lived `next dev` may still need a full
  * process restart — Node keeps the old `@prisma/client` module in memory.
  */
-const PRISMA_CLIENT_VERSION = "20261029150000_decoration_comment_file_qty";
+const PRISMA_CLIENT_VERSION = "20261102120000_order_client_legal_detail";
 
 /** Delegates that must exist after party contacts / legal details / decorations. */
 const REQUIRED_DELEGATES = [

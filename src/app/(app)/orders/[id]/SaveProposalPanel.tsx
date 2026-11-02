@@ -11,6 +11,11 @@ import { useUnsavedCloseGuard } from "@/hooks/useUnsavedCloseGuard";
 import { useOrderUnsavedWorkspaceDirty } from "@/components/orders/OrderUnsavedContext";
 import { IconPlus } from "@/components/ui/Icons";
 import { saveProposalAction } from "@/server/domains/orders/actions";
+import { quoteClientLine } from "@/lib/order-item-commercial";
+import {
+  OVERSIZE_CLIENT_SURCHARGE_PERCENT,
+  oversizeSurchargeComment,
+} from "@/lib/oversize-surcharge";
 import { formatMoneyUah, roundMoneyUah } from "@/lib/utils";
 
 export type ProposalDraftLine = {
@@ -26,33 +31,78 @@ export type ProposalDraftLine = {
   fromPriceList?: boolean;
   basePricePerUnit?: number | null;
   decorationPerUnit?: number | null;
-  priceSource?: "pricelist" | "sewing_markup" | "cost";
+  priceSource?: "pricelist" | "sewing_markup" | "cost" | "proposal";
+  oversizeSurcharge?: {
+    perUnit: number;
+    total: number;
+    quantity: number;
+    percent?: number;
+  } | null;
 };
 
-type CatalogLine = ProposalDraftLine & { catalogSellingPricePerUnit: number };
+type PriceOverride = {
+  product?: number;
+  decoration?: number;
+};
 
-function lineFromCatalog(
-  catalog: CatalogLine,
-  sellingPricePerUnit: number,
-): ProposalDraftLine {
-  const unit = roundMoneyUah(sellingPricePerUnit);
-  const totalSellingValue = roundMoneyUah(unit * catalog.totalQuantity);
-  const totalCost = catalog.costPerUnit * catalog.totalQuantity;
-  const profit = totalSellingValue - totalCost;
-  const marginPercent = totalSellingValue > 0 ? (profit / totalSellingValue) * 100 : 0;
-  return {
-    ...catalog,
-    sellingPricePerUnit: unit,
-    totalSellingValue,
-    marginPercent,
-  };
-}
+type QuotedLine = ProposalDraftLine & {
+  catalogProductPricePerUnit: number;
+  catalogDecorationPerUnit: number;
+  quotedProductPricePerUnit: number;
+  quotedDecorationPerUnit: number;
+  oversizeExtraPerUnit: number;
+  oversizeQuantity: number;
+};
 
 function parseDiscount(raw: string): number {
   if (!raw.trim()) return 0;
   const value = Number(raw);
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(99, value));
+}
+
+function catalogDecorationPrice(line: ProposalDraftLine): number {
+  return roundMoneyUah(Math.max(0, line.decorationPerUnit ?? 0));
+}
+
+function catalogProductPrice(line: ProposalDraftLine): number {
+  if (line.basePricePerUnit != null && Number.isFinite(line.basePricePerUnit)) {
+    return roundMoneyUah(Math.max(0, line.basePricePerUnit));
+  }
+  const deco = catalogDecorationPrice(line);
+  const extraBlended =
+    line.totalQuantity > 0 ? (line.oversizeSurcharge?.total ?? 0) / line.totalQuantity : 0;
+  return roundMoneyUah(Math.max(0, line.sellingPricePerUnit - deco - extraBlended));
+}
+
+function quoteProposalLine(
+  catalog: ProposalDraftLine,
+  override: PriceOverride | undefined,
+  discountPercent: number,
+): QuotedLine {
+  const catalogProductPricePerUnit = override?.product ?? catalogProductPrice(catalog);
+  const catalogDecorationPerUnit = override?.decoration ?? catalogDecorationPrice(catalog);
+  const quoted = quoteClientLine({
+    quantity: catalog.totalQuantity,
+    productPricePerUnit: catalogProductPricePerUnit,
+    decorationPerUnit: catalogDecorationPerUnit,
+    discountPercent,
+    oversizeQuantity: catalog.oversizeSurcharge?.quantity ?? 0,
+    costPerUnit: catalog.costPerUnit,
+  });
+  return {
+    ...catalog,
+    catalogProductPricePerUnit,
+    catalogDecorationPerUnit,
+    quotedProductPricePerUnit: quoted.productPricePerUnit,
+    quotedDecorationPerUnit: quoted.decorationPerUnit,
+    oversizeExtraPerUnit: quoted.oversizeSurcharge.perUnit,
+    oversizeQuantity: quoted.oversizeQuantity,
+    sellingPricePerUnit: quoted.sellingPricePerUnit,
+    totalSellingValue: quoted.totalSellingValue,
+    marginPercent: quoted.marginPercent,
+    oversizeSurcharge: quoted.oversizeSurcharge,
+  };
 }
 
 export function SaveProposalPanel({
@@ -75,7 +125,9 @@ export function SaveProposalPanel({
   const [discountPercent, setDiscountPercent] = useState("");
   const [proposalLabel, setProposalLabel] = useState("");
   const [proposalComment, setProposalComment] = useState("");
-  const [manualOverrides, setManualOverrides] = useState<Map<string, number>>(() => new Map());
+  const [manualOverrides, setManualOverrides] = useState<Map<string, PriceOverride>>(
+    () => new Map(),
+  );
 
   const initialKey = useMemo(
     () =>
@@ -84,18 +136,17 @@ export function SaveProposalPanel({
           id: line.orderItemId,
           q: line.totalQuantity,
           p: line.sellingPricePerUnit,
+          b: line.basePricePerUnit,
+          d: line.decorationPerUnit,
+          o: line.oversizeSurcharge?.quantity ?? 0,
           c: line.costPerUnit,
         })),
       ),
     [initialLines],
   );
 
-  const catalogLines = useMemo<CatalogLine[]>(
-    () =>
-      initialLines.map((line) => ({
-        ...line,
-        catalogSellingPricePerUnit: line.sellingPricePerUnit,
-      })),
+  const catalogLines = useMemo(
+    () => initialLines,
     [initialKey, initialLines],
   );
 
@@ -131,19 +182,33 @@ export function SaveProposalPanel({
 
   const lines = useMemo(() => {
     const discount = parseDiscount(discountPercent);
-    return catalogLines.map((catalog) => {
-      const manual = manualOverrides.get(catalog.orderItemId);
-      if (manual != null) {
-        return lineFromCatalog(catalog, manual);
-      }
-      const discountedUnit =
-        catalog.catalogSellingPricePerUnit * (1 - discount / 100);
-      return lineFromCatalog(catalog, discountedUnit);
-    });
+    return catalogLines.map((catalog) =>
+      quoteProposalLine(catalog, manualOverrides.get(catalog.orderItemId), discount),
+    );
   }, [catalogLines, discountPercent, manualOverrides]);
 
   const totalValue = useMemo(
     () => lines.reduce((sum, line) => sum + line.totalSellingValue, 0),
+    [lines],
+  );
+  const totalProduct = useMemo(
+    () =>
+      lines.reduce(
+        (sum, line) => sum + roundMoneyUah(line.quotedProductPricePerUnit * line.totalQuantity),
+        0,
+      ),
+    [lines],
+  );
+  const totalDecoration = useMemo(
+    () =>
+      lines.reduce(
+        (sum, line) => sum + roundMoneyUah(line.quotedDecorationPerUnit * line.totalQuantity),
+        0,
+      ),
+    [lines],
+  );
+  const totalOversize = useMemo(
+    () => lines.reduce((sum, line) => sum + (line.oversizeSurcharge?.total ?? 0), 0),
     [lines],
   );
   const totalQty = useMemo(
@@ -151,12 +216,13 @@ export function SaveProposalPanel({
     [lines],
   );
 
-  function updatePrice(orderItemId: string, raw: string) {
+  function updatePrice(orderItemId: string, field: keyof PriceOverride, raw: string) {
     const price = Number(raw);
     if (!Number.isFinite(price) || price < 0) return;
     setManualOverrides((prev) => {
       const next = new Map(prev);
-      next.set(orderItemId, roundMoneyUah(price));
+      const current = next.get(orderItemId) ?? {};
+      next.set(orderItemId, { ...current, [field]: roundMoneyUah(price) });
       return next;
     });
   }
@@ -171,9 +237,8 @@ export function SaveProposalPanel({
       JSON.stringify(
         lines.map((line) => ({
           orderItemId: line.orderItemId,
-          manualSellingPricePerUnit: manualOverrides.has(line.orderItemId)
-            ? manualOverrides.get(line.orderItemId)
-            : null,
+          manualBasePricePerUnit: line.catalogProductPricePerUnit,
+          manualDecorationPerUnit: line.catalogDecorationPerUnit,
           discountPercent: discount,
         })),
       ),
@@ -222,7 +287,7 @@ export function SaveProposalPanel({
         open={open}
         onClose={requestClose}
         title="Зберегти пропозицію для клієнта"
-        description="Комерційна ціна з прайсу (+ брендування). Собівартість лишається для внутрішнього планування."
+        description="Виріб і нанесення окремо. Знижка — на обидві позиції; +20% за 3XL+ лише на виріб."
         width="2xl"
         footer={
           <>
@@ -255,65 +320,124 @@ export function SaveProposalPanel({
             />
           </FormGroup>
 
-          <div className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)]">
-            <table className="erp-table w-full border-collapse text-[13px]">
+          <div className="overflow-x-auto overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)]">
+            <table className="erp-table w-full min-w-[52rem] border-collapse text-[13px]">
               <thead>
                 <tr className="border-b border-[var(--color-table-section-border)]">
                   <th className="px-3 py-2 text-left">Виріб</th>
                   <th className="px-3 py-2 text-right">К-сть</th>
                   <th className="px-3 py-2 text-right">Собівартість/од.</th>
-                  <th className="px-3 py-2 text-right">Ціна для клієнта/од.</th>
-                  <th className="px-3 py-2 text-right">Сума рядка</th>
+                  <th className="px-3 py-2 text-right">Виріб ₴/од.</th>
+                  <th className="px-3 py-2 text-right">Нанесення ₴/од.</th>
+                  <th className="px-3 py-2 text-right">
+                    +{OVERSIZE_CLIENT_SURCHARGE_PERCENT}% 3XL+
+                  </th>
+                  <th className="px-3 py-2 text-right">Сума</th>
                   <th className="px-3 py-2 text-right">Маржа</th>
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => (
-                  <tr key={line.orderItemId} className="border-b border-[var(--color-divider)]">
-                    <td className="px-3 py-2 font-medium">
-                      <p>
-                        {line.nameUk}
-                        {line.fromPriceList ? (
-                          <span className="type-caption ml-1 text-[var(--color-primary-700)]">прайс</span>
-                        ) : null}
-                        {manualOverrides.has(line.orderItemId) ? (
-                          <span className="type-caption ml-1 text-[var(--color-text-secondary)]">ручна</span>
-                        ) : null}
-                      </p>
-                      {line.sizeRun ? (
-                        <p className="type-caption mt-0.5 tabular font-normal text-[var(--color-text-secondary)]">
-                          {line.sizeRun}
+                {lines.map((line) => {
+                  const discount = parseDiscount(discountPercent);
+                  const overridden = manualOverrides.has(line.orderItemId);
+                  return (
+                    <tr key={line.orderItemId} className="border-b border-[var(--color-divider)] align-top">
+                      <td className="px-3 py-2 font-medium">
+                        <p>
+                          {line.nameUk}
+                          {line.fromPriceList ? (
+                            <span className="type-caption ml-1 text-[var(--color-primary-700)]">прайс</span>
+                          ) : null}
+                          {overridden ? (
+                            <span className="type-caption ml-1 text-[var(--color-text-secondary)]">ручна</span>
+                          ) : null}
                         </p>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular">{line.totalQuantity} шт</td>
-                    <td className="px-3 py-2 text-right tabular text-[var(--color-text-secondary)]">
-                      {formatMoneyUah(line.costPerUnit)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={line.sellingPricePerUnit.toFixed(1)}
-                        onChange={(event) => updatePrice(line.orderItemId, event.target.value)}
-                        className="h-8 w-[7rem] rounded-[6px] border border-[var(--color-border)] px-2 text-right tabular outline-none focus:border-[var(--color-primary-500)]"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular">
-                      {formatMoneyUah(line.totalSellingValue)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular">
-                      {line.marginPercent.toFixed(1)}%
-                    </td>
-                  </tr>
-                ))}
+                        {line.sizeRun ? (
+                          <p className="type-caption mt-0.5 tabular font-normal text-[var(--color-text-secondary)]">
+                            {line.sizeRun}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular">{line.totalQuantity} шт</td>
+                      <td className="px-3 py-2 text-right tabular text-[var(--color-text-secondary)]">
+                        {formatMoneyUah(line.costPerUnit)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={line.catalogProductPricePerUnit.toFixed(1)}
+                          onChange={(event) =>
+                            updatePrice(line.orderItemId, "product", event.target.value)
+                          }
+                          className="h-8 w-[6.5rem] rounded-[6px] border border-[var(--color-border)] px-2 text-right tabular outline-none focus:border-[var(--color-primary-500)]"
+                          aria-label="Ціна виробу за одиницю"
+                        />
+                        {discount > 0 ? (
+                          <p className="type-caption mt-0.5 tabular text-[var(--color-text-secondary)]">
+                            після знижки {formatMoneyUah(line.quotedProductPricePerUnit)}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={line.catalogDecorationPerUnit.toFixed(1)}
+                          onChange={(event) =>
+                            updatePrice(line.orderItemId, "decoration", event.target.value)
+                          }
+                          className="h-8 w-[6.5rem] rounded-[6px] border border-[var(--color-border)] px-2 text-right tabular outline-none focus:border-[var(--color-primary-500)]"
+                          aria-label="Ціна нанесення за одиницю"
+                        />
+                        {discount > 0 ? (
+                          <p className="type-caption mt-0.5 tabular text-[var(--color-text-secondary)]">
+                            після знижки {formatMoneyUah(line.quotedDecorationPerUnit)}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular">
+                        {line.oversizeQuantity > 0 ? (
+                          <>
+                            <p className="font-medium">
+                              {formatMoneyUah(line.oversizeSurcharge?.total ?? 0)}
+                            </p>
+                            <p className="type-caption mt-0.5 text-[var(--color-warning-text)]">
+                              {oversizeSurchargeComment(line.oversizeExtraPerUnit) ??
+                                `+${OVERSIZE_CLIENT_SURCHARGE_PERCENT}%`}{" "}
+                              · {line.oversizeQuantity} шт
+                            </p>
+                          </>
+                        ) : (
+                          <span className="text-[var(--color-text-secondary)]">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium tabular">
+                        {formatMoneyUah(line.totalSellingValue)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular">
+                        {line.marginPercent.toFixed(1)}%
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={4} className="px-3 py-2.5 text-right font-semibold">
-                    Разом до сплати
+                  <td colSpan={5} className="px-3 py-2.5 text-right type-caption">
+                    Разом виріб {formatMoneyUah(totalProduct)}
+                    <span className="mx-2 text-[var(--color-divider)]">·</span>
+                    Разом нанесення {formatMoneyUah(totalDecoration)}
+                    {totalOversize > 0.05 ? (
+                      <>
+                        <span className="mx-2 text-[var(--color-divider)]">·</span>
+                        Надбавка 3XL+ {formatMoneyUah(totalOversize)}
+                      </>
+                    ) : null}
                   </td>
+                  <td className="px-3 py-2.5 text-right font-semibold">Разом до сплати</td>
                   <td className="px-3 py-2.5 text-right text-[15px] font-semibold tabular">
                     {formatMoneyUah(totalValue)}
                   </td>
