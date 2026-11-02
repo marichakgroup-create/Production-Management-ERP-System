@@ -132,7 +132,12 @@ const optionalTrimmedId = z.preprocess(
 );
 
 const optionalDeliveryType = z.preprocess(
-  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  (value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (trimmed === "" || trimmed === "FIXED") return null;
+    return trimmed;
+  },
   z.enum(["CARGO", "NP_STANDARD", "NP_VOLUME"]).optional().nullable(),
 );
 
@@ -710,7 +715,9 @@ export async function updateOrderMaterialTermsAction(formData: FormData) {
   const hasDeliveryTypeField = formData.has("deliveryType");
   const deliveryTypeRaw = String(formData.get("deliveryType") ?? "").trim();
   const deliveryType = hasDeliveryTypeField
-    ? deliveryTypeRaw || null
+    ? deliveryTypeRaw && deliveryTypeRaw !== "FIXED"
+      ? deliveryTypeRaw
+      : null
     : undefined;
   const rateRaw = String(formData.get("usdUahRate") ?? "").trim();
   const usdUahRate = rateRaw === "" ? null : Number(rateRaw);

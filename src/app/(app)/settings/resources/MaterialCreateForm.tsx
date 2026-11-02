@@ -1003,6 +1003,52 @@ function MaterialFields({
       ) : null}
       </div>
 
+      {type !== "FABRIC" ? (
+        <div className={showStep("Основне") || !wizard ? "space-y-4" : "hidden"}>
+          <FormGroup
+            label={wizard ? undefined : "Склад і щільність"}
+            icon={wizard ? undefined : <IconSpec size={14} />}
+            columns={2}
+            compact
+          >
+            <div className="space-y-2">
+              <Select
+                label="Склад"
+                optional
+                value={compositionSelect}
+                onChange={(event) => setCompositionSelect(event.target.value)}
+              >
+                <option value="">Оберіть…</option>
+                {knownCompositions.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+                <option value={COMPOSITION_OTHER}>Додати новий…</option>
+              </Select>
+              <input type="hidden" name="composition" value={compositionValue} />
+              {compositionSelect === COMPOSITION_OTHER ? (
+                <Input
+                  label="Новий склад"
+                  value={compositionOther}
+                  onChange={(event) => setCompositionOther(event.target.value)}
+                  placeholder="80% бавовна 20% еластан"
+                />
+              ) : null}
+            </div>
+            <Input
+              name="densityGsm"
+              label="Щільність"
+              placeholder="170"
+              suffix="г/м²"
+              optional
+              value={densityGsm}
+              onChange={(event) => setDensityGsm(event.target.value)}
+            />
+          </FormGroup>
+        </div>
+      ) : null}
+
       {type === "FABRIC" ? (
         <>
           <div

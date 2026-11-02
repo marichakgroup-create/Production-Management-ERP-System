@@ -42,6 +42,7 @@ import {
   isFixedCostOperationName,
 } from "@/lib/fixed-costs";
 import { SHARED_PRODUCT_TIRAGE_QTYS, isSewOperationName } from "@/lib/sewing-markup";
+import { offerDeliverySelectOptions } from "@/lib/supplier-delivery-rates";
 
 /** Fixed ops use catalog preview qty; cut is shown separately from tier block. */
 const TIER_PREVIEW_QTY = 100;
@@ -567,33 +568,13 @@ export default async function ProductDetailPage({
                     isPrimary: offer.isPrimary,
                     availableColors: offer.availableColors ?? [],
                     preferredDeliveryType: offer.deliveryType,
-                    deliveryOptions: [
-                      offer.cargoUsdPerKg != null
-                        ? {
-                            type: "CARGO" as const,
-                            label: "CARGO",
-                            rateLabel: `${Number(offer.cargoUsdPerKg)} $/кг`,
-                          }
-                        : null,
-                      offer.npStandardUsdPerKg != null
-                        ? {
-                            type: "NP_STANDARD" as const,
-                            label: "НП стандарт",
-                            rateLabel: `${Number(offer.npStandardUsdPerKg)} $/кг`,
-                          }
-                        : null,
-                      offer.npVolumeUsdPerKg != null
-                        ? {
-                            type: "NP_VOLUME" as const,
-                            label: "НП обʼємні",
-                            rateLabel: `${Number(offer.npVolumeUsdPerKg)} $/кг`,
-                          }
-                        : null,
-                    ].filter(Boolean) as Array<{
-                      type: "CARGO" | "NP_STANDARD" | "NP_VOLUME";
-                      label: string;
-                      rateLabel: string;
-                    }>,
+                    deliveryOptions: offerDeliverySelectOptions({
+                      cargoUsdPerKg: offer.cargoUsdPerKg,
+                      npStandardUsdPerKg: offer.npStandardUsdPerKg,
+                      npVolumeUsdPerKg: offer.npVolumeUsdPerKg,
+                      packDeliveryCostUah:
+                        offer.packDeliveryCostUah ?? row.material.packDeliveryCostUah,
+                    }),
                   };
                 }),
               })),

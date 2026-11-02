@@ -511,6 +511,7 @@ export function OrderMaterialDetailPanel({
               <Section title="Закупівля">
                 <SupplierColorFields
                   supplierId={supplierId || null}
+                  deliveryType={deliveryType || null}
                   color={colorSnapshot}
                   offers={(detail.offers ?? []).map((offer) => ({
                     supplierId: offer.supplierId,
@@ -518,12 +519,28 @@ export function OrderMaterialDetailPanel({
                     isPrimary: offer.isPrimary,
                     availableColors:
                       ("availableColors" in offer ? offer.availableColors : []) ?? [],
+                    preferredDeliveryType:
+                      "deliveryType" in offer ? offer.deliveryType : null,
+                    deliveryOptions:
+                      "deliveryOptions" in offer
+                        ? (offer.deliveryOptions ?? []).map((opt) => ({
+                            type: opt.type,
+                            label: opt.label,
+                            rateLabel:
+                              "rateLabel" in opt && opt.rateLabel
+                                ? String(opt.rateLabel)
+                                : opt.rateUsdPerKg
+                                  ? `${opt.rateUsdPerKg} $/кг`
+                                  : undefined,
+                          }))
+                        : undefined,
                   }))}
                   materialFallbackColors={detail.materialAvailableColors ?? []}
                   disabled={locked || pending}
                   onSupplierDeliveryChange={(next) => {
                     handleSupplierChange(next.supplierId ?? "");
                     if (next.deliveryType) setDeliveryType(next.deliveryType);
+                    else setDeliveryType("");
                   }}
                   onColorChange={setColorSnapshot}
                 />
@@ -862,6 +879,7 @@ export function OrderMaterialDetailPanel({
             <Section title="Постачальник і колір">
               <SupplierColorFields
                 supplierId={supplierId || null}
+                deliveryType={deliveryType || null}
                 color={colorSnapshot}
                 offers={(detail.offers ?? []).map((offer) => ({
                   supplierId: offer.supplierId,
@@ -869,56 +887,31 @@ export function OrderMaterialDetailPanel({
                   isPrimary: offer.isPrimary,
                   availableColors:
                     ("availableColors" in offer ? offer.availableColors : []) ?? [],
+                  preferredDeliveryType:
+                    "deliveryType" in offer ? offer.deliveryType : null,
+                  deliveryOptions:
+                    "deliveryOptions" in offer
+                      ? (offer.deliveryOptions ?? []).map((opt) => ({
+                          type: opt.type,
+                          label: opt.label,
+                          rateLabel:
+                            "rateLabel" in opt && opt.rateLabel
+                              ? String(opt.rateLabel)
+                              : opt.rateUsdPerKg
+                                ? `${opt.rateUsdPerKg} $/кг`
+                                : undefined,
+                        }))
+                      : undefined,
                 }))}
                 materialFallbackColors={detail.materialAvailableColors ?? []}
                 disabled={locked || pending}
                 onSupplierDeliveryChange={(next) => {
                   handleSupplierChange(next.supplierId ?? "");
                   if (next.deliveryType) setDeliveryType(next.deliveryType);
+                  else setDeliveryType("");
                 }}
                 onColorChange={setColorSnapshot}
               />
-              {(() => {
-                const offer = (detail.offers ?? []).find(
-                  (row) => row.supplierId === supplierId,
-                ) as
-                  | {
-                      deliveryOptions?: Array<{
-                        type: string;
-                        rateUsdPerKg?: number;
-                        rateUah?: number;
-                        label: string;
-                      }>;
-                      purchasePricePerUnit?: number | null;
-                    }
-                  | undefined;
-                const options = offer?.deliveryOptions ?? [];
-                if (options.length === 0) return null;
-                const active =
-                  options.find((opt) => opt.type === deliveryType) ?? options[0]!;
-                const rateUsd =
-                  active.rateUsdPerKg ?? active.rateUah ?? 0;
-                return (
-                  <div className="mt-3 space-y-2">
-                    <Select
-                      label="Тип доставки"
-                      value={deliveryType || active.type}
-                      onChange={(event) => setDeliveryType(event.target.value)}
-                      disabled={locked || pending}
-                    >
-                      {options.map((opt) => (
-                        <option key={opt.type} value={opt.type}>
-                          {opt.label} · {opt.rateUsdPerKg ?? opt.rateUah} $/кг
-                        </option>
-                      ))}
-                    </Select>
-                    <p className="type-caption">
-                      Тариф {rateUsd} $/кг · собівартість ₴/од. з ціни упаковки (без
-                      доставки в тарифі).
-                    </p>
-                  </div>
-                );
-              })()}
               <dl className="mt-3 grid gap-2 text-[13px] sm:grid-cols-2">
                 <div>
                   <dt className="text-[var(--color-text-tertiary)]">Ціна закупівлі / од.</dt>

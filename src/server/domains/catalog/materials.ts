@@ -120,8 +120,8 @@ function fabricDataFromForm(
           : null;
 
     return {
-      densityGsm: null,
-      composition: null,
+      densityGsm: data.densityGsm || null,
+      composition: data.composition || null,
       metersPerKg: null,
       priceKgUsd,
       priceKgUsdCargo: null,
@@ -673,10 +673,10 @@ export async function listSupplierNames() {
     .filter((value): value is string => Boolean(value));
 }
 
-/** Distinct fabric compositions from active materials (for form select). */
+/** Distinct compositions from active materials (fabrics and trim). */
 export async function listCompositionNames() {
   const rows = await prisma.material.findMany({
-    where: { status: "ACTIVE", type: "FABRIC", composition: { not: null } },
+    where: { status: "ACTIVE", composition: { not: null } },
     select: { composition: true },
     distinct: ["composition"],
     orderBy: { composition: "asc" },

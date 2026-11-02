@@ -12,7 +12,7 @@
  */
 
 import {
-  configuredSupplierDeliveryOptions,
+  offerDeliverySelectOptions,
   type SupplierDeliveryRates,
 } from "@/lib/supplier-delivery-rates";
 
@@ -142,13 +142,21 @@ export function deriveTrimUnitPriceFromSupplier(args: {
   return base;
 }
 
-/** Configured $/кг delivery options on a trim/unit supplier offer. */
-export function trimConfiguredDeliveryOptions(rates: SupplierDeliveryRates) {
-  return configuredSupplierDeliveryOptions(rates).map((opt) => ({
+/** Configured $/кг and pack-fixed delivery options on a trim/unit supplier offer. */
+export function trimConfiguredDeliveryOptions(
+  rates: SupplierDeliveryRates & { packDeliveryCostUah?: number | null },
+) {
+  return offerDeliverySelectOptions({
+    cargoUsdPerKg: rates.cargoUsdPerKg,
+    npStandardUsdPerKg: rates.npStandardUsdPerKg,
+    npVolumeUsdPerKg: rates.npVolumeUsdPerKg,
+    packDeliveryCostUah: rates.packDeliveryCostUah,
+  }).map((opt) => ({
     type: opt.type,
-    rateUsdPerKg: opt.rateUsdPerKg,
+    rateUsdPerKg: opt.rateUsdPerKg ?? 0,
     /** @deprecated use rateUsdPerKg — kept for older call sites. */
-    rateUah: opt.rateUsdPerKg,
+    rateUah: opt.rateUsdPerKg ?? 0,
+    rateLabel: opt.rateLabel,
     label: opt.label,
   }));
 }

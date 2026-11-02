@@ -11,15 +11,18 @@ import {
 } from "@/lib/supplier-colors";
 import { swatchForColorLabel } from "@/lib/trim-colors";
 import {
-  fabricDeliveryTypeLabel,
-  normalizeFabricDeliveryType,
+  isFabricDeliveryType,
   type FabricDeliveryTypeCode,
 } from "@/lib/fabric-delivery-types";
+import {
+  PACK_FIXED_DELIVERY_TYPE,
+  isPackFixedDeliveryType,
+} from "@/lib/supplier-delivery-rates";
 import { cn } from "@/lib/utils";
 import { SoftBusy } from "@/components/ui/SoftBusy";
 
 export type SupplierDeliveryOption = {
-  type: FabricDeliveryTypeCode;
+  type: string;
   label: string;
   rateLabel?: string;
 };
@@ -40,16 +43,24 @@ function encodeSupplierDelivery(
   return `${supplierId}::${deliveryType || ""}`;
 }
 
+function parseStoredDeliveryType(typeRaw: string | null | undefined): string | null {
+  if (!typeRaw) return null;
+  if (isPackFixedDeliveryType(typeRaw)) return PACK_FIXED_DELIVERY_TYPE;
+  return isFabricDeliveryType(typeRaw) ? typeRaw : null;
+}
+
 function decodeSupplierDelivery(value: string): {
   supplierId: string | null;
-  deliveryType: FabricDeliveryTypeCode | null;
+  deliveryType: string | null;
 } {
   if (!value) return { supplierId: null, deliveryType: null };
-  const [supplierId, typeRaw] = value.split("::");
+  const sep = value.indexOf("::");
+  if (sep < 0) return { supplierId: value || null, deliveryType: null };
+  const supplierId = value.slice(0, sep);
   if (!supplierId) return { supplierId: null, deliveryType: null };
   return {
     supplierId,
-    deliveryType: typeRaw ? normalizeFabricDeliveryType(typeRaw) : null,
+    deliveryType: parseStoredDeliveryType(value.slice(sep + 2)),
   };
 }
 
@@ -58,22 +69,39 @@ function flattenSupplierDeliveryOptions(offers: SupplierColorOfferOption[]) {
     const options =
       offer.deliveryOptions && offer.deliveryOptions.length > 0
         ? offer.deliveryOptions
-        : [
-            {
-              type: normalizeFabricDeliveryType(offer.preferredDeliveryType ?? "CARGO"),
-              label: fabricDeliveryTypeLabel(
-                normalizeFabricDeliveryType(offer.preferredDeliveryType ?? "CARGO"),
-              ),
-            },
-          ];
-    return options.map((opt) => ({
-      value: encodeSupplierDelivery(offer.supplierId, opt.type),
-      supplierId: offer.supplierId,
-      deliveryType: opt.type,
-      label: `${offer.supplierName} · ${opt.label}${offer.isPrimary ? " · осн." : ""}`,
-      rateLabel: opt.rateLabel,
-    }));
+        : [{ type: "", label: "" }];
+    return options.map((opt) => {
+      const method = opt.label ? ` · ${opt.label}` : "";
+      return {
+        value: encodeSupplierDelivery(offer.supplierId, opt.type || null),
+        supplierId: offer.supplierId,
+        deliveryType: opt.type || null,
+        label: `${offer.supplierName}${method}${offer.isPrimary ? " · осн." : ""}`,
+        rateLabel: opt.rateLabel,
+      };
+    });
   });
+}
+
+function resolveSupplierDeliverySelectValue(
+  supplierId: string | null | undefined,
+  storedType: string | null | undefined,
+  rows: Array<{ value: string; supplierId: string; deliveryType: string | null }>,
+) {
+  if (!supplierId) return "";
+  const exact = encodeSupplierDelivery(supplierId, storedType);
+  if (rows.some((row) => row.value === exact)) return exact;
+  const forSupplier = rows.filter((row) => row.supplierId === supplierId);
+  const cargo = forSupplier.find((row) => row.deliveryType === "CARGO");
+  const fixed = forSupplier.find((row) => row.deliveryType === PACK_FIXED_DELIVERY_TYPE);
+  const stored = storedType || "";
+  if (!stored || stored === "CARGO" || isPackFixedDeliveryType(stored)) {
+    if (stored === "CARGO" && cargo) return cargo.value;
+    if (fixed && !cargo) return fixed.value;
+    if (cargo) return cargo.value;
+    if (fixed) return fixed.value;
+  }
+  return forSupplier[0]?.value ?? "";
 }
 
 /**
@@ -98,7 +126,7 @@ export function SupplierColorFields({
   disabled?: boolean;
   onSupplierDeliveryChange: (next: {
     supplierId: string | null;
-    deliveryType: FabricDeliveryTypeCode | null;
+    deliveryType: FabricDeliveryTypeCode | string | null;
   }) => void;
   onColorChange: (color: string | null) => void;
   compact?: boolean;
@@ -119,9 +147,11 @@ export function SupplierColorFields({
   );
 
   const flatOptions = useMemo(() => flattenSupplierDeliveryOptions(offers), [offers]);
-  const selectValue = supplierId
-    ? encodeSupplierDelivery(supplierId, deliveryType)
-    : "";
+  const selectValue = resolveSupplierDeliverySelectValue(
+    supplierId,
+    deliveryType,
+    flatOptions,
+  );
 
   if (offers.length === 0 && palette.length === 0) {
     return null;
@@ -135,17 +165,7 @@ export function SupplierColorFields({
         selectClassName={
           compact ? "!h-7 !min-h-7 !rounded-[6px] !px-1.5 !text-[12px]" : undefined
         }
-        value={
-          flatOptions.some((row) => row.value === selectValue)
-            ? selectValue
-            : supplierId
-              ? encodeSupplierDelivery(
-                  supplierId,
-                  offers.find((o) => o.supplierId === supplierId)?.preferredDeliveryType ??
-                    null,
-                )
-              : ""
-        }
+        value={selectValue}
         disabled={disabled}
         placeholder="Постачальник · доставка…"
         onChange={(event) =>
@@ -418,14 +438,16 @@ function SupplierColorReadOnly({
   offers: SupplierColorOfferOption[];
 }) {
   const offer = offers.find((row) => row.supplierId === supplierId);
-  const deliveryLabel = deliveryType
-    ? fabricDeliveryTypeLabel(normalizeFabricDeliveryType(deliveryType))
-    : null;
-  const parts = [
-    offer?.supplierName,
-    deliveryLabel,
-    color,
-  ].filter(Boolean);
+  const rows = flattenSupplierDeliveryOptions(offers);
+  const selected = rows.find(
+    (row) =>
+      row.value ===
+      resolveSupplierDeliverySelectValue(supplierId, deliveryType, rows),
+  );
+  const methodLabel = selected
+    ? [selected.label, selected.rateLabel].filter(Boolean).join(" · ")
+    : offer?.supplierName;
+  const parts = [methodLabel, color].filter(Boolean);
   if (parts.length === 0) return null;
   const swatch = color?.trim() ? swatchForColorLabel(color) : null;
   return (

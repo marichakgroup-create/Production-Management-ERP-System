@@ -1707,6 +1707,12 @@ export async function getOrderItemMaterialDetail(orderItemMaterialId: string) {
             offer.npStandardUsdPerKg != null ? Number(offer.npStandardUsdPerKg) : null,
           npVolumeUsdPerKg:
             offer.npVolumeUsdPerKg != null ? Number(offer.npVolumeUsdPerKg) : null,
+          packDeliveryCostUah:
+            offer.packDeliveryCostUah != null
+              ? Number(offer.packDeliveryCostUah)
+              : row.material?.packDeliveryCostUah != null
+                ? Number(row.material.packDeliveryCostUah)
+                : null,
         };
         const deliveryOptions = trimConfiguredDeliveryOptions(rates);
         return {
@@ -1974,9 +1980,7 @@ export async function updateOrderItemMaterialTerms(input: {
 
   const deliveryType =
     input.deliveryType !== undefined
-      ? input.deliveryType
-        ? normalizeFabricDeliveryType(input.deliveryType)
-        : null
+      ? deliveryTypeOrNull(input.deliveryType)
       : row.deliveryType;
 
   const usdUahRate =

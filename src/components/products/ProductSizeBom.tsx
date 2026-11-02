@@ -133,7 +133,7 @@ type MaterialView = {
     availableColors: string[];
     preferredDeliveryType?: string | null;
     deliveryOptions?: Array<{
-      type: "CARGO" | "NP_STANDARD" | "NP_VOLUME";
+      type: string;
       label: string;
       rateLabel?: string;
     }>;

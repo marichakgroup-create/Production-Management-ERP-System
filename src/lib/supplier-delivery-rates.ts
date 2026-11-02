@@ -10,6 +10,68 @@ import {
   type FabricDeliveryRateGlobals,
   type FabricDeliveryTypeCode,
 } from "@/lib/fabric-delivery-types";
+import { formatMoneyUah } from "@/lib/utils";
+
+/** Trim/pack fixed delivery (₴ or converted $ stored as ₴ on the offer). Not a kg tariff. */
+export const PACK_FIXED_DELIVERY_TYPE = "FIXED";
+
+export function isPackFixedDeliveryType(value: unknown): boolean {
+  return value === PACK_FIXED_DELIVERY_TYPE;
+}
+
+export function packDeliveryCostUahValue(
+  ...candidates: Array<number | string | { toString(): string } | null | undefined>
+): number | null {
+  for (const raw of candidates) {
+    if (raw == null || raw === "") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return null;
+}
+
+export type SupplierDeliverySelectOption = {
+  type: string;
+  label: string;
+  rateLabel?: string;
+  rateUsdPerKg?: number;
+};
+
+type Numericish = number | string | { toString(): string } | null | undefined;
+
+function numericOrNull(value: Numericish): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Kg CARGO/NP options plus pack-fixed ₴ when the supplier quote has it. */
+export function offerDeliverySelectOptions(input: {
+  cargoUsdPerKg?: Numericish;
+  npStandardUsdPerKg?: Numericish;
+  npVolumeUsdPerKg?: Numericish;
+  packDeliveryCostUah?: Numericish;
+}): SupplierDeliverySelectOption[] {
+  const kg: SupplierDeliverySelectOption[] = configuredSupplierDeliveryOptions({
+    cargoUsdPerKg: numericOrNull(input.cargoUsdPerKg),
+    npStandardUsdPerKg: numericOrNull(input.npStandardUsdPerKg),
+    npVolumeUsdPerKg: numericOrNull(input.npVolumeUsdPerKg),
+  }).map((opt) => ({
+    type: opt.type,
+    label: opt.label,
+    rateLabel: `${opt.rateUsdPerKg} $/кг`,
+    rateUsdPerKg: opt.rateUsdPerKg,
+  }));
+  const pack = packDeliveryCostUahValue(input.packDeliveryCostUah);
+  if (pack != null) {
+    kg.push({
+      type: PACK_FIXED_DELIVERY_TYPE,
+      label: "фікс",
+      rateLabel: formatMoneyUah(pack),
+    });
+  }
+  return kg;
+}
 
 export type SupplierDeliveryRates = {
   deliveryType?: FabricDeliveryTypeCode | string | null;

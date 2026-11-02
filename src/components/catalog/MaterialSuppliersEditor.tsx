@@ -652,9 +652,12 @@ export function MaterialSuppliersEditor({
                       cargoUsdPerKg: row.cargoUsdPerKg,
                       npStandardUsdPerKg: row.npStandardUsdPerKg,
                       npVolumeUsdPerKg: row.npVolumeUsdPerKg,
+                      packDeliveryCostUah: row.packDeliveryCostUah,
                     }).map((opt) => (
                       <span key={opt.type} className="type-caption ml-2 tabular">
-                        {opt.label} · {opt.rateUsdPerKg} $/кг
+                        {opt.rateLabel
+                          ? `${opt.label} · ${opt.rateLabel}`
+                          : `${opt.label} · ${opt.rateUsdPerKg} $/кг`}
                       </span>
                     ))}
                 {(row.availableColors?.length ?? 0) > 0 ? (

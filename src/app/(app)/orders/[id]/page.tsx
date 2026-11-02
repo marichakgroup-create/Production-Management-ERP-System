@@ -44,6 +44,7 @@ import { formatSizeRun, lineCostOnSizes, uniqueBomCount } from "@/lib/size-bom";
 import { fabricMetersNeeded } from "@/lib/fabric-pricing";
 import { materialCoeffsBySize } from "@/lib/size-coeffs";
 import { deliveryRateUsdPerKg } from "@/lib/fabric-delivery-types";
+import { offerDeliverySelectOptions } from "@/lib/supplier-delivery-rates";
 import {
   accessHas,
   canEditOrderComposition,
@@ -289,33 +290,13 @@ export default async function OrderDetailPage({
             isPrimary: offer.isPrimary,
             availableColors: offer.availableColors ?? [],
             preferredDeliveryType: offer.deliveryType,
-            deliveryOptions: [
-              offer.cargoUsdPerKg != null
-                ? {
-                    type: "CARGO" as const,
-                    label: "CARGO",
-                    rateLabel: `${Number(offer.cargoUsdPerKg)} $/кг`,
-                  }
-                : null,
-              offer.npStandardUsdPerKg != null
-                ? {
-                    type: "NP_STANDARD" as const,
-                    label: "НП стандарт",
-                    rateLabel: `${Number(offer.npStandardUsdPerKg)} $/кг`,
-                  }
-                : null,
-              offer.npVolumeUsdPerKg != null
-                ? {
-                    type: "NP_VOLUME" as const,
-                    label: "НП обʼємні",
-                    rateLabel: `${Number(offer.npVolumeUsdPerKg)} $/кг`,
-                  }
-                : null,
-            ].filter(Boolean) as Array<{
-              type: "CARGO" | "NP_STANDARD" | "NP_VOLUME";
-              label: string;
-              rateLabel: string;
-            }>,
+            deliveryOptions: offerDeliverySelectOptions({
+              cargoUsdPerKg: offer.cargoUsdPerKg,
+              npStandardUsdPerKg: offer.npStandardUsdPerKg,
+              npVolumeUsdPerKg: offer.npVolumeUsdPerKg,
+              packDeliveryCostUah:
+                offer.packDeliveryCostUah ?? row.material?.packDeliveryCostUah,
+            }),
           };
         }) ?? [],
       materialAvailableColors: row.material?.availableColors ?? [],
