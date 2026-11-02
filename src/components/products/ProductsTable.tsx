@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/Button";
 import { IconPin } from "@/components/ui/Icons";
 import { cn, formatAmount, formatDateShortUk } from "@/lib/utils";
 import { bulkArchiveProductsAction } from "@/server/domains/products/actions";
+import { ProductThumb } from "@/components/orders/ProductCatalogPanel";
 
 export type ProductsTableRow = {
   id: string;
@@ -345,15 +346,20 @@ export function ProductsTable({
                       />
                     </TD>
                     <TD stickyLeft={NAME_COL_LEFT} className="is-pinned-left-edge">
-                      <div className="flex min-w-0 items-start gap-1.5">
+                      <div className="flex min-w-0 items-center gap-2">
                         {isPinned ? (
                           <span
-                            className="mt-0.5 shrink-0 text-[var(--color-primary-700)]"
+                            className="shrink-0 text-[var(--color-primary-700)]"
                             title="Закріплено зверху"
                           >
                             <IconPin size={13} />
                           </span>
                         ) : null}
+                        <ProductThumb
+                          imageUrl={product.imageUrl}
+                          label={product.nameUk}
+                          size="sm"
+                        />
                         <CellStack
                           title={product.nameUk}
                           subtitle={

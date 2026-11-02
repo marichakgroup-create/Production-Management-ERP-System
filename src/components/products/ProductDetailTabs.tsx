@@ -68,28 +68,17 @@ export function ProductDetailTabs({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <p className="type-caption">
-            {effectiveTab === "composition"
-              ? showPricing
-                ? "Норми на 1 шт (і доставка теж). Сума доставки на тираж = ₴/од. × кількість; сітка — у «Прайс і крій»."
-                : "Склад виробу (без цін і калькуляції)"
-              : "Калькуляція на весь тираж. Статті не перетинаються: Мат + Крій + Пошив + Достав (тканини CARGO/НП + операція) + Пакування + ПВ = Собів."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {tabs.length > 1 ? <SegmentedTabs items={tabs} active={effectiveTab} /> : null}
-          <Link
-            href={`/products/${productId}/spec`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
-          >
-            <IconPrint size={15} />
-            Специфікація
-          </Link>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {tabs.length > 1 ? <SegmentedTabs items={tabs} active={effectiveTab} /> : null}
+        <Link
+          href={`/products/${productId}/spec`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+        >
+          <IconPrint size={15} />
+          Специфікація
+        </Link>
       </div>
 
       {effectiveTab === "composition" ? (
