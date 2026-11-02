@@ -13,7 +13,7 @@ const globalForPrisma = globalThis as unknown as {
  * After `prisma generate`, a long-lived `next dev` may still need a full
  * process restart — Node keeps the old `@prisma/client` module in memory.
  */
-const PRISMA_CLIENT_VERSION = "20261102120000_order_client_legal_detail";
+const PRISMA_CLIENT_VERSION = "20261102150000_order_company_settings";
 
 /** Delegates that must exist after party contacts / legal details / decorations. */
 const REQUIRED_DELEGATES = [
@@ -45,12 +45,30 @@ function decorationHasQuantityField(): boolean {
   }
 }
 
+export function orderHasCompanySettingsField(): boolean {
+  try {
+    return "companySettingsId" in (Prisma.OrderScalarFieldEnum ?? {});
+  } catch {
+    return false;
+  }
+}
+
+function orderHasPaymentMethodField(): boolean {
+  try {
+    return "paymentMethod" in (Prisma.OrderScalarFieldEnum ?? {});
+  } catch {
+    return false;
+  }
+}
+
 function clientHasCurrentDelegates(client: PrismaClient | undefined): boolean {
   if (!client) return false;
   return (
     REQUIRED_DELEGATES.every((name) => name in client) &&
     materialClientHasTagColor() &&
-    decorationHasQuantityField()
+    decorationHasQuantityField() &&
+    orderHasCompanySettingsField() &&
+    orderHasPaymentMethodField()
   );
 }
 
