@@ -125,25 +125,27 @@ export function SizeRun({
           );
         }
 
+        const columnWidth = quiet ? "w-[44px]" : dense ? "w-[52px]" : "w-[72px]";
+
         return (
-          <label key={size.code} className={`block shrink-0 ${quiet ? "w-[44px]" : dense ? "w-[52px]" : "w-[72px]"}`}>
+          <label key={size.code} className={`block shrink-0 ${caption ? "w-auto" : columnWidth}`}>
             {hidden}
             <span
-              className={`mb-0.5 block text-center font-medium tracking-[0.03em] uppercase ${quiet ? "text-[10px]" : "text-[10.5px] font-semibold"} ${labelClass}`}
+              className={`mb-0.5 flex items-baseline justify-center gap-1 whitespace-nowrap text-center font-medium tracking-[0.03em] uppercase ${quiet ? "text-[10px]" : "text-[10.5px] font-semibold"} ${labelClass}`}
               title={caption ? `${size.nameUk} ${caption}` : size.nameUk}
             >
               {size.nameUk}
+              {caption ? (
+                <span className="text-[9px] font-semibold normal-case tracking-normal tabular text-[var(--color-warning-text)]">
+                  {caption}
+                </span>
+              ) : null}
             </span>
             <input
               {...quantityInputProps(size)}
-              aria-label={size.nameUk}
-              className={`${inputClass} w-full`}
+              aria-label={caption ? `${size.nameUk} ${caption}` : size.nameUk}
+              className={`${inputClass} mx-auto block ${columnWidth}`}
             />
-            {caption ? (
-              <span className="mt-0.5 block text-center text-[9px] font-semibold leading-tight tabular text-[var(--color-warning-text)]">
-                {caption}
-              </span>
-            ) : null}
           </label>
         );
       })}
