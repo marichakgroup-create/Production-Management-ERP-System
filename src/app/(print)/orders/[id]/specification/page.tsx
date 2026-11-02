@@ -18,6 +18,7 @@ import { isOversizeCode, OVERSIZE_RANGE_LABEL, oversizeUpliftCaption } from "@/l
 import { getPricingForOrder } from "@/server/domains/calculation/from-entities";
 import { displayScreenPrintLineName } from "@/lib/screen-print-pricing";
 import { isMiscDecorationCostName } from "@/lib/decoration-format-pricing";
+import { richTextIsEmpty, sanitizeRichHtml } from "@/lib/rich-text";
 
 type SpecMaterial = {
   nameSnapshot: string;
@@ -413,6 +414,15 @@ export default async function SpecificationPage({
             },
           ]}
         />
+
+        {!richTextIsEmpty(order.comment) ? (
+          <PrintDocSection title="Коментар до замовлення">
+            <div
+              className="print-doc-rich"
+              dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(order.comment) }}
+            />
+          </PrintDocSection>
+        ) : null}
 
         {items.length > 1 ? (
           <PrintDocSection title="Позиції замовлення">

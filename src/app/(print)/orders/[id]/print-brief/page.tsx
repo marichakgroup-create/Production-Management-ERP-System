@@ -167,15 +167,6 @@ export default async function PrintBriefPage({
             </PrintDocSection>
           );
         })}
-
-        {!richTextIsEmpty(order.comment) ? (
-          <PrintDocSection title="Коментар до замовлення">
-            <div
-              className="print-doc-rich"
-              dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(order.comment) }}
-            />
-          </PrintDocSection>
-        ) : null}
       </PrintDocument>
     </>
   );
