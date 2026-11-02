@@ -103,6 +103,22 @@ type Baseline = {
   isBaseModel: boolean;
 };
 
+type OptimalDraft = {
+  qty?: string;
+  total?: string;
+};
+
+function optimalDraftDirty(
+  draft: OptimalDraft | null,
+  qty: number,
+  total: number,
+) {
+  if (!draft) return false;
+  if (draft.qty != null && draft.qty !== String(qty)) return true;
+  if (draft.total != null && draft.total !== String(total)) return true;
+  return false;
+}
+
 /** Digit inputs — width comes from the column / className. */
 const DIGIT_INPUT =
   "h-7 min-w-0 rounded-[6px] border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 text-right text-[12.5px] tabular-nums text-[var(--color-text)] " +
@@ -283,6 +299,11 @@ function spreadCutFromOptimal(
   }));
 }
 
+function applyOptimalToRows(source: Row[], qty: number, total: number): Row[] {
+  const rate = cutRateFromOptimalJobTotal(total, qty, qty);
+  return spreadCutFromOptimal(ensureOptimalRow(source, qty, rate), total, qty);
+}
+
 /** Mutually exclusive tirage totals. Собів = мат + крій + пошив + достав + інші + ПВ. */
 function liveTirageSheet(args: {
   hint: TirageCostHint | null;
@@ -421,6 +442,7 @@ export function ProductPriceCutPanel({
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [optimalQty, setOptimalQty] = useState(resolvedInitialOptimal);
   const [optimalCutTotal, setOptimalCutTotal] = useState(initialOptimalTotal);
+  const [optimalDraft, setOptimalDraft] = useState<OptimalDraft | null>(null);
   const [isBaseModel, setIsBaseModel] = useState(initialIsBaseModel);
   const [baseline, setBaseline] = useState<Baseline>(() => ({
     rows: cloneRows(initialMerged),
@@ -433,10 +455,13 @@ export function ProductPriceCutPanel({
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const hasUnconfirmedDrafts = Object.keys(drafts).some((uid) => {
-    const row = rows.find((item) => item.uid === uid);
-    return row ? draftDirty(drafts[uid], row) : false;
-  });
+  const optimalPending = optimalDraftDirty(optimalDraft, optimalQty, optimalCutTotal);
+  const hasUnconfirmedDrafts =
+    optimalPending ||
+    Object.keys(drafts).some((uid) => {
+      const row = rows.find((item) => item.uid === uid);
+      return row ? draftDirty(drafts[uid], row) : false;
+    });
 
   const isDirty =
     hasUnconfirmedDrafts ||
@@ -444,6 +469,15 @@ export function ProductPriceCutPanel({
     optimalQty !== baseline.optimalQty ||
     optimalCutTotal !== baseline.optimalCutTotal ||
     isBaseModel !== baseline.isBaseModel;
+
+  const liveOptimalQty = Math.max(
+    1,
+    Math.round(parseDraftNumber(optimalDraft?.qty, optimalQty)) || 1,
+  );
+  const liveOptimalTotal = Math.max(
+    0,
+    parseDraftNumber(optimalDraft?.total, optimalCutTotal),
+  );
 
   function patchDraft(uid: string, patch: RowDraft) {
     setDrafts((prev) => ({
@@ -583,16 +617,42 @@ export function ProductPriceCutPanel({
       fallbackPrice: rows[0]?.pricePerUnit ?? 0,
     }) ?? 0;
 
-  function applyOptimal(nextQty: number, nextTotal: number, spreadAll: boolean) {
-    const qty = Math.max(1, Math.round(nextQty) || 1);
-    const total = Math.max(0, Number.isFinite(nextTotal) ? nextTotal : 0);
-    const rate = cutRateFromOptimalJobTotal(total, qty, qty);
-    setOptimalQty(qty);
-    setOptimalCutTotal(Math.round(total * 100) / 100);
-    setRows((prev) => {
-      const withRow = ensureOptimalRow(prev, qty, rate);
-      return spreadAll ? spreadCutFromOptimal(withRow, total, qty) : withRow;
+  function recalcPricesForRows(source: Row[]): Row[] {
+    return source.map((row) => {
+      const hint = hintForQty(costHints, row.minQuantity);
+      const sewingPerUnit = hint?.sewingPerUnit ?? 0;
+      const sheet = liveTirageSheet({
+        hint,
+        qty: row.minQuantity,
+        cutRate: row.cutRate,
+        deliveryRate: hasDeliveryOp ? row.deliveryRate : 0,
+      });
+      const costPerUnit = row.minQuantity > 0 ? sheet.cost / row.minQuantity : 0;
+      const sewingMultiplier =
+        row.sewingMultiplier ?? defaultSewingMultiplierForQty(row.minQuantity);
+      return {
+        ...row,
+        sewingMultiplier,
+        pricePerUnit: suggestSellingFromSewingMarkup({
+          costPerUnit,
+          sewingPerUnit,
+          multiplier: sewingMultiplier,
+        }),
+      };
     });
+  }
+
+  function confirmOptimalDraft() {
+    const qty = liveOptimalQty;
+    const total = Math.round(liveOptimalTotal * 100) / 100;
+    setOptimalQty(qty);
+    setOptimalCutTotal(total);
+    setOptimalDraft(null);
+    setRows((prev) => recalcPricesForRows(applyOptimalToRows(prev, qty, total)));
+  }
+
+  function cancelOptimalDraft() {
+    setOptimalDraft(null);
   }
 
   function addTirage() {
@@ -642,14 +702,21 @@ export function ProductPriceCutPanel({
     if (saving) return false;
     setMessage(null);
     setSaving(true);
-    const flushed = sortRows(rows.map((row) => effectiveRow(row, drafts[row.uid])));
-    if (Object.keys(drafts).length > 0) {
-      setRows(flushed);
-      setDrafts({});
+    const snapshotOptimalQty = optimalPending ? liveOptimalQty : optimalQty;
+    const snapshotOptimalTotal = optimalPending
+      ? Math.round(liveOptimalTotal * 100) / 100
+      : optimalCutTotal;
+    let flushed = sortRows(rows.map((row) => effectiveRow(row, drafts[row.uid])));
+    if (optimalPending) {
+      flushed = applyOptimalToRows(flushed, snapshotOptimalQty, snapshotOptimalTotal);
     }
+    flushed = recalcPricesForRows(flushed);
+    setRows(flushed);
+    setDrafts({});
+    setOptimalDraft(null);
+    setOptimalQty(snapshotOptimalQty);
+    setOptimalCutTotal(snapshotOptimalTotal);
     const snapshotRows = cloneRows(flushed);
-    const snapshotOptimalQty = optimalQty;
-    const snapshotOptimalTotal = optimalCutTotal;
     const snapshotBaseModel = isBaseModel;
     try {
       const cutResult = await updateProductCutRatesAction({
@@ -699,7 +766,9 @@ export function ProductPriceCutPanel({
       }
       markSaved(snapshotRows, snapshotOptimalQty, snapshotOptimalTotal, snapshotBaseModel);
       setMessage(
-        hasDeliveryOp ? "Крій, доставку і прайс збережено" : "Крій і прайс збережено",
+        hasDeliveryOp
+          ? "Крій, доставку і прайс збережено (ціни перераховано)"
+          : "Крій і прайс збережено (ціни перераховано)",
       );
       // Soft refresh in background — do not block UI / wipe local rows.
       void router.refresh();
@@ -719,6 +788,7 @@ export function ProductPriceCutPanel({
     pendingHrefRef.current = null;
     setRows(cloneRows(baseline.rows));
     setDrafts({});
+    setOptimalDraft(null);
     setOptimalQty(baseline.optimalQty);
     setOptimalCutTotal(baseline.optimalCutTotal);
     setIsBaseModel(baseline.isBaseModel);
@@ -752,55 +822,57 @@ export function ProductPriceCutPanel({
         </label>
       </div>
 
-      <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
+      <div
+        className={cn(
+          "flex flex-wrap items-end gap-x-5 gap-y-2 rounded-[10px] p-1 -m-1",
+          optimalPending && ROW_DIRTY_CLASS,
+        )}
+      >
         <label className="flex flex-col gap-1">
           <span className="type-caption text-[var(--color-text-quiet)]">Оптимум, шт</span>
           <CompactInput
-            type="number"
-            min={1}
-            step={1}
+            type="text"
             inputMode="numeric"
             className="h-8 w-[7rem] text-[13px]"
-            value={optimalQty}
-            onChange={(event) => applyOptimal(Number(event.target.value), optimalCutTotal, true)}
+            value={optimalDraft?.qty ?? String(optimalQty)}
+            onChange={(event) =>
+              setOptimalDraft((prev) => ({ ...prev, qty: event.target.value }))
+            }
           />
         </label>
         <label className="flex flex-col gap-1">
           <span className="type-caption text-[var(--color-text-quiet)]">Крій на оптимум, ₴</span>
           <CompactInput
-            type="number"
-            min={0}
-            step="0.01"
+            type="text"
             inputMode="decimal"
             className="h-8 w-[8rem] text-[13px]"
-            value={optimalCutTotal}
-            onChange={(event) => applyOptimal(optimalQty, Number(event.target.value), true)}
+            value={optimalDraft?.total ?? String(optimalCutTotal)}
+            onChange={(event) =>
+              setOptimalDraft((prev) => ({ ...prev, total: event.target.value }))
+            }
           />
         </label>
         <div className="flex flex-col gap-1">
           <span className="type-caption text-[var(--color-text-quiet)]">₴/шт</span>
           <p className="flex h-8 items-center type-mono text-[13px] font-semibold tabular-nums text-[var(--color-text)]">
-            {formatMoneyUah(cutRateFromOptimalJobTotal(optimalCutTotal, optimalQty, optimalQty))}
+            {formatMoneyUah(
+              cutRateFromOptimalJobTotal(liveOptimalTotal, liveOptimalQty, liveOptimalQty),
+            )}
           </p>
+        </div>
+        <div className="flex h-8 items-center">
+          <RowEditActions
+            dirty={optimalPending}
+            onConfirm={confirmOptimalDraft}
+            onCancel={cancelOptimalDraft}
+            confirmLabel="Підтвердити оптимум"
+          />
         </div>
       </div>
 
       {message ? <p className="type-caption text-[var(--color-text-muted)]">{message}</p> : null}
-      {hasUnconfirmedDrafts ? (
-        <p className="type-caption text-[var(--color-warning-text)]">
-          Підтвердіть рядок галочкою або скасуйте ✕ — зміни ще не застосовані.
-        </p>
-      ) : isDirty ? (
-        <p className="type-caption text-[var(--color-warning-text)]">Є незбережені зміни</p>
-      ) : null}
 
       <div className="w-full overflow-x-auto rounded-[12px] border border-[var(--color-border)]">
-        <div className="flex items-center justify-between gap-2 border-b border-[var(--color-divider)] bg-[var(--color-bg)]/40 px-2.5 py-1.5">
-          <p className="type-caption text-[var(--color-text-quiet)]">
-            Редагуйте клітинку → підтвердіть галочкою в рядку. Основне — ₴/шт · сіре під ним — сума
-            на тираж · Мат + Крій + Пошив + Достав + Пакування + ПВ = Собів
-          </p>
-        </div>
         <table className="w-full min-w-[58rem] table-fixed border-collapse text-left">
           <colgroup>
             <col className="w-[3.25rem]" />
