@@ -1128,11 +1128,20 @@ export async function createOrderWithProducts(input: {
         },
       });
       createdItems.push(item);
-      await syncOrderItemFabricPricing(item.id, tx);
     }
 
     return { order, item: createdItems[0], items: createdItems };
   });
+
+  // Keep the create TX short — fabric price/delivery sync uses extra reads and
+  // used to abort the whole order on interactive-transaction timeout.
+  for (const item of result.items) {
+    try {
+      await syncOrderItemFabricPricing(item.id);
+    } catch (error) {
+      console.error("[createOrderWithProducts] fabric sync failed:", error);
+    }
+  }
 
   await recordActivity({
     entityType: "order",

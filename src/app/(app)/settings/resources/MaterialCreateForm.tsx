@@ -81,7 +81,8 @@ import {
   deriveUnitPriceFromPack,
   hasTrimPackQuote,
 } from "@/lib/trim-pack-pricing";
-import { formatMoneyUah } from "@/lib/utils";
+import { formatMoneyUah, cn } from "@/lib/utils";
+import { RowEditActions, ROW_DIRTY_CLASS } from "@/components/ui/RowEditActions";
 
 type UnitOption = { id: string; label: string; code?: string };
 
@@ -285,6 +286,8 @@ function MaterialFields({
   const [densityGsm, setDensityGsm] = useState(defaults?.densityGsm ?? "");
   const [widthCm, setWidthCm] = useState(defaults?.widthCm ?? "");
   const [metersPerKg, setMetersPerKg] = useState(numStr(defaults?.metersPerKg));
+  /** Unconfirmed typed override; committed value stays auto until ✓. */
+  const [metersPerKgDraft, setMetersPerKgDraft] = useState<string | null>(null);
   /** Manual only when saved м.п./кг differs from density×width — else edit keeps auto-calc. */
   const [metersPerKgManual, setMetersPerKgManual] = useState(() => {
     const saved = defaults?.metersPerKg;
@@ -361,6 +364,7 @@ function MaterialFields({
         densityGsm,
         widthCm,
         metersPerKg,
+        metersPerKgDraft,
         metersPerKgManual,
         priceKgUsd,
         priceKgUsdVat,
@@ -399,6 +403,7 @@ function MaterialFields({
       densityGsm,
       widthCm,
       metersPerKg,
+      metersPerKgDraft,
       metersPerKgManual,
       priceKgUsd,
       priceKgUsdVat,
@@ -470,8 +475,9 @@ function MaterialFields({
   /** м.п./кг: required+auto for kg; optional logistics for m/m2. */
   const showMetersPerKg = type === "FABRIC" && fabricMeterPricing;
   const metersPerKgRequired = type === "FABRIC" && fabricUnitMode === "kg";
-  const metersPerKgAutoOnly = type === "FABRIC" && fabricUnitMode === "kg";
   const autoMetersPerKg = metersPerKgFromDensityWidth(densityGsm, widthCm);
+  const metersPerKgPending =
+    metersPerKgDraft != null && metersPerKgDraft !== metersPerKg;
 
   const liveGlobals = useMemo<FabricPricingGlobals>(
     () => ({
@@ -522,29 +528,45 @@ function MaterialFields({
     ],
   );
 
-  function applyMetersPerKg(value: string, opts?: { fromAuto?: boolean }) {
+  function commitMetersPerKg(value: string, opts?: { fromAuto?: boolean }) {
     setMetersPerKg(value);
+    setMetersPerKgDraft(null);
     if (opts?.fromAuto) {
       setMetersPerKgManual(false);
     } else {
-      setMetersPerKgManual(Boolean(value.trim()));
+      const parsed = Number(String(value).replace(",", ".").trim());
+      const isManual =
+        Boolean(value.trim()) &&
+        Number.isFinite(parsed) &&
+        parsed > 0 &&
+        (autoMetersPerKg == null || Math.abs(parsed - autoMetersPerKg) > 0.05);
+      setMetersPerKgManual(isManual);
     }
     if (pricingInline) recalcMeterPrices({ metersPerKg: value });
   }
 
   function syncMetersPerKgFromDensity(nextDensity: string, nextWidth: string) {
+    if (metersPerKgManual) return;
     const auto = metersPerKgFromDensityWidth(nextDensity, nextWidth);
     if (auto == null) return;
-    // Density × width always drives м.п./кг (kg required; m/m² optional logistics).
-    applyMetersPerKg(String(auto), { fromAuto: true });
+    commitMetersPerKg(String(auto), { fromAuto: true });
   }
 
-  // Edit/create: keep м.п./кг in sync whenever density/width (or kg mode) can compute it.
+  function confirmMetersPerKgDraft() {
+    commitMetersPerKg(metersPerKgDraft ?? metersPerKg);
+  }
+
+  function cancelMetersPerKgDraft() {
+    setMetersPerKgDraft(null);
+  }
+
+  // Default: density × width drives м.п./кг. Confirmed override is left alone.
   useEffect(() => {
+    if (metersPerKgManual) return;
     if (autoMetersPerKg == null) return;
-    applyMetersPerKg(String(autoMetersPerKg), { fromAuto: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- drive from formula inputs / kg mode only
-  }, [autoMetersPerKg, metersPerKgAutoOnly]);
+    commitMetersPerKg(String(autoMetersPerKg), { fromAuto: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- drive from formula unless override is confirmed
+  }, [autoMetersPerKg, metersPerKgManual]);
 
   function applyM2Prices(next: {
     priceM2NoVat?: string;
@@ -1139,23 +1161,33 @@ function MaterialFields({
               <input type="hidden" name="widthCm" value={widthCm} />
             )}
             {showMetersPerKg ? (
-              <Input
-                name="metersPerKg"
-                label="м.п. / кг"
-                type="number"
-                step="0.01"
-                min="0"
-                value={metersPerKg}
-                required={metersPerKgRequired}
-                optional={!metersPerKgRequired}
-                readOnly={metersPerKgAutoOnly}
-                tabIndex={metersPerKgAutoOnly ? -1 : undefined}
-                onChange={
-                  metersPerKgAutoOnly
-                    ? undefined
-                    : (event) => applyMetersPerKg(event.target.value)
-                }
-              />
+              <div
+                className={cn(
+                  "flex items-end gap-1 rounded-[10px] p-1 -m-1",
+                  metersPerKgPending && ROW_DIRTY_CLASS,
+                )}
+              >
+                <Input
+                  className="min-w-0 flex-1"
+                  label="м.п. / кг"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={metersPerKgDraft ?? metersPerKg}
+                  required={metersPerKgRequired}
+                  optional={!metersPerKgRequired}
+                  onChange={(event) => setMetersPerKgDraft(event.target.value)}
+                />
+                <div className="flex h-9 items-center">
+                  <RowEditActions
+                    dirty={metersPerKgPending}
+                    onConfirm={confirmMetersPerKgDraft}
+                    onCancel={cancelMetersPerKgDraft}
+                    confirmLabel="Підтвердити м.п./кг не з формули"
+                  />
+                </div>
+                <input type="hidden" name="metersPerKg" value={metersPerKg} />
+              </div>
             ) : (
               <input type="hidden" name="metersPerKg" value={metersPerKg} />
             )}
