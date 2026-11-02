@@ -207,9 +207,9 @@ export function OrderItemsTable({
                             + нанесення {formatMoneyUah(row.decorationPrice)}
                           </span>
                         ) : null}
-                        {row.lineTotal != null && row.quantity > 1 ? (
+                        {row.decorationPrice != null && row.decorationPrice > 0.05 && row.productPrice != null ? (
                           <span className="type-caption">
-                            разом {formatMoneyUah(row.lineTotal)}
+                            разом {formatMoneyUah(row.productPrice + row.decorationPrice)} / од.
                           </span>
                         ) : null}
                       </span>
