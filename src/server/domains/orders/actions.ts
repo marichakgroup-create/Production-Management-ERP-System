@@ -127,7 +127,10 @@ const createOrderSchema = z.object({
     z.string().trim().min(1).optional().nullable(),
   ),
   productId: z.string().optional().nullable(),
-  title: z.string().optional().nullable(),
+  title: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim().replace(/\s+/g, " ") : value),
+    z.string().min(1).max(120),
+  ),
   companySettingsId: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? null : value),
     z.string().trim().min(1).optional().nullable(),
@@ -341,6 +344,7 @@ export async function createOrderAction(formData: FormData) {
       managerId: session.user.id,
       title: parsed.data.title,
       deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : null,
+      comment: parsed.data.comment,
       targetMarginPercent: parsed.data.targetMarginPercent ?? null,
       items,
     }));

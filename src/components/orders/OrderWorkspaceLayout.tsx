@@ -41,15 +41,15 @@ export function OrderWorkspaceHeader({
 }) {
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap">
-        <div className="min-w-0 w-full overflow-hidden lg:w-auto lg:flex-1">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 lg:flex-nowrap">
+        <div className="min-w-0 w-full max-w-[16rem] shrink overflow-hidden lg:w-auto">
           <div className="flex min-w-0 items-center gap-2.5">
             <h1 className="type-page-title flex min-w-0 items-center overflow-hidden">{title}</h1>
             {badge ? <span className="shrink-0">{badge}</span> : null}
           </div>
           {subtitle ? <p className="type-body-secondary mt-1 truncate">{subtitle}</p> : null}
         </div>
-        {summary ? <div className="shrink-0">{summary}</div> : null}
+        {summary ? <div className="min-w-0 flex-1">{summary}</div> : null}
         {actions ? (
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1 [&_a]:!px-2 [&_button]:!px-2">{actions}</div>
         ) : null}
@@ -183,7 +183,7 @@ export function OrderFactsStrip({ facts, className }: { facts: OrderFact[]; clas
   );
 }
 
-const CHEVRON = 8;
+const CHEVRON = 12;
 
 function pipelineClip(isFirst: boolean, isLast: boolean) {
   if (isFirst && isLast) return "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
@@ -293,7 +293,7 @@ export function OrderChevronPipeline({
               <div
                 title={orderStatusHintFor(stage)}
                 className={cn(
-                  "flex h-8 items-center justify-center text-center text-[10px] font-semibold leading-none",
+                  "flex h-11 items-center justify-center text-center text-[13px] font-semibold leading-none",
                   done && "bg-[var(--color-primary-100)] text-[var(--color-primary-800)]",
                   current && "bg-[var(--color-primary-700)] text-[var(--color-on-primary)]",
                   !done &&

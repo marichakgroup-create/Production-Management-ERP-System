@@ -763,6 +763,7 @@ export async function createOrderWithProducts(input: {
   managerId: string;
   title?: string | null;
   deadline?: Date | null;
+  comment?: string | null;
   targetMarginPercent?: number | null;
   items: Array<{
     productId: string;
@@ -873,7 +874,7 @@ export async function createOrderWithProducts(input: {
         title: input.title || primaryName,
         status: "DRAFT",
         deadline: input.deadline ?? null,
-        comment: input.items[0]?.comment || null,
+        comment: input.comment?.trim() || null,
         targetMarginPercent:
           input.targetMarginPercent != null && Number.isFinite(input.targetMarginPercent)
             ? input.targetMarginPercent

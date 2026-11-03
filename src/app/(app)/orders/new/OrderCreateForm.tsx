@@ -141,6 +141,7 @@ export function OrderCreateForm({
   const [companySettingsId, setCompanySettingsId] = useState(
     () => companies.find((row) => row.isDefault)?.id ?? companies[0]?.id ?? "",
   );
+  const [orderTitle, setOrderTitle] = useState("");
   const [deadline, setDeadline] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [stagingProductId, setStagingProductId] = useState(initialProductId || "");
@@ -280,10 +281,11 @@ export function OrderCreateForm({
       }, 0)
     : 0;
 
-  const readyToSubmit = Boolean(clientId && lines.length > 0);
+  const readyToSubmit = Boolean(orderTitle.trim() && clientId && lines.length > 0);
 
   const formDirty =
     lines.length > 0 ||
+    Boolean(orderTitle.trim()) ||
     Boolean(clientId) ||
     Boolean(deadline) ||
     Boolean(stagingProductId) ||
@@ -421,6 +423,10 @@ export function OrderCreateForm({
 
   function onSubmit(formData: FormData) {
     setError(null);
+    if (!orderTitle.trim()) {
+      setError("Вкажіть назву замовлення.");
+      return;
+    }
     if (!readyToSubmit) {
       setError("Додайте клієнта і хоча б одну позицію в список замовлення.");
       return;
@@ -558,6 +564,17 @@ export function OrderCreateForm({
               }
             >
               <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  name="title"
+                  label="Назва замовлення"
+                  required
+                  className="sm:col-span-2"
+                  placeholder="Наприклад: Світшот"
+                  hint="Коротка назва в списку. Виріб з каталогу вказується окремо."
+                  value={orderTitle}
+                  maxLength={120}
+                  onChange={(event) => setOrderTitle(event.target.value)}
+                />
                 {companies.length > 0 ? (
                   <Select
                     name="companySettingsId"

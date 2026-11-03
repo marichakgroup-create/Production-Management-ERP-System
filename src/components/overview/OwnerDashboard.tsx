@@ -368,61 +368,6 @@ function moneyText(value: number) {
   return `${moneyParts(value)} ₴`;
 }
 
-function clientShares(orders: OwnerDashboardData["tableOrders"]) {
-  const totals = new Map<string, number>();
-  for (const order of orders) {
-    totals.set(order.clientName, (totals.get(order.clientName) ?? 0) + order.amount);
-  }
-  const ranked = [...totals.entries()]
-    .map(([name, amount]) => ({ name, amount }))
-    .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, "uk"));
-  const total = ranked.reduce((sum, row) => sum + row.amount, 0) || 1;
-  const head = ranked.slice(0, 5);
-  const rest = ranked.slice(5);
-  if (rest.length > 0) {
-    head.push({ name: "Інші клієнти", amount: rest.reduce((sum, row) => sum + row.amount, 0) });
-  }
-  return head.map((row) => ({ ...row, share: row.amount / total }));
-}
-
-function ResultMix({
-  revenue,
-  cost,
-  profit,
-}: {
-  revenue: number;
-  cost: number;
-  profit: number;
-}) {
-  if (revenue <= 0) {
-    return <p className="type-caption">Немає виручки в портфелі.</p>;
-  }
-  const costShare = Math.min(100, Math.max(0, (cost / revenue) * 100));
-  const profitShare = profit > 0 ? Math.min(100 - costShare, (profit / revenue) * 100) : 0;
-  return (
-    <div>
-      <div
-        className="flex h-3 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]"
-        role="img"
-        aria-label={`Собівартість ${costShare.toFixed(0)}%, валовий прибуток ${profit > 0 ? profitShare.toFixed(0) : 0}%`}
-      >
-        <div className="h-full bg-[var(--color-primary-200)]" style={{ width: `${costShare}%` }} />
-        <div className="h-full bg-[var(--color-primary-600)]" style={{ width: `${profitShare}%` }} />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-[var(--color-text-secondary)]">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-[var(--color-primary-200)]" />
-          Собівартість
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-[var(--color-primary-600)]" />
-          Валовий прибуток
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export function MoneyPanel({ data }: { data: OwnerDashboardData }) {
   const { kpis, pricing } = data;
   const active = data.tableOrders.filter(
@@ -434,8 +379,6 @@ export function MoneyPanel({ data }: { data: OwnerDashboardData }) {
   const unpriced = active.filter((order) => order.amount <= 0);
   const closed = data.stages.find((stage) => stage.key === "CLOSED");
   const rows = [...active].sort((a, b) => b.amount - a.amount || a.number.localeCompare(b.number));
-  const clients = clientShares(active);
-  const maxStage = Math.max(...data.stages.map((stage) => Math.max(stage.amount, stage.cost, stage.profit)), 1);
   const marginDanger = kpis.avgMargin != null && kpis.avgMargin < pricing.minimumMarginPercent;
   const statement = [
     {
@@ -479,8 +422,6 @@ export function MoneyPanel({ data }: { data: OwnerDashboardData }) {
   return (
     <div className="space-y-4">
       <section className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
-          <div className="border-b border-[var(--color-divider)] lg:border-r lg:border-b-0">
             <div className="border-b border-[var(--color-divider)] px-4 py-3">
               <h2 className="type-subsection">Звіт про валовий результат</h2>
               <p className="type-caption mt-0.5">Поточний портфель. Період змінює лише рядок закритих.</p>
@@ -534,114 +475,17 @@ export function MoneyPanel({ data }: { data: OwnerDashboardData }) {
                 </span>
               </li>
             </ul>
-          </div>
-          <div className="px-4 py-4">
-            <p className="type-caption">Структура виручки</p>
-            <div className="mt-3">
-              <ResultMix revenue={kpis.portfolio} cost={kpis.cost} profit={kpis.profit} />
-            </div>
             {notes.length > 0 ? (
-              <ul className="mt-4 space-y-1.5 border-t border-[var(--color-divider)] pt-3">
+              <ul className="space-y-1.5 border-t border-[var(--color-divider)] px-4 py-3">
                 {notes.map((note) => (
                   <li key={note} className="text-[12.5px] leading-4 text-[var(--color-text-secondary)]">
                     {note}
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="type-caption mt-4 border-t border-[var(--color-divider)] pt-3">
-                Усі активні замовлення пораховані, маржа не нижче мінімуму.
-              </p>
-            )}
-          </div>
-        </div>
+            ) : null}
       </section>
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <section className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-          <div className="border-b border-[var(--color-divider)] px-4 py-3">
-            <h2 className="type-subsection">Результат за етапами</h2>
-            <p className="type-caption mt-0.5">Виручка, собівартість і валовий прибуток</p>
-          </div>
-          <div className="px-4 py-4">
-            <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-[var(--color-text-secondary)]">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-sm bg-[var(--color-primary-300)]" />
-                Виручка
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-sm bg-[var(--color-primary-200)]" />
-                Собівартість
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2 rounded-sm bg-[var(--color-primary-600)]" />
-                Прибуток
-              </span>
-            </div>
-            <div className="grid grid-cols-5 gap-2">
-              {data.stages.map((stage) => (
-                <div key={stage.key} className="min-w-0">
-                  <div className="flex h-28 items-end justify-center gap-1">
-                    {[
-                      { value: stage.amount, className: "bg-[var(--color-primary-300)]" },
-                      { value: stage.cost, className: "bg-[var(--color-primary-200)]" },
-                      { value: Math.max(stage.profit, 0), className: "bg-[var(--color-primary-600)]" },
-                    ].map((bar) => (
-                      <div key={bar.className} className="flex h-full items-end">
-                        <div
-                          className={cn("w-2 rounded-t-sm", bar.className)}
-                          style={{ height: `${bar.value > 0 ? Math.max(6, (bar.value / maxStage) * 100) : 0}%` }}
-                          title={moneyText(bar.value)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-center text-[11px] leading-3 text-[var(--color-text-secondary)]">
-                    {stage.label}
-                  </p>
-                  <p className="mt-1 text-center tabular text-[11px] font-semibold text-[var(--color-text-primary)]">
-                    {stage.amount > 0 ? moneyText(stage.amount) : "—"}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-          <div className="border-b border-[var(--color-divider)] px-4 py-3">
-            <h2 className="type-subsection">Виручка за клієнтами</h2>
-            <p className="type-caption mt-0.5">Частка поточного портфеля</p>
-          </div>
-          {clients.length === 0 ? (
-            <p className="px-4 py-8 text-center text-[13.5px] text-[var(--color-text-secondary)]">
-              Немає виручки для розподілу.
-            </p>
-          ) : (
-            <ul className="px-4 py-3">
-              {clients.map((client) => (
-                <li key={client.name} className="py-2">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="truncate text-[13px] font-medium text-[var(--color-text-primary)]">
-                      {client.name}
-                    </span>
-                    <span className="shrink-0 tabular text-[13px] font-semibold text-[var(--color-text-primary)]">
-                      {moneyText(client.amount)}
-                    </span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
-                    <div
-                      className="h-full rounded-full bg-[var(--color-primary-600)]"
-                      style={{ width: `${Math.max(4, client.share * 100)}%` }}
-                    />
-                  </div>
-                  <p className="type-caption mt-1">{Math.round(client.share * 100)}% виручки</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
 
       <section className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
         <div className="border-b border-[var(--color-divider)] px-4 py-3">

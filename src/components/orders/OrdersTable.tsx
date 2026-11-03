@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  CellStack,
   Table,
   TableEmpty,
   TBody,
@@ -23,7 +22,6 @@ import {
 } from "@/components/ui/table-interactions";
 import { BulkDeleteButton, OpenSelectedLink } from "@/components/ui/BulkDeleteButton";
 import {
-  IconAlert,
   IconChevronDown,
   IconChevronRight,
   IconGarment,
@@ -56,29 +54,6 @@ export type OrdersTableRow = {
 };
 
 type SortKey = "number" | "client" | "amount" | "status" | "deadline" | "created" | "updated";
-
-function deadlineState(deadline: string | null) {
-  if (!deadline) return "none" as const;
-  const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return "overdue" as const;
-  if (days <= 3) return "soon" as const;
-  return "ok" as const;
-}
-
-function itemsSummary(items: OrdersTableRow["items"]) {
-  const qty = items.reduce((sum, item) => sum + item.totalQuantity, 0);
-  if (items.length === 0) return { title: "Без позицій", subtitle: undefined as string | undefined };
-  if (items.length === 1) {
-    return {
-      title: items[0]!.nameUk,
-      subtitle: qty > 0 ? `${qty} шт` : undefined,
-    };
-  }
-  return {
-    title: `${items.length} позиції`,
-    subtitle: qty > 0 ? `${qty} шт разом` : undefined,
-  };
-}
 
 function orderAmount(order: OrdersTableRow) {
   return order.items.reduce((sum, item) => sum + (item.amount ?? 0), 0);
@@ -162,7 +137,7 @@ export function OrdersTable({
             Замовлення
           </SortableTH>
           <SortableTH columnKey="client" sort={sort} onSort={toggle}>
-            Клієнт / склад
+            Клієнт
           </SortableTH>
           {showAmounts ? (
             <SortableTH
@@ -203,8 +178,6 @@ export function OrdersTable({
             sorted.map((order) => {
               const isOpen = Boolean(expanded[order.id]);
               const isSelected = selection.isSelected(order.id);
-              const state = deadlineState(order.deadline);
-              const summary = itemsSummary(order.items);
               const totalValue = orderAmount(order);
               const hasAmount = order.items.some((item) => item.amount != null);
               const archived = archiveView || order.status === "CANCELLED";
@@ -254,21 +227,12 @@ export function OrdersTable({
                         <p className="mt-0.5 truncate text-[12px] tabular text-[var(--color-text-tertiary)]">
                           {order.number}
                         </p>
-                        <p className="truncate text-[12px] text-[var(--color-text-quiet)]">
-                          {order.clientName}
-                        </p>
                       </div>
                     </TD>
-                    <TD title={summary.title}>
-                      <CellStack
-                        title={
-                          <span className="font-normal text-[var(--color-text-secondary)]">
-                            {summary.title}
-                          </span>
-                        }
-                        subtitle={summary.subtitle}
-                        maxWidth="240px"
-                      />
+                    <TD>
+                      <span className="block max-w-[220px] truncate text-[13.5px] text-[var(--color-text-primary)]">
+                        {order.clientName}
+                      </span>
                     </TD>
                     {showAmounts ? (
                       <TD numeric className="font-medium text-[var(--color-text-primary)]">
@@ -285,19 +249,7 @@ export function OrdersTable({
                       </TD>
                     ) : null}
                     <TD nowrap>
-                      <div className="flex flex-col items-start gap-1">
-                        <OrderStatusBadge status={order.status} />
-                        <span
-                          className={cn(
-                            "type-caption tabular inline-flex items-center gap-1",
-                            state === "overdue" && "font-medium text-[var(--color-danger-text)]",
-                            state === "soon" && "font-medium text-[var(--color-warning-text)]",
-                          )}
-                        >
-                          {state === "overdue" || state === "soon" ? <IconAlert size={12} /> : null}
-                          {order.deadline ? `до ${formatDateUk(order.deadline)}` : "без дедлайну"}
-                        </span>
-                      </div>
+                      <OrderStatusBadge status={order.status} />
                     </TD>
                     <TD nowrap className="tabular type-caption text-[var(--color-text-secondary)]">
                       {formatDateUk(order.updatedAt)}
