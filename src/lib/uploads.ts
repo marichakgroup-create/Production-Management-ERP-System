@@ -1,6 +1,6 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ORDER_FILE_MAX_BYTES } from "@/lib/order-files";
+import { ORDER_FILE_MAX_BYTES, orderFileObjectName } from "@/lib/order-files";
 import { UPLOADS_BUCKET } from "@/lib/supabase/client";
 
 const IMAGE_EXT = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "heic", "heif"]);
@@ -228,8 +228,7 @@ export async function storeOrderFile(
 > {
   const buffer = Buffer.from(await file.arrayBuffer());
   const ext = extensionFor(file);
-  const safe = file.name.replace(/[^\w.\-а-яА-ЯіІїЇєЄёЁ ]+/g, "_").slice(0, 80);
-  const objectKey = `orders/${orderId}/${Date.now()}-${safe || `file.${ext}`}`;
+  const objectKey = `orders/${orderId}/${Date.now()}-${orderFileObjectName(file.name, ext)}`;
   const contentType = file.type || "application/octet-stream";
 
   const canUseSupabase =

@@ -6,33 +6,80 @@ export const ORDER_FILE_MAX_COUNT = 20;
 
 export const ORDER_FILE_MAX_MB = ORDER_FILE_MAX_BYTES / (1024 * 1024);
 
-export const ORDER_FILE_ACCEPT =
-  ".pdf,.png,.jpg,.jpeg,.webp,.gif,.svg,.tif,.tiff,.ai,.eps,.zip";
-
-export const ORDER_FILE_EXTENSIONS = new Set([
+/** Print-shop artwork: raster, vector, layout, embroidery machines, archives. */
+const ORDER_FILE_EXTENSION_LIST = [
   "pdf",
   "png",
   "jpg",
   "jpeg",
   "webp",
   "gif",
+  "bmp",
   "svg",
+  "heic",
+  "heif",
   "tif",
   "tiff",
+  "psd",
+  "psb",
   "ai",
   "eps",
+  "cdr",
+  "cdt",
+  "indd",
+  "idml",
+  "afdesign",
+  "afphoto",
+  "afpub",
+  "sketch",
+  "xd",
+  "dst",
+  "pes",
+  "exp",
+  "jef",
   "zip",
+  "rar",
+  "7z",
+] as const;
+
+export const ORDER_FILE_EXTENSIONS = new Set<string>(ORDER_FILE_EXTENSION_LIST);
+
+export const ORDER_FILE_ACCEPT = ORDER_FILE_EXTENSION_LIST.map((ext) => `.${ext}`).join(",");
+
+const ORDER_FILE_MIME = new Set([
+  "application/pdf",
+  "application/postscript",
+  "application/illustrator",
+  "application/vnd.adobe.illustrator",
+  "image/vnd.adobe.photoshop",
+  "application/x-photoshop",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
+  "application/x-7z-compressed",
 ]);
+
+/** Keep Latin, Cyrillic and digits. Only path and URL-breaking characters are replaced. */
+export function orderFileObjectName(name: string, ext: string): string {
+  const cleaned = name
+    .normalize("NFKC")
+    .replace(/[\\/]+/g, "_")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[#?%*"|<>]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+  if (cleaned && /\p{L}|\p{N}/u.test(cleaned)) return cleaned;
+  return `file.${ext}`;
+}
 
 export function orderFileAllowed(file: { name: string; type: string }) {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   if (ORDER_FILE_EXTENSIONS.has(ext)) return true;
-  return (
-    file.type.startsWith("image/") ||
-    file.type === "application/pdf" ||
-    file.type === "application/zip" ||
-    file.type === "application/postscript"
-  );
+  const type = file.type.toLowerCase();
+  if (type.startsWith("image/")) return true;
+  return ORDER_FILE_MIME.has(type);
 }
 
 export type ArtworkDecorationFacts = {

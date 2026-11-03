@@ -97,7 +97,7 @@ function uploadErrorMessage(error: string | undefined, message?: string) {
     case "TOO_MANY":
       return `У замовленні вже ${ORDER_FILE_MAX_COUNT} файлів.`;
     case "TYPE":
-      return "Підходять PDF, зображення, AI/EPS або ZIP.";
+      return "Підходять PDF, PSD, TIFF, AI, EPS, CDR, INDD, зображення, вишивка та ZIP.";
     case "ITEM":
       return "Обрана позиція не знайдена.";
     case "DECORATION":
@@ -572,6 +572,12 @@ export function OrderAttachments({
                                   >
                                     {file.fileName}
                                   </a>
+                                  <ArtworkNameField
+                                    file={file}
+                                    locked={Boolean(locked)}
+                                    disabled={pending}
+                                    onSave={(value) => saveMeta(file.id, { caption: value })}
+                                  />
                                   <FileMaketQty
                                     file={file}
                                     realSizes={realSizes}
@@ -861,6 +867,47 @@ function DecorationCommentField({
         </Button>
       </div>
     </div>
+  );
+}
+
+function ArtworkNameField({
+  file,
+  locked,
+  disabled,
+  onSave,
+}: {
+  file: OrderFileRow;
+  locked: boolean;
+  disabled: boolean;
+  onSave: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(file.caption ?? "");
+  if (locked) {
+    return file.caption ? (
+      <span className="type-caption max-w-[10rem] truncate text-[var(--color-text-secondary)]">
+        {file.caption}
+      </span>
+    ) : null;
+  }
+  return (
+    <input
+      value={draft}
+      disabled={disabled}
+      placeholder="Назва"
+      aria-label={`Назва макета ${file.fileName}`}
+      className={cn(inputClass, "w-[9.5rem] shrink-0")}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={(event) => {
+        const next = event.currentTarget.value.trim();
+        if (next !== (file.caption ?? "").trim()) onSave(next);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        const next = event.currentTarget.value.trim();
+        if (next !== (file.caption ?? "").trim()) onSave(next);
+      }}
+    />
   );
 }
 
