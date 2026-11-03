@@ -90,8 +90,9 @@ async function ensureUploadsBucket(): Promise<void> {
   const options = {
     public: true,
     fileSizeLimit: ORDER_FILE_MAX_BYTES,
-    // No mime whitelist — order artwork is often PDF / AI / EPS / ZIP.
-  } as const;
+    // null clears a previous whitelist. TIFF, PSD and AI must not be rejected.
+    allowedMimeTypes: null,
+  };
   if (!exists) {
     const created = await supabase.storage.createBucket(UPLOADS_BUCKET, options);
     if (created.error && !/already exists/i.test(created.error.message)) {
@@ -236,7 +237,17 @@ export async function storeOrderFile(
 
   if (canUseSupabase) {
     try {
-      await uploadToSupabase(objectKey, buffer, contentType);
+      try {
+        await uploadToSupabase(objectKey, buffer, contentType);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        // Bucket still rejects image/tiff and other print types. Store the bytes
+        // as a generic type; the original extension stays in the object name.
+        if (!/mime type .+ is not supported/i.test(message) || contentType === "application/octet-stream") {
+          throw error;
+        }
+        await uploadToSupabase(objectKey, buffer, "application/octet-stream");
+      }
       return { ok: true, storageKey: objectKey };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Supabase upload failed";
