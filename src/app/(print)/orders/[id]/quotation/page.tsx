@@ -270,6 +270,7 @@ export default async function QuotationPage({
     company?.address,
     [company?.phone, company?.email].filter(Boolean).join(" · ") || null,
     company?.taxId ? `ЄДРПОУ / ІПН: ${company.taxId}` : null,
+    company?.iban ? `IBAN: ${company.iban}` : null,
   ].filter((line): line is string => Boolean(line));
 
   const runningTitle = `КП ${order.number} · ${companyName}`;
@@ -327,7 +328,7 @@ export default async function QuotationPage({
                   ) : null}
                   {orderLegal?.details?.trim() ? (
                     <PrintDocMuted>
-                      {orderLegal.details.trim().split("\n").map((line, index) => (
+                      {`IBAN: ${orderLegal.details.trim()}`.split("\n").map((line, index) => (
                         <span key={`${index}-${line.slice(0, 24)}`} className="block">
                           {line}
                         </span>

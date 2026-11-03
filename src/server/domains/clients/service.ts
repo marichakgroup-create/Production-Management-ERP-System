@@ -132,7 +132,7 @@ export async function createClient(raw: ClientFormValues) {
       await tx.clientLegalDetail.create({
         data: {
           clientId: client.id,
-          nameUk: "Основні реквізити",
+          nameUk: "Основний IBAN",
           details: legalText,
           isPrimary: true,
           sortOrder: 0,

@@ -1,7 +1,7 @@
 "use client";
 
 import { Input } from "@/components/ui/Input";
-import { FormGroup, Textarea } from "@/components/ui/Field";
+import { FormGroup } from "@/components/ui/Field";
 import { CreatePanel } from "@/components/ui/CreatePanel";
 import { createClientAction } from "@/server/domains/clients/actions";
 
@@ -90,11 +90,11 @@ export function ClientCreatePanel({
         <Input name="website" label="Сайт" placeholder="https://" />
       </FormGroup>
 
-      <FormGroup label="Реквізити" columns={1}>
-        <Textarea
+      <FormGroup label="IBAN" columns={1}>
+        <Input
           name="legalDetails"
-          label="Перші юридичні реквізити"
-          placeholder="ЄДРПОУ, адреса, IBAN — пізніше можна додати ще"
+          label="Основний IBAN"
+          placeholder="UA00 0000 0000 0000 0000 0000 000"
         />
         <Input name="note" label="Нотатка" placeholder="Умови роботи, знижки, домовленості" />
       </FormGroup>

@@ -2,6 +2,7 @@
 
 import { ViewTabs, type TabItem } from "@/components/ui/Tabs";
 import { useOrderUnsavedOptional } from "@/components/orders/OrderUnsavedContext";
+import { cn } from "@/lib/utils";
 
 export function OrderWorkspaceTabs({
   items,
@@ -17,7 +18,7 @@ export function OrderWorkspaceTabs({
     <ViewTabs
       items={items}
       active={active}
-      className={className}
+      className={cn("w-full justify-end", className)}
       onNavigate={unsaved ? (href) => unsaved.requestNavigate(href) : undefined}
     />
   );

@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Textarea } from "@/components/ui/Field";
 import { SoftBusy } from "@/components/ui/SoftBusy";
 import { IconPlus, IconTrash } from "@/components/ui/Icons";
 import {
@@ -20,9 +19,7 @@ export type ClientLegalDetailRow = {
   isPrimary: boolean;
 };
 
-/**
- * Legal / banking реквізити. Parent HeaderBlock owns the section title.
- */
+/** Client bank accounts. Parent HeaderBlock owns the section title. */
 export function ClientLegalDetailsEditor({
   clientId,
   rows,
@@ -61,7 +58,7 @@ export function ClientLegalDetailsEditor({
       if (!result.ok) {
         setError(
           result.error === "VALIDATION"
-            ? "Вкажіть назву або текст реквізитів."
+            ? "Вкажіть назву рахунку або IBAN."
             : "Не вдалося зберегти.",
         );
         return;
@@ -97,12 +94,12 @@ export function ClientLegalDetailsEditor({
   }
 
   return (
-    <SoftBusy busy={pending} label="Оновлення реквізитів…">
+    <SoftBusy busy={pending} label="Оновлення IBAN…">
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           {!embedded ? (
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
-              Реквізити
+              IBAN
               <span className="ml-1.5 font-normal tabular text-[var(--color-text-tertiary)]">
                 {rows.length}
               </span>
@@ -125,7 +122,7 @@ export function ClientLegalDetailsEditor({
         </div>
 
         {rows.length === 0 && !adding ? (
-          <p className="type-caption">Ще немає — додайте юр. особу / IBAN / адресу.</p>
+          <p className="type-caption">Ще немає — додайте банківський рахунок.</p>
         ) : null}
 
         <ul className="divide-y divide-[var(--color-divider)]">
@@ -165,18 +162,17 @@ export function ClientLegalDetailsEditor({
         {adding && canEdit ? (
           <div className="space-y-2 border-t border-dashed border-[var(--color-border-strong)] pt-3">
             <Input
-              label="Назва"
+              label="Назва рахунку"
               value={draft.nameUk}
               onChange={(event) => setDraft((prev) => ({ ...prev, nameUk: event.target.value }))}
-              placeholder="ТОВ … / ФОП … / IBAN"
+              placeholder="Основний рахунок / ФОП / ТОВ"
               autoFocus
             />
-            <Textarea
-              label="Реквізити"
+            <Input
+              label="IBAN"
               value={draft.details}
               onChange={(event) => setDraft((prev) => ({ ...prev, details: event.target.value }))}
-              placeholder="ЄДРПОУ, адреса, IBAN, банк…"
-              rows={3}
+              placeholder="UA00 0000 0000 0000 0000 0000 000"
             />
             <label className="flex items-center gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
               <input
@@ -186,7 +182,7 @@ export function ClientLegalDetailsEditor({
                   setDraft((prev) => ({ ...prev, isPrimary: event.target.checked }))
                 }
               />
-              Основні реквізити
+              Основний IBAN
             </label>
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -232,13 +228,17 @@ function LegalFields({
 
   return (
     <div className="space-y-2">
-      <Input label="Назва" value={nameUk} onChange={(e) => setNameUk(e.target.value)} disabled={disabled} />
-      <Textarea
-        label="Реквізити"
+      <Input
+        label="Назва рахунку"
+        value={nameUk}
+        onChange={(e) => setNameUk(e.target.value)}
+        disabled={disabled}
+      />
+      <Input
+        label="IBAN"
         value={details}
         onChange={(e) => setDetails(e.target.value)}
         disabled={disabled}
-        rows={3}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label className="flex items-center gap-2 text-[12.5px] text-[var(--color-text-secondary)]">

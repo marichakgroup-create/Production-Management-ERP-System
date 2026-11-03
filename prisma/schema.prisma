@@ -1026,6 +1026,7 @@ model CompanySettings {
   phone        String?
   email        String?
   taxId        String?
+  iban         String?
   logoUrl      String?
   quotationFooter String?
   isDefault    Boolean  @default(false) @map("is_default")

@@ -124,7 +124,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             />
           </HeaderBlock>
 
-          <HeaderBlock title="Реквізити">
+          <HeaderBlock title="IBAN">
             <ClientLegalDetailsEditor
               clientId={client.id}
               canEdit={canEdit}

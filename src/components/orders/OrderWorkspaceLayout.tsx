@@ -15,6 +15,7 @@ export type OrderFact = {
   label: string;
   value: React.ReactNode;
   hint?: string;
+  icon?: React.ReactNode;
 };
 
 /** CRM-style object header: order on the left, optional client column on the right. */
@@ -22,6 +23,7 @@ export function OrderWorkspaceHeader({
   title,
   badge,
   subtitle,
+  summary,
   meta,
   aside,
   actions,
@@ -30,6 +32,7 @@ export function OrderWorkspaceHeader({
   title: React.ReactNode;
   badge?: React.ReactNode;
   subtitle?: React.ReactNode;
+  summary?: React.ReactNode;
   meta?: React.ReactNode;
   /** Right column — typically client contacts. */
   aside?: React.ReactNode;
@@ -38,15 +41,18 @@ export function OrderWorkspaceHeader({
 }) {
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap">
+        <div className="shrink-0">
+          <div className="flex items-center gap-2.5 whitespace-nowrap">
             <h1 className="type-page-title">{title}</h1>
             {badge}
           </div>
-          {subtitle ? <p className="type-body-secondary mt-1">{subtitle}</p> : null}
+          {subtitle ? <p className="type-body-secondary mt-1 whitespace-nowrap">{subtitle}</p> : null}
         </div>
-        {actions ? <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div> : null}
+        {summary ? <div className="min-w-0 flex-1">{summary}</div> : null}
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1 [&_a]:!px-2 [&_button]:!px-2">{actions}</div>
+        ) : null}
       </div>
 
       <div
@@ -71,11 +77,16 @@ export function OrderHeaderFacts({
   title,
   facts,
   columns = 3,
+  compact = false,
+  layout = "row",
   className,
 }: {
   title?: string;
-  facts: Array<{ label: string; value: React.ReactNode; hint?: string }>;
-  columns?: 1 | 2 | 3;
+  facts: Array<{ label: string; value: React.ReactNode; hint?: string; icon?: React.ReactNode }>;
+  columns?: 1 | 2 | 3 | 4 | 5 | 6;
+  compact?: boolean;
+  /** Two-by-two block without the horizontal row dividers. */
+  layout?: "row" | "grid";
   className?: string;
 }) {
   if (facts.length === 0) return null;
@@ -89,22 +100,49 @@ export function OrderHeaderFacts({
       <dl
         className={cn(
           "grid gap-x-3 gap-y-2",
-          columns === 1 && "grid-cols-1",
-          columns === 2 && "grid-cols-2",
-          columns === 3 && "grid-cols-3",
+          layout === "grid" && "grid-cols-2 gap-x-6 gap-y-3",
+          layout === "row" &&
+            compact &&
+            "grid-cols-2 sm:grid-cols-[minmax(90px,1.25fr)_minmax(76px,1fr)_minmax(56px,.7fr)_minmax(42px,.55fr)]",
+          layout === "row" && !compact && columns === 1 && "grid-cols-1",
+          layout === "row" && !compact && columns === 2 && "grid-cols-2",
+          layout === "row" && !compact && columns === 3 && "grid-cols-3",
+          layout === "row" && !compact && columns === 4 && "grid-cols-4",
+          layout === "row" && !compact && columns === 5 && "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5",
+          layout === "row" && !compact && columns === 6 && "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6",
         )}
       >
-        {facts.map((fact) => (
-          <div key={fact.label} className="min-w-0">
-            <dt className="type-caption">{fact.label}</dt>
-            <dd className="mt-0.5 truncate text-[13px] font-semibold leading-snug text-[var(--color-text-primary)]">
-              {fact.value}
-            </dd>
-            {fact.hint ? (
-              <dd className="type-caption mt-0.5 truncate text-[var(--color-text-quiet)]">
-                {fact.hint}
-              </dd>
+        {facts.map((fact, index) => (
+          <div
+            key={fact.label}
+            className={cn(
+              "flex min-w-0 gap-2.5 py-1",
+              compact && layout === "row" && "gap-0 py-0",
+              layout === "row" && index > 0 && "lg:border-l lg:border-[var(--color-divider)] lg:pl-5",
+              compact && layout === "row" && index > 0 && "border-l border-[var(--color-divider)] pl-3 lg:pl-3",
+            )}
+          >
+            {fact.icon && !compact ? (
+              <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center text-[var(--color-text-secondary)]">
+                {fact.icon}
+              </span>
             ) : null}
+            <div className="min-w-0">
+              <dt className={compact ? "text-[11px] leading-4 text-[var(--color-text-secondary)]" : "type-label"}>
+                {fact.label}
+              </dt>
+              <dd className={cn(
+                "mt-0.5 font-semibold leading-snug text-[var(--color-text-primary)]",
+                compact ? "whitespace-nowrap text-[12px]" : "truncate text-[13px]",
+              )}>
+                {fact.value}
+              </dd>
+              {fact.hint ? (
+                <dd className={compact ? "mt-0.5 truncate text-[10.5px] leading-4 text-[var(--color-text-secondary)]" : "type-body-secondary mt-0.5 truncate"}>
+                  {fact.hint}
+                </dd>
+              ) : null}
+            </div>
           </div>
         ))}
       </dl>
@@ -145,7 +183,7 @@ export function OrderFactsStrip({ facts, className }: { facts: OrderFact[]; clas
   );
 }
 
-const CHEVRON = 14;
+const CHEVRON = 8;
 
 function pipelineClip(isFirst: boolean, isLast: boolean) {
   if (isFirst && isLast) return "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
@@ -163,15 +201,76 @@ export function OrderChevronPipeline({
   status,
   nextTitle,
   className,
+  variant = "chevron",
 }: {
   status: string;
   nextTitle?: string;
   className?: string;
+  variant?: "chevron" | "steps";
 }) {
   const cancelled = status === "CANCELLED";
   const closed = status === "CLOSED";
   const currentIndex = orderPipeline.indexOf(status as (typeof orderPipeline)[number]);
   const effectiveIndex = closed ? orderPipeline.length - 1 : currentIndex;
+
+  if (variant === "steps") {
+    return (
+      <div className={cn("min-w-0", className)}>
+        <ol className="flex min-w-0 items-start">
+          {orderPipeline.map((stage, index) => {
+            const done = !cancelled && index < effectiveIndex;
+            const current = !cancelled && index === effectiveIndex;
+            const reached = done || current;
+
+            return (
+              <li key={stage} className="relative min-w-0 flex-1 text-center">
+                {index > 0 ? (
+                  <span
+                    className={cn(
+                      "absolute top-[9px] right-1/2 h-px w-full",
+                      reached ? "bg-[var(--color-primary-400)]" : "bg-[var(--color-border-strong)]",
+                    )}
+                    aria-hidden
+                  />
+                ) : null}
+                <span
+                  title={orderStatusHintFor(stage)}
+                  className={cn(
+                    "relative z-[1] mx-auto flex size-[19px] items-center justify-center rounded-full border text-[11px] font-bold",
+                    done &&
+                      "border-[var(--color-primary-400)] bg-[var(--color-primary-400)] text-[var(--color-on-primary)]",
+                    current &&
+                      "border-[var(--color-primary-700)] bg-[var(--color-primary-700)] text-[var(--color-on-primary)] ring-4 ring-[var(--color-primary-100)]",
+                    !reached &&
+                      "border-[var(--color-border-strong)] bg-[var(--color-surface)] text-transparent",
+                    cancelled &&
+                      "border-[var(--color-danger-text)] bg-[var(--color-danger-bg)] text-[var(--color-danger-text)]",
+                  )}
+                >
+                  {reached ? "✓" : "·"}
+                </span>
+                <span
+                  className={cn(
+                    "mt-1.5 block truncate px-1 text-[10.5px] leading-4",
+                    current
+                      ? "font-semibold text-[var(--color-text-primary)]"
+                      : "text-[var(--color-text-secondary)]",
+                  )}
+                >
+                  {pipelineShortLabel[stage] ?? orderStatusLabel[stage] ?? stage}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        {cancelled ? (
+          <p className="mt-2 text-[12px] font-semibold text-[var(--color-danger-text)]">Скасовано</p>
+        ) : nextTitle ? (
+          <p className="type-body-secondary mt-2">{nextTitle}</p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className={cn("min-w-0", className)}>
@@ -185,7 +284,7 @@ export function OrderChevronPipeline({
           return (
             <li
               key={stage}
-              className="relative min-w-0 flex-1"
+              className="relative min-w-max flex-1"
               style={{
                 marginLeft: isFirst ? 0 : -CHEVRON / 2,
                 zIndex: current ? 20 : done ? 10 : 1,
@@ -194,7 +293,7 @@ export function OrderChevronPipeline({
               <div
                 title={orderStatusHintFor(stage)}
                 className={cn(
-                  "flex h-9 items-center justify-center px-3 text-center text-[11px] font-semibold leading-tight sm:text-[11.5px]",
+                  "flex h-8 items-center justify-center text-center text-[10px] font-semibold leading-none",
                   done && "bg-[var(--color-primary-100)] text-[var(--color-primary-800)]",
                   current && "bg-[var(--color-primary-700)] text-[var(--color-on-primary)]",
                   !done &&
@@ -202,9 +301,13 @@ export function OrderChevronPipeline({
                     "bg-[var(--color-surface-subtle)] text-[var(--color-text-tertiary)]",
                   cancelled && "bg-[var(--color-danger-bg)] text-[var(--color-danger-text)]",
                 )}
-                style={{ clipPath: pipelineClip(isFirst, isLast) }}
+                style={{
+                  clipPath: pipelineClip(isFirst, isLast),
+                  paddingLeft: isFirst ? 8 : CHEVRON + 2,
+                  paddingRight: isLast ? 8 : CHEVRON + 2,
+                }}
               >
-                <span className="truncate px-1">
+                <span className="whitespace-nowrap">
                   {pipelineShortLabel[stage] ?? orderStatusLabel[stage] ?? stage}
                 </span>
               </div>
@@ -221,7 +324,40 @@ export function OrderChevronPipeline({
   );
 }
 
-/** White shell wrapping header + facts + pipeline (CRM contact card top). */
+export function OrderHeaderSection({
+  icon,
+  title,
+  children,
+  plain = false,
+  className,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+  /** Sit inside a parent surface instead of drawing its own card. */
+  plain?: boolean;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "min-w-0",
+        plain
+          ? "rounded-[var(--radius-control)] border border-[var(--color-border)] p-3.5"
+          : "rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 shadow-[var(--shadow-card)]",
+        className,
+      )}
+    >
+      <h2 className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-[var(--color-text-primary)]">
+        {icon ? <span className="text-[var(--color-text-secondary)]">{icon}</span> : null}
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/** Layout wrapper only. Individual work groups own their surfaces. */
 export function OrderWorkspaceShell({
   header,
   facts,
@@ -238,17 +374,19 @@ export function OrderWorkspaceShell({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]",
+        "space-y-3",
         className,
       )}
     >
-      <div className="px-4 py-4 sm:px-5 sm:py-5">{header}</div>
+      <div>{header}</div>
       {facts}
       {pipeline ? (
-        <div className="border-t border-[var(--color-divider)] px-4 py-3 sm:px-5">{pipeline}</div>
+        <div>{pipeline}</div>
       ) : null}
       {footer ? (
-        <div className="border-t border-[var(--color-divider)] px-4 py-2.5 sm:px-5">{footer}</div>
+        <div className="rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 shadow-[var(--shadow-card)]">
+          {footer}
+        </div>
       ) : null}
     </section>
   );

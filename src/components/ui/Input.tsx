@@ -11,6 +11,8 @@ type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   suffix?: React.ReactNode;
   /** Show quiet «необовʼязково» when not required. */
   optional?: boolean;
+  /** Sit the label on the control’s top border. */
+  labelOnBorder?: boolean;
 };
 
 export function Input({
@@ -21,6 +23,7 @@ export function Input({
   hint,
   required,
   optional,
+  labelOnBorder,
   id,
   readOnly,
   disabled,
@@ -53,6 +56,7 @@ export function Input({
       error={error}
       required={required}
       optional={optional}
+      labelOnBorder={labelOnBorder}
       className={className}
     >
       {suffix ? (

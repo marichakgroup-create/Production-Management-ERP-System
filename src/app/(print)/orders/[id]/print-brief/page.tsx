@@ -39,6 +39,8 @@ export default async function PrintBriefPage({
   const companyLines = [
     company?.address,
     [company?.phone, company?.email].filter(Boolean).join(" · ") || null,
+    company?.taxId ? `ЄДРПОУ / ІПН: ${company.taxId}` : null,
+    company?.iban ? `IBAN: ${company.iban}` : null,
   ].filter((line): line is string => Boolean(line?.trim()));
 
   return (

@@ -6,6 +6,7 @@ export type CompanyInput = {
   phone?: string | null;
   email?: string | null;
   taxId?: string | null;
+  iban?: string | null;
   quotationFooter?: string | null;
   isDefault?: boolean;
 };
@@ -66,6 +67,7 @@ export async function createCompany(input: CompanyInput) {
       phone: input.phone || null,
       email: input.email || null,
       taxId: input.taxId || null,
+      iban: input.iban || null,
       quotationFooter: input.quotationFooter || null,
       isDefault,
     },
@@ -85,6 +87,7 @@ export async function updateCompany(id: string, input: CompanyInput) {
       phone: input.phone || null,
       email: input.email || null,
       taxId: input.taxId || null,
+      iban: input.iban || null,
       quotationFooter: input.quotationFooter || null,
       isDefault: input.isDefault ? true : existing.isDefault,
     },

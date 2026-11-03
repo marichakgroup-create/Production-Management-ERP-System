@@ -74,6 +74,7 @@ const companySchema = z.object({
   phone: z.string().trim().optional().nullable(),
   email: z.string().trim().optional().nullable(),
   taxId: z.string().trim().optional().nullable(),
+  iban: z.string().trim().optional().nullable(),
   quotationFooter: z.string().trim().optional().nullable(),
   isDefault: z.boolean().optional(),
 });
@@ -86,6 +87,7 @@ function parseCompanyForm(formData: FormData) {
     phone: formData.get("phone") || null,
     email: formData.get("email") || null,
     taxId: formData.get("taxId") || null,
+    iban: formData.get("iban") || null,
     quotationFooter: formData.get("quotationFooter") || null,
     isDefault: formData.get("isDefault") === "on" || formData.get("isDefault") === "true",
   });

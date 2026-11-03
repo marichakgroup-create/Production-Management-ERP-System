@@ -28,6 +28,7 @@ export default async function CompanySettingsPage() {
             phone: row.phone,
             email: row.email,
             taxId: row.taxId,
+            iban: row.iban,
             quotationFooter: row.quotationFooter,
             isDefault: row.isDefault,
           }))}

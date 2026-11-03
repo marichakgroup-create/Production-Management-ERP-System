@@ -346,9 +346,12 @@ export default async function SpecificationPage({
 
   const sizeRules = pricing.sizeRules;
   const companyName = company?.legalName ?? "Виробнича компанія";
-  const companyLines = [company?.address, company?.phone].filter((line): line is string =>
-    Boolean(line),
-  );
+  const companyLines = [
+    company?.address,
+    [company?.phone, company?.email].filter(Boolean).join(" · ") || null,
+    company?.taxId ? `ЄДРПОУ / ІПН: ${company.taxId}` : null,
+    company?.iban ? `IBAN: ${company.iban}` : null,
+  ].filter((line): line is string => Boolean(line));
   const totalQuantity = items.reduce((sum, row) => sum + row.totalQuantity, 0);
   const allFrozen = items.every((row) => Boolean(row.specification));
   const anyFrozen = items.some((row) => Boolean(row.specification));

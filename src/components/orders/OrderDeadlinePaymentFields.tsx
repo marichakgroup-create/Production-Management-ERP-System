@@ -50,7 +50,7 @@ export function OrderDeadlinePaymentFields({
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid items-end gap-3 sm:grid-cols-2">
       <Input
         label="Дедлайн"
         type="date"
@@ -63,7 +63,7 @@ export function OrderDeadlinePaymentFields({
           if (deadlineValue === toDateInputValue(deadline)) return;
           save({ deadline: deadlineValue });
         }}
-        inputClassName="h-9 text-[13px] font-semibold"
+        inputClassName="!h-8 text-[13px] font-semibold"
       />
       <Input
         label="Спосіб оплати"
@@ -77,7 +77,7 @@ export function OrderDeadlinePaymentFields({
           if (paymentValue.trim() === (paymentMethod ?? "").trim()) return;
           save({ paymentMethod: paymentValue });
         }}
-        inputClassName="h-9 text-[13px] font-semibold"
+        inputClassName="!h-8 text-[13px] font-semibold"
       />
     </div>
   );

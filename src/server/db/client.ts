@@ -31,7 +31,7 @@ const globalForPrisma = globalThis as unknown as {
  * module; `getPrismaClient` reloads the generated client from disk when
  * the freshness check fails.
  */
-const PRISMA_CLIENT_VERSION = "20261102150000_order_company_settings";
+const PRISMA_CLIENT_VERSION = "20261103130000_company_iban";
 
 /** Delegates that must exist after party contacts / legal details / decorations. */
 const REQUIRED_DELEGATES = [

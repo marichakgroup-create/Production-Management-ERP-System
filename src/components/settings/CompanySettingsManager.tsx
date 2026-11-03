@@ -20,6 +20,7 @@ export type CompanyRow = {
   phone: string | null;
   email: string | null;
   taxId: string | null;
+  iban: string | null;
   quotationFooter: string | null;
   isDefault: boolean;
 };
@@ -30,6 +31,7 @@ const emptyDraft = {
   phone: "",
   email: "",
   taxId: "",
+  iban: "",
   quotationFooter: "",
   isDefault: false,
 };
@@ -61,6 +63,7 @@ export function CompanySettingsManager({
             phone: selected.phone ?? "",
             email: selected.email ?? "",
             taxId: selected.taxId ?? "",
+            iban: selected.iban ?? "",
             quotationFooter: selected.quotationFooter ?? "",
             isDefault: selected.isDefault,
           }
@@ -83,6 +86,7 @@ export function CompanySettingsManager({
     formData.set("phone", draft.phone);
     formData.set("email", draft.email);
     formData.set("taxId", draft.taxId);
+    formData.set("iban", draft.iban);
     formData.set("quotationFooter", draft.quotationFooter);
     if (draft.isDefault) formData.set("isDefault", "true");
     startTransition(async () => {
@@ -197,6 +201,19 @@ export function CompanySettingsManager({
               value={draft.address}
               onChange={(event) => setDraft((prev) => ({ ...prev, address: event.target.value }))}
             />
+            <Input
+              label="ЄДРПОУ / ІПН"
+              disabled={!canEdit || pending}
+              value={draft.taxId}
+              onChange={(event) => setDraft((prev) => ({ ...prev, taxId: event.target.value }))}
+            />
+            <Input
+              label="IBAN"
+              disabled={!canEdit || pending}
+              value={draft.iban}
+              onChange={(event) => setDraft((prev) => ({ ...prev, iban: event.target.value }))}
+              placeholder="UA00 0000 0000 0000 0000 0000 000"
+            />
           </FormGroup>
           <FormGroup label="Контакти в документах" columns={2}>
             <Input
@@ -211,13 +228,6 @@ export function CompanySettingsManager({
               disabled={!canEdit || pending}
               value={draft.email}
               onChange={(event) => setDraft((prev) => ({ ...prev, email: event.target.value }))}
-            />
-            <Input
-              label="ЄДРПОУ / ІПН"
-              className="sm:col-span-2"
-              disabled={!canEdit || pending}
-              value={draft.taxId}
-              onChange={(event) => setDraft((prev) => ({ ...prev, taxId: event.target.value }))}
             />
           </FormGroup>
           <FormGroup label="Комерційна пропозиція" columns={1}>

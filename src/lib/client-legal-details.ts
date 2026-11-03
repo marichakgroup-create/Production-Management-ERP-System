@@ -1,4 +1,4 @@
-/** Shared shape for legal / banking реквізити under a client. */
+/** Shared shape for a saved client bank account. */
 export type ClientLegalDetailInput = {
   nameUk: string;
   details?: string | null;
@@ -12,7 +12,7 @@ export function normalizeClientLegalDetail(
   const details = String(raw.details ?? "").trim() || null;
   if (!nameUk && !details) return null;
   return {
-    nameUk: nameUk || "Реквізити",
+    nameUk: nameUk || "IBAN",
     details,
     isPrimary: Boolean(raw.isPrimary),
   };

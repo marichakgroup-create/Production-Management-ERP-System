@@ -31,14 +31,17 @@ import { OrderCompanyField } from "@/components/orders/OrderCompanyField";
 import { listCompanies } from "@/server/domains/settings/company";
 import {
   OrderChevronPipeline,
+  OrderHeaderSection,
   OrderHeaderFacts,
   OrderWorkspaceHeader,
-  OrderWorkspacePanel,
   OrderWorkspaceShell,
 } from "@/components/orders/OrderWorkspaceLayout";
 import { CostStructure } from "@/components/calc/CostSummary";
 import {
   IconCalc,
+  IconClients,
+  IconClock,
+  IconCompany,
   IconFiles,
   IconProducts,
   IconQuote,
@@ -755,14 +758,6 @@ export default async function OrderDetailPage({
       value: String(workingItems.length),
       hint: workingItems.length > 1 ? "у замовленні" : undefined,
     },
-    ...(activeProposalRevision != null
-      ? [
-          {
-            label: "Активна пропозиція",
-            value: `v${activeProposalRevision}`,
-          },
-        ]
-      : []),
   ];
 
   const activeDraft = item ? draftLines.find((line) => line.orderItemId === item.id) : null;
@@ -813,15 +808,17 @@ export default async function OrderDetailPage({
     <aside className="space-y-3 xl:sticky xl:top-[72px] xl:h-fit">
       <div className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5">
         <p className="type-caption">Ціна для клієнта</p>
-        <p className="text-[20px] font-semibold tabular">
-          {formatMoneyUah(productPricePerUnit)}
-          <span className="ml-1 text-[12px] font-normal text-[var(--color-text-quiet)]">/ од.</span>
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[20px] font-semibold tabular">
+          <span>
+            {formatMoneyUah(productPricePerUnit)}
+            <span className="ml-1 text-[12px] font-normal text-[var(--color-text-quiet)]">/ од.</span>
+          </span>
+          {hasDecoration ? (
+            <span className="inline-flex items-center rounded-full bg-[var(--color-tint-slate)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--color-text-secondary)]">
+              + нанесення {formatMoneyUah(decorationPricePerUnit)}
+            </span>
+          ) : null}
         </p>
-        {hasDecoration ? (
-          <p className="mt-0.5 text-[13px] font-medium tabular text-[var(--color-text-secondary)]">
-            + нанесення {formatMoneyUah(decorationPricePerUnit)}
-          </p>
-        ) : null}
         <p className="type-caption mt-0.5">{priceSourceLabel}</p>
         {activeDraft?.oversizeSurcharge && activeDraft.oversizeSurcharge.total > 0.05 ? (
           <p className="type-caption mt-1 font-medium text-[var(--color-warning-text)]">
@@ -936,68 +933,87 @@ export default async function OrderDetailPage({
                 ) : null}
               </>
             }
+            summary={<OrderChevronPipeline className="w-full" status={order.status} />}
             meta={
-              <div className="space-y-3">
-                <OrderHeaderFacts title="Замовлення" facts={orderFacts} columns={3} />
-                <OrderCompanyField
+              <div className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)] sm:p-5">
+              <div className="grid gap-x-6 gap-y-5 lg:grid-cols-2">
+                  <OrderHeaderSection plain icon={<IconCompany size={16} />} title="Виконавець">
+                    <OrderCompanyField
+                      orderId={order.id}
+                      selectedId={order.companySettingsId}
+                      companies={companies.map((row) => ({
+                        id: row.id,
+                        legalName: row.legalName,
+                        isDefault: row.isDefault,
+                        address: row.address,
+                        phone: row.phone,
+                        email: row.email,
+                        taxId: row.taxId,
+                        iban: row.iban,
+                      }))}
+                      canEdit={
+                        accessHas(access, "manageOrders") &&
+                        order.status !== "CLOSED" &&
+                        order.status !== "CANCELLED"
+                      }
+                    />
+                  </OrderHeaderSection>
+                  <OrderHeaderSection plain icon={<IconClients size={16} />} title="Замовник">
+                    <Link
+                      href={`/clients/${order.clientId}`}
+                      className="mb-3 block text-[14px] font-semibold text-[var(--color-primary-700)] transition-colors hover:text-[var(--color-primary-500)] hover:underline"
+                    >
+                      {order.client.companyName}
+                    </Link>
+                    <OrderClientPartyFields
+                      orderId={order.id}
+                      canEdit={canEditQuantities}
+                      contacts={order.client.contacts.map((person) => ({
+                        id: person.id,
+                        nameUk: person.nameUk,
+                        roleUk: person.roleUk,
+                        phone: person.phone,
+                        email: person.email,
+                        isPrimary: person.isPrimary,
+                      }))}
+                      legalEntities={order.client.legalEntities.map((row) => ({
+                        id: row.id,
+                        nameUk: row.nameUk,
+                        details: row.details,
+                        isPrimary: row.isPrimary,
+                      }))}
+                      selectedContactId={order.clientContactId}
+                      selectedLegalId={order.clientLegalDetailId}
+                      fallbackPhone={order.client.phone}
+                      fallbackEmail={order.client.email}
+                      website={order.client.website}
+                      fallbackLegalDetails={order.client.legalDetails}
+                      note={order.client.note}
+                    />
+                  </OrderHeaderSection>
+                  <OrderHeaderSection plain className="h-full" icon={<IconClock size={16} />} title="Умови замовлення">
+                    <OrderDeadlinePaymentFields
+                      orderId={order.id}
+                      deadline={order.deadline}
+                      paymentMethod={order.paymentMethod}
+                      canEdit={
+                        accessHas(access, "manageOrders") &&
+                        order.status !== "CLOSED" &&
+                        order.status !== "CANCELLED"
+                      }
+                    />
+                  </OrderHeaderSection>
+                  <section className="flex h-full min-w-0 items-center rounded-[var(--radius-control)] border border-[var(--color-border)] p-3.5">
+                    <OrderHeaderFacts facts={orderFacts} columns={4} className="w-full" />
+                  </section>
+              </div>
+              <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--color-border)] px-3.5 py-2.5">
+                <OrderCommentBlock
                   orderId={order.id}
-                  selectedId={order.companySettingsId}
-                  companies={companies.map((row) => ({
-                    id: row.id,
-                    legalName: row.legalName,
-                    isDefault: row.isDefault,
-                  }))}
-                  canEdit={
-                    accessHas(access, "manageOrders") &&
-                    order.status !== "CLOSED" &&
-                    order.status !== "CANCELLED"
-                  }
-                />
-                <OrderDeadlinePaymentFields
-                  orderId={order.id}
-                  deadline={order.deadline}
-                  paymentMethod={order.paymentMethod}
-                  canEdit={
-                    accessHas(access, "manageOrders") &&
-                    order.status !== "CLOSED" &&
-                    order.status !== "CANCELLED"
-                  }
+                  comment={order.comment}
+                  locked={locked}
                 />
               </div>
-            }
-            aside={
-              <div className="space-y-2.5">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-quiet)]">
-                    Клієнт
-                  </p>
-                  <Link
-                    href={`/clients/${order.clientId}`}
-                    className="mt-1 block text-[14px] font-semibold text-[var(--color-primary-700)] transition-colors hover:text-[var(--color-primary-500)] hover:underline"
-                  >
-                    {order.client.companyName}
-                  </Link>
-                </div>
-                <OrderClientPartyFields
-                  orderId={order.id}
-                  canEdit={canEditQuantities}
-                  contacts={order.client.contacts.map((person) => ({
-                    id: person.id,
-                    nameUk: person.nameUk,
-                    roleUk: person.roleUk,
-                    phone: person.phone,
-                    email: person.email,
-                    isPrimary: person.isPrimary,
-                  }))}
-                  legalEntities={order.client.legalEntities.map((row) => ({
-                    id: row.id,
-                    nameUk: row.nameUk,
-                    details: row.details,
-                    isPrimary: row.isPrimary,
-                  }))}
-                  selectedContactId={order.clientContactId}
-                  selectedLegalId={order.clientLegalDetailId}
-                />
               </div>
             }
             actions={
@@ -1007,7 +1023,7 @@ export default async function OrderDetailPage({
                     <GeneratingDocumentLink
                       href={`/orders/${order.id}/quotation`}
                       hint="orderQuotation"
-                      className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border !border-[var(--color-control-border)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
                     >
                       <IconQuote size={15} />
                       КП
@@ -1018,7 +1034,7 @@ export default async function OrderDetailPage({
                       href={`/orders/${order.id}/specification`}
                       hint="orderSpecification"
                       label="Генеруємо специфікацію…"
-                      className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border !border-[var(--color-control-border)] bg-[var(--color-surface)] px-2.5 text-[13px] font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)]"
                     >
                       <IconSpec size={15} />
                       Специфікація
@@ -1026,7 +1042,7 @@ export default async function OrderDetailPage({
                   ) : null}
                 </QuickActions>
                 {order.status === "APPROVED" && canRunCalc && !locked ? (
-                  <StartNewProposalButton orderId={order.id} accent={false} />
+                  <StartNewProposalButton orderId={order.id} accent={false} label="Нова" />
                 ) : null}
                 {order.status === "DRAFT" && accessHas(access, "manageOrders") ? (
                   <SubmitForCalculationButton
@@ -1047,13 +1063,13 @@ export default async function OrderDetailPage({
                     <GeneratingDocumentLink
                       href={`/orders/${order.id}/specification`}
                       label="Генеруємо специфікацію…"
-                      className={headerPrimary ? "btn-primary" : "btn-secondary"}
+                      className={headerPrimary ? "btn-primary !h-8" : "btn-secondary !h-8"}
                     >
                       {action.label}
                     </GeneratingDocumentLink>
                   ) : (
-                    <Link href={nextHref} className={headerPrimary ? "btn-primary" : "btn-secondary"}>
-                      {action.label}
+                    <Link href={nextHref} className={headerPrimary ? "btn-primary !h-8" : "btn-secondary !h-8"}>
+                      {action.key === "handover" ? "У виробництво" : action.label}
                     </Link>
                   )
                 ) : null}
@@ -1061,33 +1077,27 @@ export default async function OrderDetailPage({
             }
           />
         }
-        pipeline={
-          <OrderChevronPipeline
-            status={order.status}
-            nextTitle={`${action.index}/${action.of} · ${action.detail}`}
-          />
-        }
-        footer={
-          <OrderCommentBlock
+      />
+
+      <OrderWorkspaceTabs
+        items={hasItems ? tabs : tabs.filter((tab) => tab.key === "files")}
+        active={hasItems ? activeTab : "files"}
+      />
+
+      {hasItems ? (
+        <div id="order-items">
+          <OrderItemsTable
             orderId={order.id}
-            comment={order.comment}
-            locked={locked}
+            activeTab={activeTab}
+            selectedId={item?.id ?? ""}
+            locked={itemsLocked}
+            handedOver={order.status === "HANDED_TO_PRODUCTION" || order.status === "CLOSED"}
+            rows={itemRows}
+            catalog={catalog}
+            showPrices
           />
-        }
-      />
-
-      <OrderItemsTable
-        orderId={order.id}
-        activeTab={activeTab}
-        selectedId={item?.id ?? ""}
-        locked={itemsLocked}
-        handedOver={order.status === "HANDED_TO_PRODUCTION" || order.status === "CLOSED"}
-        rows={itemRows}
-        catalog={catalog}
-        showPrices
-      />
-
-      {!hasItems ? (
+        </div>
+      ) : (
         <div className="space-y-4">
           <Banner
             tone="info"
@@ -1102,15 +1112,7 @@ export default async function OrderDetailPage({
             Порожнє замовлення можна лишати на етапах Чернетка і Розрахунок. Додайте виріб з
             каталогу, коли будете готові.
           </Banner>
-          <OrderWorkspacePanel
-            tabs={
-              <OrderWorkspaceTabs
-                items={tabs.filter((tab) => tab.key === "files")}
-                active="files"
-                className="border-b-0"
-              />
-            }
-          >
+          <section className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)] sm:p-5">
             <FilesTab
               orderId={order.id}
               hasApprovedVersion={false}
@@ -1133,29 +1135,22 @@ export default async function OrderDetailPage({
                 orderItemNameUk: null,
               }))}
             />
-          </OrderWorkspacePanel>
+          </section>
         </div>
-      ) : null}
+      )}
 
-      {/* Show tabs and configuration only when there are items */}
       {hasItems && item ? (
-      <OrderWorkspacePanel
-        tabs={
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="min-w-0">
-              <p className="type-caption">Позиція</p>
-              <p className="text-[14px] font-semibold tracking-[-0.01em]">
-                {item.nameUk}
-                <span className="ml-2 font-normal text-[var(--color-text-tertiary)]">
-                  {item.totalQuantity} шт
-                  {item.comment ? ` · ${item.comment}` : ""}
-                </span>
-              </p>
-            </div>
-            <OrderWorkspaceTabs items={tabs} active={activeTab} className="border-b-0" />
-          </div>
-        }
-      >
+      <section className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)] sm:p-5">
+        <div className="mb-4 min-w-0 border-b border-[var(--color-divider)] pb-3">
+          <p className="type-caption">Позиція</p>
+          <p className="text-[14px] font-semibold tracking-[-0.01em]">
+            {item.nameUk}
+            <span className="ml-2 font-normal text-[var(--color-text-tertiary)]">
+              {item.totalQuantity} шт
+              {item.comment ? ` · ${item.comment}` : ""}
+            </span>
+          </p>
+        </div>
         {activeTab === "configuration" ? (
           <div className="space-y-3">
             {order.status === "DRAFT" && !canRunCalc ? (
@@ -1414,14 +1409,16 @@ export default async function OrderDetailPage({
           )}
         </div>
         )}
-      </OrderWorkspacePanel>
+      </section>
       ) : null}
 
-      <ActivityTimeline
-        events={mapActivityEvents(activityEvents)}
-        title="Історія замовлення"
-        empty="Подій ще немає — зʼявляться після збереження пропозицій і змін статусу"
-      />
+      <div id="order-history">
+        <ActivityTimeline
+          events={mapActivityEvents(activityEvents)}
+          title="Історія замовлення"
+          empty="Подій ще немає: зʼявляться після збереження пропозицій і змін статусу"
+        />
+      </div>
     </div>
     </OrderUnsavedProvider>
   );

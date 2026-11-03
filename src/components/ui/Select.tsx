@@ -110,6 +110,8 @@ type SelectProps = {
    * Use in compact inline toolbars so h-8 siblings stay aligned.
    */
   hideSelectedDescription?: boolean;
+  /** Sit the label on the control’s top border instead of a row above it. */
+  labelOnBorder?: boolean;
 };
 
 function placeMenu(button: HTMLElement): React.CSSProperties {
@@ -156,6 +158,7 @@ export function Select({
   "aria-label": ariaLabel,
   searchable,
   hideSelectedDescription = false,
+  labelOnBorder = false,
 }: SelectProps) {
   const options = useMemo(
     () => optionsProp ?? optionsFromChildren(children),
@@ -420,15 +423,22 @@ export function Select({
       : null;
 
   return (
-    <div ref={rootRef} className={cn("flex w-full min-w-0 flex-col gap-1", className)}>
+    <div ref={rootRef} className={cn("flex w-full min-w-0 flex-col", labelOnBorder ? "relative pt-1.5" : "gap-1", className)}>
       {label ? (
-        <span className="type-label inline-flex flex-wrap items-baseline gap-1.5" id={`${fieldId}-label`}>
+        <span
+          className={
+            labelOnBorder
+              ? "pointer-events-none absolute top-1.5 left-2 z-[1] -translate-y-1/2 bg-[var(--color-surface)] px-1 text-[10.5px] leading-none font-medium text-[var(--color-text-tertiary)]"
+              : "type-label inline-flex flex-wrap items-baseline gap-1.5"
+          }
+          id={`${fieldId}-label`}
+        >
           <span>
             {label}
             {required ? <span className="ml-0.5 text-[var(--color-danger-text)]">*</span> : null}
           </span>
-          {optional && !required ? (
-            <span className="text-[10.5px] font-normal normal-case tracking-normal text-[var(--color-text-tertiary)]">
+          {!labelOnBorder && optional && !required ? (
+            <span className="text-[12px] font-normal tracking-normal text-[var(--color-text-secondary)] normal-case">
               необовʼязково
             </span>
           ) : null}

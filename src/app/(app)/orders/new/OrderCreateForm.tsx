@@ -494,7 +494,7 @@ export function OrderCreateForm({
                   ? "Обраний виріб недоступний — оберіть інший з каталогу."
                   : result.error === "CLIENT_CONTACT_INVALID" ||
                       result.error === "CLIENT_LEGAL_INVALID"
-                    ? "Контакт або реквізити не належать обраному клієнту."
+                    ? "Контакт або IBAN не належать обраному клієнту."
                     : result.error === "CREATE_FAILED"
                       ? "Не вдалося зберегти замовлення. Перевірте матеріали й розміри та спробуйте ще раз."
                       : "Перевірте обовʼязкові поля — замовлення не створено.",
@@ -630,7 +630,7 @@ export function OrderCreateForm({
                 {selectedClient && clientLegalEntities.length > 0 ? (
                   <Select
                     name="clientLegalDetailId"
-                    label="Реквізити"
+                    label="IBAN"
                     value={clientLegalDetailId}
                     onChange={(event) => setClientLegalDetailId(event.target.value)}
                     hideSelectedDescription
@@ -657,8 +657,8 @@ export function OrderCreateForm({
                     <input type="hidden" name="clientLegalDetailId" value="" />
                     <p className="type-caption pb-2">
                       {selectedClient
-                        ? "Немає реквізитів — додайте в картці клієнта."
-                        : "Оберіть клієнта, щоб вказати реквізити."}
+                        ? "Немає IBAN — додайте в картці клієнта."
+                        : "Оберіть клієнта, щоб вказати IBAN."}
                     </p>
                   </div>
                 )}

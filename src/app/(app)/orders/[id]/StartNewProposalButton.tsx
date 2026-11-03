@@ -9,9 +9,11 @@ import { startNewProposalAction } from "@/server/domains/orders/actions";
 export function StartNewProposalButton({
   orderId,
   accent = true,
+  label = "Нова пропозиція",
 }: {
   orderId: string;
   accent?: boolean;
+  label?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -50,7 +52,7 @@ export function StartNewProposalButton({
         hint="newProposal"
       >
         <IconPlus size={15} />
-        Нова пропозиція
+        {label}
       </Button>
       {error ? (
         <span className="type-caption text-[var(--color-danger-text)]">{error}</span>

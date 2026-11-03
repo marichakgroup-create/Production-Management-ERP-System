@@ -5,6 +5,8 @@ type FieldShellProps = {
   hint?: string;
   error?: string;
   required?: boolean;
+  /** Sit the label on the control’s top border instead of a row above it. */
+  labelOnBorder?: boolean;
   className?: string;
   children: React.ReactNode;
 };
@@ -15,19 +17,39 @@ export function FieldShell({
   error,
   required,
   optional,
+  labelOnBorder,
   className,
   children,
 }: FieldShellProps & { optional?: boolean }) {
+  const labelText = label ? (
+    <span>
+      {label}
+      {required ? <span className="ml-0.5 text-[var(--color-danger-text)]">*</span> : null}
+    </span>
+  ) : null;
+
+  if (labelOnBorder) {
+    return (
+      <label className={cn("relative block w-full pt-1.5", className)}>
+        {labelText ? (
+          <span className="pointer-events-none absolute top-1.5 left-2 z-[1] -translate-y-1/2 bg-[var(--color-surface)] px-1 text-[10.5px] leading-none font-medium text-[var(--color-text-tertiary)]">
+            {labelText}
+          </span>
+        ) : null}
+        {children}
+        {error ? <span className="mt-1 block text-[12px] text-[var(--color-danger-text)]">{error}</span> : null}
+        {!error && hint ? <span className="type-caption mt-1 block">{hint}</span> : null}
+      </label>
+    );
+  }
+
   return (
     <label className={cn("flex w-full flex-col gap-1", className)}>
-      {label ? (
+      {labelText ? (
         <span className="type-label inline-flex flex-wrap items-baseline gap-1.5">
-          <span>
-            {label}
-            {required ? <span className="ml-0.5 text-[var(--color-danger-text)]">*</span> : null}
-          </span>
+          {labelText}
           {optional && !required ? (
-            <span className="text-[10.5px] font-normal normal-case tracking-normal text-[var(--color-text-tertiary)]">
+            <span className="text-[12px] font-normal tracking-normal text-[var(--color-text-secondary)] normal-case">
               необовʼязково
             </span>
           ) : null}

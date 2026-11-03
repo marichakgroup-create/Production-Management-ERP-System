@@ -3,6 +3,7 @@
 import { useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Select } from "@/components/ui/Field";
+import { OrderPartyDetails } from "@/components/orders/OrderPartyDetails";
 import { updateOrderClientPartyAction } from "@/server/domains/orders/actions";
 
 type ContactOption = {
@@ -28,6 +29,11 @@ export function OrderClientPartyFields({
   legalEntities,
   selectedContactId,
   selectedLegalId,
+  fallbackPhone,
+  fallbackEmail,
+  website,
+  fallbackLegalDetails,
+  note,
 }: {
   orderId: string;
   canEdit: boolean;
@@ -35,6 +41,11 @@ export function OrderClientPartyFields({
   legalEntities: LegalOption[];
   selectedContactId: string | null;
   selectedLegalId: string | null;
+  fallbackPhone?: string | null;
+  fallbackEmail?: string | null;
+  website?: string | null;
+  fallbackLegalDetails?: string | null;
+  note?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -65,11 +76,12 @@ export function OrderClientPartyFields({
     });
   }
 
-  const phone = selectedContact?.phone?.trim() || null;
-  const email = selectedContact?.email?.trim() || null;
+  const phone = selectedContact?.phone?.trim() || fallbackPhone?.trim() || null;
+  const email = selectedContact?.email?.trim() || fallbackEmail?.trim() || null;
+  const legalDetails = selectedLegal?.details?.trim() || fallbackLegalDetails?.trim() || null;
 
   return (
-    <div className="space-y-2.5">
+    <div className="grid items-start gap-3 sm:grid-cols-2">
       {contacts.length > 0 ? (
         <Select
           label="Відповідальний"
@@ -99,59 +111,51 @@ export function OrderClientPartyFields({
           ))}
         </Select>
       ) : (
-        <p className="type-caption">Немає контактних осіб у картці клієнта.</p>
+        <p className="type-body-secondary sm:col-span-2">Немає контактних осіб у картці клієнта.</p>
       )}
 
       {legalEntities.length > 0 ? (
-        <Select
-          label="Реквізити"
-          size="sm"
-          disabled={!canEdit || pending}
-          value={legalId}
-          hideSelectedDescription
-          onChange={(event) => save({ clientLegalDetailId: event.target.value })}
-        >
-          <option value="">Не вказано</option>
-          {legalEntities.map((row) => (
-            <option
-              key={row.id}
-              value={row.id}
-              data-description={
-                [row.isPrimary ? "основні" : null, row.details?.replace(/\s+/g, " ").trim() || null]
-                  .filter(Boolean)
-                  .join(" · ") || undefined
-              }
-            >
-              {row.nameUk}
-            </option>
-          ))}
-        </Select>
+        <div className="min-w-0">
+          <Select
+            label="IBAN"
+            size="sm"
+            disabled={!canEdit || pending}
+            value={legalId}
+            hideSelectedDescription
+            onChange={(event) => save({ clientLegalDetailId: event.target.value })}
+          >
+            <option value="">Не вказано</option>
+            {legalEntities.map((row) => (
+              <option
+                key={row.id}
+                value={row.id}
+                data-description={
+                  [row.isPrimary ? "основні" : null, row.details?.replace(/\s+/g, " ").trim() || null]
+                    .filter(Boolean)
+                    .join(" · ") || undefined
+                }
+              >
+                {row.nameUk}
+              </option>
+            ))}
+          </Select>
+        </div>
       ) : (
-        <p className="type-caption">Немає реквізитів у картці клієнта.</p>
+        <p className="type-body-secondary">Немає IBAN у картці клієнта.</p>
       )}
 
-      {selectedLegal?.details?.trim() ? (
-        <p className="type-caption whitespace-pre-wrap text-[var(--color-text-secondary)]">
-          {selectedLegal.details.trim()}
-        </p>
-      ) : null}
-
-      {phone || email ? (
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-          {phone ? (
-            <div className="min-w-0">
-              <dt className="type-caption">Телефон</dt>
-              <dd className="mt-0.5 truncate text-[13px] font-semibold">{phone}</dd>
-            </div>
-          ) : null}
-          {email ? (
-            <div className="min-w-0">
-              <dt className="type-caption">Email</dt>
-              <dd className="mt-0.5 truncate text-[13px] font-semibold">{email}</dd>
-            </div>
-          ) : null}
-        </dl>
-      ) : null}
+      <div className="sm:col-span-2">
+        <OrderPartyDetails
+          rows={[
+            { label: "Посада", value: selectedContact?.roleUk },
+            { label: "Телефон", value: phone },
+            { label: "Email", value: email },
+            { label: "Сайт", value: website },
+            { label: "IBAN", value: legalDetails, code: true },
+            { label: "Примітка", value: note },
+          ]}
+        />
+      </div>
     </div>
   );
 }
