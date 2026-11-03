@@ -26,7 +26,6 @@ import {
 } from "@/server/domains/orders/actions";
 import { HandoverDialog, type ReadinessCheck } from "./HandoverDialog";
 import { SaveProposalPanel, type ProposalDraftLine } from "./SaveProposalPanel";
-import { StartNewProposalButton } from "./StartNewProposalButton";
 
 export function VersionsTab({
   orderId,
@@ -178,8 +177,6 @@ export function VersionsTab({
               <span className="type-caption inline-flex items-center gap-1">
                 <IconLock size={14} /> Специфікацію зафіксовано
               </span>
-            ) : isApprovedStatus ? (
-              <StartNewProposalButton orderId={orderId} accent />
             ) : (
               <SaveProposalPanel
                 orderId={orderId}
@@ -187,6 +184,7 @@ export function VersionsTab({
                 minimumMarginPercent={minimumMarginPercent}
                 accent={!needsApproval && !approved}
                 defaultOpen={autoSave}
+                activeRevision={activeProposalRevision}
               />
             )
           }

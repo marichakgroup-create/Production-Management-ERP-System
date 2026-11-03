@@ -3187,7 +3187,6 @@ export async function saveProposal(input: {
 }) {
   const order = await getOrder(input.orderId);
   if (!order) throw new Error("ORDER_NOT_FOUND");
-  if (order.status === "APPROVED") throw new Error("USE_NEW_PROPOSAL");
   assertOrderEditable(order.status);
 
   const proposalLabel = input.label?.trim() || null;

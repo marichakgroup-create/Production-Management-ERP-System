@@ -110,6 +110,7 @@ export function SaveProposalPanel({
   lines: initialLines,
   accent = true,
   defaultOpen = false,
+  activeRevision = null,
 }: {
   orderId: string;
   lines: ProposalDraftLine[];
@@ -117,6 +118,8 @@ export function SaveProposalPanel({
   minimumMarginPercent?: number;
   accent?: boolean;
   defaultOpen?: boolean;
+  /** Set when a proposal already exists. The action then creates the next one. */
+  activeRevision?: number | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(defaultOpen);
@@ -215,6 +218,12 @@ export function SaveProposalPanel({
     () => lines.reduce((sum, line) => sum + line.totalQuantity, 0),
     [lines],
   );
+  const creatingNext = activeRevision != null;
+  const nextRevision = (activeRevision ?? 0) + 1;
+  const actionLabel = creatingNext ? "Нова пропозиція" : "Зберегти пропозицію";
+  const submitLabel = creatingNext
+    ? `Створити пропозицію v${nextRevision}`
+    : "Зберегти пропозицію";
 
   function updatePrice(orderItemId: string, field: keyof PriceOverride, raw: string) {
     const price = Number(raw);
@@ -280,14 +289,18 @@ export function SaveProposalPanel({
         hint="saveProposal"
       >
         <IconPlus size={15} />
-        Зберегти пропозицію
+        {actionLabel}
       </Button>
 
       <SidePanel
         open={open}
         onClose={requestClose}
-        title="Зберегти пропозицію для клієнта"
-        description="Виріб і нанесення окремо. Знижка — на обидві позиції; +20% за 3XL+ лише на виріб."
+        title={creatingNext ? `Нова пропозиція v${nextRevision}` : "Пропозиція для клієнта"}
+        description={
+          creatingNext
+            ? `v${activeRevision} лишається в списку. Тут нові ціни за одиницю по кожному виробу і окремо нанесення. Якщо цю не погодять — можна створити ще одну.`
+            : "Ціна виробу і нанесення — за одиницю, окремо по кожній позиції. Знижка діє на обидві; +20% за 3XL+ лише на виріб."
+        }
         width="2xl"
         footer={
           <>
@@ -296,7 +309,7 @@ export function SaveProposalPanel({
               Скасувати
             </Button>
             <Button onClick={submit} disabled={pending || lines.length === 0}>
-              {pending ? "Збереження…" : "Зберегти пропозицію"}
+              {pending ? "Збереження…" : submitLabel}
             </Button>
           </>
         }
@@ -321,19 +334,14 @@ export function SaveProposalPanel({
           </FormGroup>
 
           <div className="overflow-x-auto overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)]">
-            <table className="erp-table w-full min-w-[52rem] border-collapse text-[13px]">
+            <table className="erp-table w-full min-w-[40rem] border-collapse text-[13px]">
               <thead>
                 <tr className="border-b border-[var(--color-table-section-border)]">
                   <th className="px-3 py-2 text-left">Виріб</th>
                   <th className="px-3 py-2 text-right">К-сть</th>
-                  <th className="px-3 py-2 text-right">Собівартість/од.</th>
-                  <th className="px-3 py-2 text-right">Виріб ₴/од.</th>
-                  <th className="px-3 py-2 text-right">Нанесення ₴/од.</th>
-                  <th className="px-3 py-2 text-right">
-                    +{OVERSIZE_CLIENT_SURCHARGE_PERCENT}% 3XL+
-                  </th>
-                  <th className="px-3 py-2 text-right">Сума</th>
-                  <th className="px-3 py-2 text-right">Маржа</th>
+                  <th className="px-3 py-2 text-right">Виріб, ₴/од.</th>
+                  <th className="px-3 py-2 text-right">Нанесення, ₴/од.</th>
+                  <th className="px-3 py-2 text-right">Разом</th>
                 </tr>
               </thead>
               <tbody>
@@ -357,11 +365,20 @@ export function SaveProposalPanel({
                             {line.sizeRun}
                           </p>
                         ) : null}
+                        <p className="type-caption mt-0.5 tabular font-normal text-[var(--color-text-tertiary)]">
+                          собівартість {formatMoneyUah(line.costPerUnit)}/од. · маржа{" "}
+                          {line.marginPercent.toFixed(1)}%
+                        </p>
+                        {line.oversizeQuantity > 0 ? (
+                          <p className="type-caption mt-0.5 font-normal text-[var(--color-warning-text)]">
+                            {oversizeSurchargeComment(line.oversizeExtraPerUnit) ??
+                              `+${OVERSIZE_CLIENT_SURCHARGE_PERCENT}%`}{" "}
+                            · {line.oversizeQuantity} шт ·{" "}
+                            {formatMoneyUah(line.oversizeSurcharge?.total ?? 0)}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2 text-right tabular">{line.totalQuantity} шт</td>
-                      <td className="px-3 py-2 text-right tabular text-[var(--color-text-secondary)]">
-                        {formatMoneyUah(line.costPerUnit)}
-                      </td>
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
@@ -374,11 +391,12 @@ export function SaveProposalPanel({
                           className="h-8 w-[6.5rem] rounded-[6px] border border-[var(--color-border)] px-2 text-right tabular outline-none focus:border-[var(--color-primary-500)]"
                           aria-label="Ціна виробу за одиницю"
                         />
-                        {discount > 0 ? (
-                          <p className="type-caption mt-0.5 tabular text-[var(--color-text-secondary)]">
-                            після знижки {formatMoneyUah(line.quotedProductPricePerUnit)}
-                          </p>
-                        ) : null}
+                        <p className="type-caption mt-0.5 tabular text-[var(--color-text-secondary)]">
+                          {discount > 0
+                            ? `після знижки ${formatMoneyUah(line.quotedProductPricePerUnit)} · `
+                            : ""}
+                          разом {formatMoneyUah(line.quotedProductPricePerUnit * line.totalQuantity)}
+                        </p>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <input
@@ -392,33 +410,18 @@ export function SaveProposalPanel({
                           className="h-8 w-[6.5rem] rounded-[6px] border border-[var(--color-border)] px-2 text-right tabular outline-none focus:border-[var(--color-primary-500)]"
                           aria-label="Ціна нанесення за одиницю"
                         />
-                        {discount > 0 ? (
-                          <p className="type-caption mt-0.5 tabular text-[var(--color-text-secondary)]">
-                            після знижки {formatMoneyUah(line.quotedDecorationPerUnit)}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular">
-                        {line.oversizeQuantity > 0 ? (
-                          <>
-                            <p className="font-medium">
-                              {formatMoneyUah(line.oversizeSurcharge?.total ?? 0)}
-                            </p>
-                            <p className="type-caption mt-0.5 text-[var(--color-warning-text)]">
-                              {oversizeSurchargeComment(line.oversizeExtraPerUnit) ??
-                                `+${OVERSIZE_CLIENT_SURCHARGE_PERCENT}%`}{" "}
-                              · {line.oversizeQuantity} шт
-                            </p>
-                          </>
-                        ) : (
-                          <span className="text-[var(--color-text-secondary)]">—</span>
-                        )}
+                        <p className="type-caption mt-0.5 tabular text-[var(--color-text-secondary)]">
+                          {discount > 0
+                            ? `після знижки ${formatMoneyUah(line.quotedDecorationPerUnit)} · `
+                            : ""}
+                          разом {formatMoneyUah(line.quotedDecorationPerUnit * line.totalQuantity)}
+                        </p>
                       </td>
                       <td className="px-3 py-2 text-right font-medium tabular">
                         {formatMoneyUah(line.totalSellingValue)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular">
-                        {line.marginPercent.toFixed(1)}%
+                        <p className="type-caption mt-0.5 font-normal text-[var(--color-text-secondary)]">
+                          {formatMoneyUah(line.sellingPricePerUnit)}/од.
+                        </p>
                       </td>
                     </tr>
                   );
@@ -426,7 +429,7 @@ export function SaveProposalPanel({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={5} className="px-3 py-2.5 text-right type-caption">
+                  <td colSpan={3} className="px-3 py-2.5 text-right type-caption">
                     Разом виріб {formatMoneyUah(totalProduct)}
                     <span className="mx-2 text-[var(--color-divider)]">·</span>
                     Разом нанесення {formatMoneyUah(totalDecoration)}
@@ -437,11 +440,13 @@ export function SaveProposalPanel({
                       </>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-semibold">Разом до сплати</td>
+                  <td className="px-3 py-2.5 text-right font-semibold">
+                    Разом до сплати
+                    <span className="type-caption mt-0.5 block font-normal">{totalQty} шт</span>
+                  </td>
                   <td className="px-3 py-2.5 text-right text-[15px] font-semibold tabular">
                     {formatMoneyUah(totalValue)}
                   </td>
-                  <td className="px-3 py-2.5 text-right type-caption tabular">{totalQty} шт</td>
                 </tr>
               </tfoot>
             </table>
