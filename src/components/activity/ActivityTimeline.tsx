@@ -21,7 +21,8 @@ function detailFromPayload(action: string, payload: unknown): string | null {
   if (
     action === "proposal_saved" ||
     action === "proposal_approved" ||
-    action === "proposal_activated"
+    action === "proposal_activated" ||
+    action === "proposal_deleted"
   ) {
     const n = data.proposalRevision;
     return typeof n === "number" ? `v${n}` : null;
