@@ -13,6 +13,12 @@ import {
 } from "@/components/print/PrintDocument";
 import { formatDateUk, formatUnit } from "@/lib/utils";
 import { lineNeedOnSizes } from "@/lib/size-bom";
+import {
+  fabricFieldsForOrderLine,
+  materialToSnapshot,
+  offerToSnapshot,
+  pickSupplierOffer,
+} from "@/lib/order-material-terms";
 import { operationMethodLabel } from "@/lib/operation-labels";
 import { isOversizeCode, OVERSIZE_RANGE_LABEL, oversizeUpliftCaption } from "@/lib/size-coeffs";
 import { getPricingForOrder } from "@/server/domains/calculation/from-entities";
@@ -27,8 +33,45 @@ type SpecMaterial = {
   wastePercent: string | number;
   sizeCode?: string | null;
   materialId?: string | null;
+  supplierId?: string | null;
   colorSnapshot?: string | null;
   supplierNameSnapshot?: string | null;
+  /** м/кг for the chosen supplier offer, else the material card. */
+  metersPerKg?: number | null;
+  /** Gray line under the name: density, composition, width, м/кг. */
+  traits?: string | null;
+};
+
+type KgSource = {
+  type?: string | null;
+  densityGsm?: string | null;
+  composition?: string | null;
+  fabricKindUk?: string | null;
+  widthCm?: string | null;
+  colorOrAttribute?: string | null;
+  purchasePrice?: { toString(): string } | number | null;
+  metersPerKg?: { toString(): string } | number | null;
+  priceKgUsd?: { toString(): string } | number | null;
+  priceKgUsdCargo?: { toString(): string } | number | null;
+  priceMeterUahNoVat?: { toString(): string } | number | null;
+  priceMeterUahVat?: { toString(): string } | number | null;
+  priceMeterUahCutVat?: { toString(): string } | number | null;
+  metersPerRoll?: { toString(): string } | number | null;
+  minWholesaleMeters?: { toString(): string } | number | null;
+  supplierOffers?: Array<{
+    supplierId: string;
+    isPrimary?: boolean;
+    metersPerKg?: { toString(): string } | number | null;
+    priceKgUsd?: { toString(): string } | number | null;
+    priceKgUsdCargo?: { toString(): string } | number | null;
+    priceKgUsdVat?: { toString(): string } | number | null;
+    priceMeterUahNoVat?: { toString(): string } | number | null;
+    priceMeterUahVat?: { toString(): string } | number | null;
+    priceMeterUahCutVat?: { toString(): string } | number | null;
+    metersPerRoll?: { toString(): string } | number | null;
+    minWholesaleMeters?: { toString(): string } | number | null;
+    cargoUsdPerKg?: { toString(): string } | number | null;
+  }>;
 };
 
 type SpecOperation = {
@@ -69,8 +112,10 @@ function liveSpecFromItem(item: {
     wastePercent: unknown;
     sizeCode?: string | null;
     materialId?: string | null;
+    supplierId?: string | null;
     colorSnapshot?: string | null;
     supplierNameSnapshot?: string | null;
+    material?: KgSource | null;
   }>;
   operations: Array<{
     nameSnapshot: string;
@@ -90,8 +135,14 @@ function liveSpecFromItem(item: {
       wastePercent: Number(row.wastePercent),
       sizeCode: row.sizeCode,
       materialId: row.materialId,
+      supplierId: row.supplierId,
       colorSnapshot: row.colorSnapshot,
       supplierNameSnapshot: row.supplierNameSnapshot,
+      metersPerKg: metersPerKgFromCatalog(row.material, row.supplierId),
+      traits: materialTraits(
+        row.material,
+        metersPerKgFromCatalog(row.material, row.supplierId),
+      ),
     })),
     operations: item.operations.map((row) => ({
       nameSnapshot: row.nameSnapshot,
@@ -105,6 +156,104 @@ function liveSpecFromItem(item: {
 }
 
 type SizeRule = { sizeCode: string; materialCoeff: number; operationCoeff: number };
+
+function metersPerKgFromCatalog(
+  material: KgSource | null | undefined,
+  supplierId?: string | null,
+): number | null {
+  if (!material) return null;
+  const offer = pickSupplierOffer(material.supplierOffers, supplierId);
+  const merged = fabricFieldsForOrderLine(
+    materialToSnapshot({
+      ...material,
+      purchasePrice: material.purchasePrice ?? 0,
+    }),
+    offer ? offerToSnapshot(offer) : null,
+  );
+  const metersPerKg = merged.metersPerKg;
+  return metersPerKg != null && metersPerKg > 0 ? metersPerKg : null;
+}
+
+function formatDensity(value?: string | null): string | null {
+  const trimmed = value?.replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  return /г\/м/i.test(trimmed) ? trimmed : `${trimmed} г/м²`;
+}
+
+function formatWidth(value?: string | null): string | null {
+  const trimmed = value?.replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  if (/см/i.test(trimmed)) return trimmed;
+  return `${trimmed} см`;
+}
+
+function materialTraits(
+  material: KgSource | null | undefined,
+  metersPerKg: number | null,
+): string | null {
+  if (!material || material.type !== "FABRIC") return null;
+  const meters =
+    metersPerKg != null && metersPerKg > 0
+      ? `${new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 2 }).format(metersPerKg)} м/кг`
+      : null;
+  const parts = [
+    material.fabricKindUk?.replace(/\s+/g, " ").trim() || null,
+    formatDensity(material.densityGsm),
+    material.composition?.replace(/\s+/g, " ").trim() || null,
+    formatWidth(material.widthCm),
+    meters,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Purchase weight when the line is in meters and the material card has м/кг. */
+function purchaseKg(need: number, material: SpecMaterial): number | null {
+  if (material.unitCodeSnapshot !== "m") return null;
+  const metersPerKg = material.metersPerKg;
+  if (metersPerKg == null || metersPerKg <= 0 || !(need > 0)) return null;
+  return Math.round((need / metersPerKg) * 10) / 10;
+}
+
+function withPurchaseKg<T extends SpecMaterial & { material?: KgSource | null }>(
+  materials: T[],
+  live: Array<{
+    nameSnapshot: string;
+    materialId?: string | null;
+    supplierId?: string | null;
+    sizeCode?: string | null;
+    material?: KgSource | null;
+  }>,
+): SpecMaterial[] {
+  return materials.map((row) => {
+    const match = live.find(
+      (line) =>
+        (row.materialId != null &&
+          line.materialId === row.materialId &&
+          (row.supplierId == null || line.supplierId === row.supplierId) &&
+          (row.sizeCode ?? null) === (line.sizeCode ?? null)) ||
+        (line.nameSnapshot === row.nameSnapshot &&
+          (row.sizeCode ?? null) === (line.sizeCode ?? null)),
+    );
+    const source = match?.material ?? row.material;
+    const supplierId = row.supplierId ?? match?.supplierId;
+    const metersPerKg =
+      row.metersPerKg != null && row.metersPerKg > 0
+        ? row.metersPerKg
+        : metersPerKgFromCatalog(source, supplierId);
+    return {
+      ...row,
+      metersPerKg,
+      traits: row.traits?.trim() || materialTraits(source, metersPerKg),
+    };
+  });
+}
+
+function formatKg(value: number): string {
+  return `${new Intl.NumberFormat("uk-UA", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)} кг`;
+}
 
 function materialNeed(
   material: SpecMaterial,
@@ -226,6 +375,9 @@ function SpecProductBlock({
                 <th className="num">Норма</th>
                 <th className="num">Відх.</th>
                 <th className="num">Потреба</th>
+                {materials.some((row) => row.unitCodeSnapshot === "m") ? (
+                  <th className="num">кг</th>
+                ) : null}
               </tr>
             }
             rows={
@@ -235,10 +387,15 @@ function SpecProductBlock({
                   const waste = Number(material.wastePercent);
                   const need = materialNeed(material, materialIndex, materials, sizes, sizeRules);
                   const unit = formatUnit(material.unitCodeSnapshot);
+                  const kg = purchaseKg(need, material);
+                  const showKg = materials.some((row) => row.unitCodeSnapshot === "m");
                   return (
                     <tr key={`${material.nameSnapshot}-${materialIndex}`}>
                       <td>
                         <strong>{material.nameSnapshot}</strong>
+                        {material.traits ? (
+                          <span className="print-doc-item-sub">{material.traits}</span>
+                        ) : null}
                         {material.sizeCode ? (
                           <span className="print-doc-item-sub">лише {material.sizeCode}</span>
                         ) : null}
@@ -254,6 +411,11 @@ function SpecProductBlock({
                           {need.toFixed(need >= 10 ? 2 : 3)} {unit}
                         </strong>
                       </td>
+                      {showKg ? (
+                        <td className="num">
+                          <strong>{kg != null ? formatKg(kg) : "—"}</strong>
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
@@ -485,7 +647,7 @@ export default async function SpecificationPage({
               quantity={snap.totalQuantity ?? item.totalQuantity}
               frozenAt={specification?.lockedAt ?? null}
               sizes={(snap.sizes ?? []).filter((row) => row.quantity > 0)}
-              materials={snap.materials ?? []}
+              materials={withPurchaseKg(snap.materials ?? [], item.materials)}
               operations={snap.operations ?? []}
               decorations={snap.decorations ?? []}
               artworkFiles={artworkFiles}
