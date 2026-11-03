@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Banner } from "@/components/ui/Banner";
 import { StatusBadge } from "@/components/ui/Page";
-import { IconDecoration, IconEdit, IconPlus, IconTrash } from "@/components/ui/Icons";
+import { IconDecoration, IconDownload, IconEdit, IconPlus, IconTrash } from "@/components/ui/Icons";
 import { controlClass } from "@/components/ui/Field";
 import {
   Table,
@@ -580,6 +580,7 @@ export function OrderAttachments({
                                     pending={pending}
                                     onSave={(next) => saveMeta(file.id, next)}
                                   />
+                                  <FileDownloadLink url={file.url} fileName={file.fileName} />
                                   {!locked ? (
                                     <Button
                                       type="button"
@@ -640,7 +641,7 @@ export function OrderAttachments({
               <TH>Виріб</TH>
               <TH>Файл</TH>
               <TH>Підпис</TH>
-              {!locked ? <TH width="44px" /> : null}
+              <TH width="76px" />
             </THead>
             <TBody>
               {generalFiles.map((file) => (
@@ -960,6 +961,31 @@ function FileMaketQty({
   );
 }
 
+function fileDownloadHref(url: string, fileName: string) {
+  if (url.startsWith("/")) return url;
+  try {
+    const next = new URL(url);
+    next.searchParams.set("download", fileName);
+    return next.toString();
+  } catch {
+    return url;
+  }
+}
+
+function FileDownloadLink({ url, fileName }: { url: string; fileName: string }) {
+  return (
+    <a
+      href={fileDownloadHref(url, fileName)}
+      download={fileName}
+      aria-label={`Завантажити ${fileName}`}
+      title="Завантажити"
+      className="inline-flex h-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] px-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text-primary)]"
+    >
+      <IconDownload size={14} />
+    </a>
+  );
+}
+
 function FileRow({
   file,
   items,
@@ -1051,20 +1077,23 @@ function FileRow({
           />
         )}
       </TD>
-      {locked ? null : (
-        <TD>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={pending}
-            aria-label={`Видалити ${file.fileName}`}
-            onClick={onRemove}
-          >
-            <IconTrash size={14} />
-          </Button>
-        </TD>
-      )}
+      <TD>
+        <div className="flex items-center justify-end">
+          <FileDownloadLink url={file.url} fileName={file.fileName} />
+          {locked ? null : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              aria-label={`Видалити ${file.fileName}`}
+              onClick={onRemove}
+            >
+              <IconTrash size={14} />
+            </Button>
+          )}
+        </div>
+      </TD>
     </TR>
   );
 }

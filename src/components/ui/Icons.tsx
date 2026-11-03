@@ -16,6 +16,7 @@ import {
   ClipboardList,
   Clock,
   Copy,
+  Download,
   Factory,
   FileClock,
   FileSpreadsheet,
@@ -103,6 +104,7 @@ export const IconArchive = icon(Archive);
 export const IconCopy = icon(Copy);
 export const IconPrint = icon(Printer);
 export const IconTrash = icon(Trash);
+export const IconDownload = icon(Download);
 export const IconPin = icon(Pin);
 export const IconGrip = icon(GripVertical);
 export const IconAlert = icon(TriangleAlert);
