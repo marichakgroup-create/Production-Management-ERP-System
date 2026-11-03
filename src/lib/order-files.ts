@@ -60,17 +60,70 @@ const ORDER_FILE_MIME = new Set([
   "application/x-7z-compressed",
 ]);
 
-/** Keep Latin, Cyrillic and digits. Only path and URL-breaking characters are replaced. */
+/** Storage keys only allow ASCII. The name shown in the order stays the original file name. */
+const CYRILLIC_TO_LATIN: Record<string, string> = {
+  а: "a",
+  б: "b",
+  в: "v",
+  г: "h",
+  ґ: "g",
+  д: "d",
+  е: "e",
+  є: "ie",
+  ж: "zh",
+  з: "z",
+  и: "y",
+  і: "i",
+  ї: "i",
+  й: "i",
+  к: "k",
+  л: "l",
+  м: "m",
+  н: "n",
+  о: "o",
+  п: "p",
+  р: "r",
+  с: "s",
+  т: "t",
+  у: "u",
+  ф: "f",
+  х: "x",
+  ц: "ts",
+  ч: "ch",
+  ш: "sh",
+  щ: "shch",
+  ь: "",
+  ю: "iu",
+  я: "ia",
+  ё: "e",
+  э: "e",
+  ы: "y",
+  ъ: "",
+};
+
+function foldStorageName(name: string): string {
+  const folded = name.normalize("NFKD").replace(/\p{M}/gu, "");
+  let out = "";
+  for (const ch of folded) {
+    const mapped = CYRILLIC_TO_LATIN[ch.toLowerCase()];
+    if (mapped === undefined) {
+      out += ch;
+      continue;
+    }
+    out += ch === ch.toLowerCase() ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
+  }
+  return out;
+}
+
 export function orderFileObjectName(name: string, ext: string): string {
-  const cleaned = name
-    .normalize("NFKC")
+  const cleaned = foldStorageName(name)
+    .replace(/[×✕✖]/g, "x")
     .replace(/[\\/]+/g, "_")
-    .replace(/[\u0000-\u001f\u007f]/g, "")
-    .replace(/[#?%*"|<>]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim()
+    .replace(/[^A-Za-z0-9_!.*'() &$=@;:+,?-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^[_ ]+|[_ ]+$/g, "")
     .slice(0, 140);
-  if (cleaned && /\p{L}|\p{N}/u.test(cleaned)) return cleaned;
+  if (cleaned && /[A-Za-z0-9]/.test(cleaned)) return cleaned;
   return `file.${ext}`;
 }
 
