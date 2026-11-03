@@ -36,6 +36,7 @@ export function ColorSelect({
   disabled,
   placeholder = "Колір…",
   className,
+  searchable,
   "aria-label": ariaLabel = "Колір",
 }: {
   value: string | null | undefined;
@@ -44,6 +45,8 @@ export function ColorSelect({
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  /** Show the search field. Defaults on once the palette is long. */
+  searchable?: boolean;
   "aria-label"?: string;
 }) {
   const listId = useId();
@@ -57,7 +60,7 @@ export function ColorSelect({
 
   const selected = value?.trim() || "";
   const selectedSwatch = selected ? swatchForColorLabel(selected) : null;
-  const withSearch = options.length >= 8;
+  const withSearch = searchable ?? options.length >= 8;
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
@@ -185,14 +188,14 @@ export function ColorSelect({
             >
               {withSearch ? (
                 <div className="border-b border-[var(--color-divider)] px-2 py-1.5">
-                  <label className="flex items-center gap-1.5 rounded-[6px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1">
+                  <label className="flex items-center gap-1.5 rounded-[6px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1 focus-within:border-[var(--color-primary-400)]">
                     <IconSearch size={13} className="shrink-0 text-[var(--color-text-tertiary)]" />
                     <input
                       ref={searchRef}
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
                       placeholder="Пошук…"
-                      className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--color-text-quiet)]"
+                      className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--color-text-quiet)] focus-visible:outline-none!"
                       aria-label="Пошук кольору"
                     />
                   </label>

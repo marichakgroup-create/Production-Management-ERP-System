@@ -86,7 +86,7 @@ import { CalculationTab } from "./CalculationTab";
 import { VersionsTab } from "./VersionsTab";
 import { FilesTab, OrderDocumentsCard } from "./FilesTab";
 import { SaveProposalPanel } from "./SaveProposalPanel";
-import { StartNewProposalButton } from "./StartNewProposalButton";
+import { ScrollToArtworkLink } from "./ScrollToArtworkLink";
 import { proposalSnapshotRestorable } from "@/lib/proposal-snapshot";
 import type { ReadinessCheck } from "./HandoverDialog";
 
@@ -667,7 +667,6 @@ export default async function OrderDetailPage({
   const showHeaderCta =
     action.key !== "cancelled" &&
     !(action.key === "compose" && onNextTab) &&
-    !(action.key === "artwork" && onNextTab) &&
     !(action.key === "closed" && !action.specificationReady);
   const headerPrimary = action.key !== "handover" || handoverReady;
   const withRail = canViewCosts && activeTab !== "configuration";
@@ -1041,9 +1040,6 @@ export default async function OrderDetailPage({
                     </GeneratingDocumentLink>
                   ) : null}
                 </QuickActions>
-                {order.status === "APPROVED" && canRunCalc && !locked ? (
-                  <StartNewProposalButton orderId={order.id} accent={false} label="Нова" />
-                ) : null}
                 {order.status === "DRAFT" && accessHas(access, "manageOrders") ? (
                   <SubmitForCalculationButton
                     orderId={order.id}
@@ -1068,9 +1064,18 @@ export default async function OrderDetailPage({
                       {action.label}
                     </GeneratingDocumentLink>
                   ) : (
-                    <Link href={nextHref} className={headerPrimary ? "btn-primary !h-8" : "btn-secondary !h-8"}>
-                      {action.key === "handover" ? "У виробництво" : action.label}
-                    </Link>
+                    action.key === "artwork" ? (
+                      <ScrollToArtworkLink
+                        href={nextHref}
+                        className={headerPrimary ? "btn-primary !h-8" : "btn-secondary !h-8"}
+                      >
+                        {action.label}
+                      </ScrollToArtworkLink>
+                    ) : (
+                      <Link href={nextHref} className={headerPrimary ? "btn-primary !h-8" : "btn-secondary !h-8"}>
+                        {action.key === "handover" ? "У виробництво" : action.label}
+                      </Link>
+                    )
                   )
                 ) : null}
               </>

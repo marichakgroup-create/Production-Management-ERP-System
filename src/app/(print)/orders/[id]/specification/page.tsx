@@ -466,9 +466,7 @@ function SpecProductBlock({
       <PrintDocSection title="Файли макетів">
         {artworkFiles.length === 0 ? (
           <PrintDocMuted>
-            {decorations.length > 0
-              ? "Макетів у цій позиції немає — перевірте вкладку файлів"
-              : "Не потрібні"}
+            {decorations.length > 0 ? "Макетів у цій позиції немає" : "Не потрібні"}
           </PrintDocMuted>
         ) : (
           <ul className="print-doc-list-plain print-doc-list--shop">
@@ -661,16 +659,6 @@ export default async function SpecificationPage({
             <div>
               <p className="print-doc-label">Контроль цеху</p>
               <p className="print-doc-shop-check">☐ Крій &nbsp; ☐ Пошив &nbsp; ☐ Нанесення &nbsp; ☐ ОТК</p>
-              <PrintDocMuted>
-                Менеджер: {order.manager.name}
-                {(order.clientContact?.nameUk || order.client.contactPerson)
-                  ? ` · контакт клієнта: ${order.clientContact?.nameUk || order.client.contactPerson}${
-                      order.clientContact?.roleUk?.trim()
-                        ? ` (${order.clientContact.roleUk.trim()})`
-                        : ""
-                    }`
-                  : ""}
-              </PrintDocMuted>
             </div>
             <PrintDocSignatures
               items={[{ label: "Видав (менеджер)" }, { label: "Прийняв (цех)" }]}

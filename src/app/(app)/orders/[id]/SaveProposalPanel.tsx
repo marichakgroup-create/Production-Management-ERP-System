@@ -283,7 +283,7 @@ export function SaveProposalPanel({
   return (
     <>
       <Button
-        variant={accent ? "primary" : "secondary"}
+        variant={creatingNext || accent ? "primary" : "secondary"}
         size="sm"
         onClick={() => setOpen(true)}
         hint="saveProposal"

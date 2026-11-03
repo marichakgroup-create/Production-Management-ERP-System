@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Banner } from "@/components/ui/Banner";
@@ -32,6 +32,7 @@ import {
   ORDER_FILE_MAX_MB,
   orderArtworkReady,
 } from "@/lib/order-files";
+import { focusArtwork } from "@/app/(app)/orders/[id]/ScrollToArtworkLink";
 import { decorationDisplayName } from "@/lib/decoration-format-pricing";
 import { decorationCostQuantity } from "@/lib/decoration-qty";
 import {
@@ -169,6 +170,10 @@ export function OrderAttachments({
   locked?: boolean;
 }) {
   const router = useRouter();
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("focus") !== "artwork") return;
+    return focusArtwork();
+  }, []);
   const generalInputRef = useRef<HTMLInputElement>(null);
   const decorationInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -356,15 +361,25 @@ export function OrderAttachments({
       />
 
       {decorated.length > 0 ? (
-        <section className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)]">
-          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3.5 py-2.5">
+        <section
+          id="order-artwork"
+          className="overflow-hidden rounded-[var(--radius-surface)] border border-[var(--color-border)]"
+        >
+          <div
+            className={cn(
+              "flex flex-wrap items-start justify-between gap-2 border-b px-3.5 py-2.5",
+              artworkReady
+                ? "border-[var(--color-border)] bg-[var(--color-surface-subtle)]"
+                : "border-[#ead89a] bg-[#fbf6e4]",
+            )}
+          >
             <div className="min-w-0">
               <p className="inline-flex items-center gap-1.5 type-subsection">
                 <IconDecoration size={15} />
                 Нанесення — макети
               </p>
             </div>
-            <StatusBadge tone={artworkReady ? "success" : "warning"}>
+            <StatusBadge tone={artworkReady ? "success" : "neutral"}>
               {artworkReady
                 ? "Макети є"
                 : `Потрібен макет · ${missingArtwork.length}`}
@@ -580,10 +595,6 @@ export function OrderAttachments({
                                 </li>
                               ))}
                             </ul>
-                          ) : needs ? (
-                            <p className="type-caption mt-1.5 text-[var(--color-warning-text)]">
-                              Завантажте макет для цього нанесення.
-                            </p>
                           ) : null}
                         </li>
                       );
@@ -594,11 +605,9 @@ export function OrderAttachments({
             })}
           </ul>
 
-          {canUpload ? (
+          {canUpload && artworkDragging ? (
             <p className="border-t border-[var(--color-border)] px-3.5 py-2 type-caption text-[var(--color-text-tertiary)]">
-              {artworkDragging
-                ? "Відпустіть файл — потрапить у перший порожній слот"
-                : "Або перетягніть макет на блок / натисніть «Макет» біля типу нанесення"}
+              Відпустіть файл — потрапить у перший порожній слот
             </p>
           ) : null}
         </section>

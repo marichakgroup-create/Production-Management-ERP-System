@@ -192,6 +192,7 @@ export function SupplierColorFields({
               value={color}
               options={palette}
               disabled={disabled}
+              searchable
               onChange={onColorChange}
               className="flex-1 basis-[7.5rem]"
             />

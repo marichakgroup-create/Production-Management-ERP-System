@@ -330,7 +330,7 @@ export function Select({
                   onKeyDown={onListKey}
                   placeholder="Пошук у списку"
                   aria-label="Пошук у списку"
-                  className="h-8 w-full rounded-[8px] border-0 bg-[var(--color-surface-subtle)] pr-2.5 pl-8 text-[13px] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:ring-2 focus:ring-[var(--color-focus-ring)]"
+                  className="h-8 w-full rounded-[8px] border-0 bg-[var(--color-surface-subtle)] pr-2.5 pl-8 text-[13px] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:ring-2 focus:ring-[var(--color-focus-ring)] focus-visible:outline-none!"
                 />
               </div>
             ) : null}
