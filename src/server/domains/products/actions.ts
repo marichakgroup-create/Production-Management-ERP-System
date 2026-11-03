@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/server/auth";
 import { assertSessionPermission } from "@/server/auth/access";
 import { hasUserPermission } from "@/lib/permissions";
+import { PRODUCT_IMAGE_MAX_BYTES } from "@/lib/product-image";
 import {
   addProductDecoration,
   addProductMaterial,
@@ -169,7 +170,7 @@ export async function uploadProductImageAction(formData: FormData) {
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false as const, error: "EMPTY" as const };
   }
-  if (file.size > 5 * 1024 * 1024) {
+  if (file.size > PRODUCT_IMAGE_MAX_BYTES) {
     return { ok: false as const, error: "TOO_LARGE" as const };
   }
 

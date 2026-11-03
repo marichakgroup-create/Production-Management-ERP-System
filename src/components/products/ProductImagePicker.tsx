@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { IconClose, IconProducts } from "@/components/ui/Icons";
+import { PRODUCT_IMAGE_MAX_MB } from "@/lib/product-image";
 import { cn } from "@/lib/utils";
 import {
   updateProductImageAction,
@@ -72,7 +73,7 @@ export function ProductImagePicker({
         setPreviewUrl(imageUrl);
         setError(
           uploaded.error === "TOO_LARGE"
-            ? "Фото до 5 МБ."
+            ? `Фото до ${PRODUCT_IMAGE_MAX_MB} МБ.`
             : uploaded.error === "TYPE"
               ? "Потрібен файл зображення."
               : uploaded.error === "EMPTY"

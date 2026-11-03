@@ -10,6 +10,7 @@ import { FormGroup, Textarea, Select } from "@/components/ui/Field";
 import { Banner } from "@/components/ui/Banner";
 import { SidePanel } from "@/components/ui/Overlay";
 import { IconCheckCircle, IconPlus, IconProducts } from "@/components/ui/Icons";
+import { PRODUCT_IMAGE_MAX_MB } from "@/lib/product-image";
 import {
   createProductAction,
   uploadProductImageAction,
@@ -199,7 +200,7 @@ export function ProductCreatePanel({
       if (!result.ok || !("url" in result) || !result.url) {
         setError(
           result.error === "TOO_LARGE"
-            ? "Фото має бути до 5 МБ."
+            ? `Фото має бути до ${PRODUCT_IMAGE_MAX_MB} МБ.`
             : result.error === "TYPE"
               ? "Потрібен файл зображення."
               : "message" in result && result.message
@@ -390,7 +391,7 @@ export function ProductCreatePanel({
                     setImageUrl(event.target.value);
                     setPreviewUrl(event.target.value || null);
                   }}
-                  hint="JPEG/PNG до 5 МБ, або публічний URL"
+                  hint={`JPEG/PNG до ${PRODUCT_IMAGE_MAX_MB} МБ, або публічний URL`}
                 />
               </div>
             </div>

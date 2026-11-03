@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
     // Every file upload is a Server Action: order artwork/docs (up to 50 MB)
-    // and product photos (up to 5 MB). The framework default is 1 MB and
+    // and product photos (up to 15 MB). The framework default is 1 MB and
     // returns 500 before the action's own size check. Auth middleware also
     // buffers the body and defaults to 10 MB, which would still reject
     // larger documents. Leave room for the multipart envelope.
