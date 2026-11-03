@@ -60,7 +60,11 @@ const ORDER_FILE_MIME = new Set([
   "application/x-7z-compressed",
 ]);
 
-/** Storage keys only allow ASCII. The name shown in the order stays the original file name. */
+/**
+ * Storage object keys accept only a small ASCII set.
+ * The name shown in the order and used for download stays the original file name.
+ * Supabase: /^[A-Za-z0-9_/!.*'() &$=@;:+,?-]*$/
+ */
 const CYRILLIC_TO_LATIN: Record<string, string> = {
   а: "a",
   б: "b",
@@ -101,30 +105,73 @@ const CYRILLIC_TO_LATIN: Record<string, string> = {
   ъ: "",
 };
 
-function foldStorageName(name: string): string {
-  const folded = name.normalize("NFKD").replace(/\p{M}/gu, "");
+/** Latin letters that NFKD does not split into A–Z plus a mark. */
+const LATIN_TO_ASCII: Record<string, string> = {
+  æ: "ae",
+  ø: "o",
+  ö: "o",
+  ß: "ss",
+  ð: "d",
+  þ: "th",
+  đ: "d",
+  ł: "l",
+  œ: "oe",
+  ı: "i",
+  ħ: "h",
+  ŋ: "ng",
+  ŧ: "t",
+  ĸ: "k",
+  ƒ: "f",
+  µ: "u",
+};
+
+const STORAGE_KEY = /^[A-Za-z0-9_/!.*'() &$=@;:+,?-]+$/;
+
+function applyLetterMap(value: string, map: Record<string, string>): string {
   let out = "";
-  for (const ch of folded) {
-    const mapped = CYRILLIC_TO_LATIN[ch.toLowerCase()];
+  for (const ch of value) {
+    const mapped = map[ch.toLowerCase()];
     if (mapped === undefined) {
       out += ch;
       continue;
     }
-    out += ch === ch.toLowerCase() ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
+    const replacement =
+      ch === ch.toLowerCase() ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
+    out += replacement;
   }
   return out;
 }
 
-export function orderFileObjectName(name: string, ext: string): string {
-  const cleaned = foldStorageName(name)
+function foldStorageName(name: string): string {
+  const folded = name.normalize("NFKC").normalize("NFKD").replace(/\p{M}/gu, "");
+  return applyLetterMap(applyLetterMap(folded, CYRILLIC_TO_LATIN), LATIN_TO_ASCII)
     .replace(/[×✕✖]/g, "x")
+    .replace(/[–—―−]/g, "-")
+    .replace(/[“”„«»]/g, "'")
+    .replace(/[‘’]/g, "'")
+    .replace(/…/g, "...")
+    .replace(/№/g, "No")
+    .replace(/[•·]/g, "-")
+    .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, " ");
+}
+
+export function orderFileObjectName(name: string, ext: string): string {
+  const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+  const cleaned = foldStorageName(name)
     .replace(/[\\/]+/g, "_")
     .replace(/[^A-Za-z0-9_!.*'() &$=@;:+,?-]+/g, "_")
     .replace(/_+/g, "_")
-    .replace(/^[_ ]+|[_ ]+$/g, "")
-    .slice(0, 140);
-  if (cleaned && /[A-Za-z0-9]/.test(cleaned)) return cleaned;
-  return `file.${ext}`;
+    .replace(/\.{2,}/g, ".")
+    .replace(/^[\s_]+|[\s_]+$/g, "");
+  const dot = cleaned.lastIndexOf(".");
+  const rawStem = dot >= 0 ? cleaned.slice(0, dot) : cleaned;
+  const rawExt = dot >= 0 ? cleaned.slice(dot + 1).replace(/[^A-Za-z0-9]/g, "") : "";
+  const stem = rawStem.replace(/^[\s_.]+|[\s_.]+$/g, "").slice(0, 120);
+  const extension = rawExt || safeExt;
+  if (!stem || !/[A-Za-z0-9]/.test(stem)) return `file.${extension}`;
+  const result = `${stem}.${extension}`;
+  if (STORAGE_KEY.test(result)) return result;
+  return `file.${safeExt}`;
 }
 
 export function orderFileAllowed(file: { name: string; type: string }) {
