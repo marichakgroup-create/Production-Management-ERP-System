@@ -24,6 +24,7 @@ import {
   addOrderItemMaterial,
   addOrderItemOperation,
   activateProposal,
+  deleteProposal,
   approveVersion,
   approveProposal,
   cancelOrders,
@@ -1178,6 +1179,38 @@ export async function activateProposalAction(formData: FormData) {
     }
     return { ok: false as const, error: "FAILED" as const };
   }
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/overview");
+  return { ok: true as const };
+}
+
+export async function deleteProposalAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("saveVersions");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  const proposalRevision = Number(formData.get("proposalRevision") ?? "");
+  if (!orderId || !Number.isFinite(proposalRevision)) {
+    return { ok: false as const, error: "VALIDATION" as const };
+  }
+
+  try {
+    await deleteProposal(orderId, proposalRevision, session.user.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (
+      message === "ORDER_LOCKED" ||
+      message === "ACTIVE_PROPOSAL" ||
+      message === "LAST_PROPOSAL" ||
+      message === "PROPOSAL_NOT_FOUND" ||
+      message === "ORDER_NOT_FOUND"
+    ) {
+      return { ok: false as const, error: message };
+    }
+    return { ok: false as const, error: "FAILED" as const };
+  }
+
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/overview");
   return { ok: true as const };

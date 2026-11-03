@@ -3590,6 +3590,69 @@ export async function activateProposal(
   return { orderId, proposalRevision };
 }
 
+/** Drop a spare client proposal. The active one and the last remaining one stay. */
+export async function deleteProposal(
+  orderId: string,
+  proposalRevision: number,
+  userId?: string,
+) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, status: true, activeProposalRevision: true },
+  });
+  if (!order) throw new Error("ORDER_NOT_FOUND");
+  assertOrderEditable(order.status);
+  if (order.activeProposalRevision === proposalRevision) {
+    throw new Error("ACTIVE_PROPOSAL");
+  }
+
+  const versions = await prisma.calculationVersion.findMany({
+    where: { orderItem: { orderId }, proposalRevision: { not: null } },
+    select: { id: true, proposalRevision: true },
+  });
+  const revisions = [
+    ...new Set(
+      versions
+        .map((row) => row.proposalRevision)
+        .filter((revision): revision is number => revision != null),
+    ),
+  ];
+  if (!revisions.includes(proposalRevision)) throw new Error("PROPOSAL_NOT_FOUND");
+  if (revisions.length <= 1) throw new Error("LAST_PROPOSAL");
+
+  const ids = versions
+    .filter((row) => row.proposalRevision === proposalRevision)
+    .map((row) => row.id);
+  const remaining = revisions.filter((revision) => revision !== proposalRevision);
+
+  await prisma.$transaction(async (tx) => {
+    const linkedSpec = await tx.productionSpecification.count({
+      where: { calculationVersionId: { in: ids } },
+    });
+    if (linkedSpec > 0) throw new Error("ORDER_LOCKED");
+
+    await tx.quotation.deleteMany({ where: { calculationVersionId: { in: ids } } });
+    await tx.calculationVersion.deleteMany({ where: { id: { in: ids } } });
+
+    if (order.activeProposalRevision == null && remaining.length === 1) {
+      await tx.order.update({
+        where: { id: orderId },
+        data: { activeProposalRevision: remaining[0] },
+      });
+    }
+  });
+
+  await recordActivity({
+    entityType: "order",
+    entityId: orderId,
+    action: "proposal_deleted",
+    userId: userId ?? null,
+    payload: { proposalRevision },
+  });
+
+  return { orderId, proposalRevision };
+}
+
 export async function approveProposal(orderId: string, proposalRevision: number, userId?: string) {
   const order = await getOrder(orderId);
   if (!order) throw new Error("ORDER_NOT_FOUND");

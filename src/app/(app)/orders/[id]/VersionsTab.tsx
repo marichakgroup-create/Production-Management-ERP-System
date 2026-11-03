@@ -17,12 +17,13 @@ import {
   THead,
   TR,
 } from "@/components/ui/Table";
-import { IconCheck, IconChevronDown, IconChevronRight, IconLock } from "@/components/ui/Icons";
+import { IconCheck, IconChevronDown, IconChevronRight, IconLock, IconTrash } from "@/components/ui/Icons";
 import { cn, formatDateUk, formatMoneyUah } from "@/lib/utils";
 import type { OrderProposalGroup } from "@/lib/order-proposals";
 import {
   activateProposalAction,
   approveProposalAction,
+  deleteProposalAction,
 } from "@/server/domains/orders/actions";
 import { HandoverDialog, type ReadinessCheck } from "./HandoverDialog";
 import { SaveProposalPanel, type ProposalDraftLine } from "./SaveProposalPanel";
@@ -142,6 +143,39 @@ export function VersionsTab({
     });
   }
 
+  function removeProposal(proposal: OrderProposalGroup) {
+    if (proposal.revision == null) return;
+    if (
+      !window.confirm(
+        `Видалити пропозицію v${proposal.revision}? Активна пропозиція залишиться.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    const formData = new FormData();
+    formData.set("orderId", orderId);
+    formData.set("proposalRevision", String(proposal.revision));
+    startTransition(async () => {
+      const result = await deleteProposalAction(formData);
+      if (!result.ok) {
+        setError(
+          result.error === "ACTIVE_PROPOSAL"
+            ? "Активну пропозицію не можна видалити. Спочатку зробіть активною іншу."
+            : result.error === "LAST_PROPOSAL"
+              ? "Має залишитись хоча б одна пропозиція."
+              : result.error === "ORDER_LOCKED"
+                ? "До цього замовлення пропозиції вже не змінюються."
+                : "Не вдалося видалити пропозицію.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  const savedProposalCount = proposals.filter((row) => row.revision != null).length;
+
   return (
     <div className="space-y-4">
       {error ? <Banner tone="danger">{error}</Banner> : null}
@@ -221,6 +255,12 @@ export function VersionsTab({
                   proposal.revision != null &&
                   !isActive &&
                   restorable.has(proposal.revision);
+                const canDelete =
+                  canSwitchProposal &&
+                  !handedOver &&
+                  proposal.revision != null &&
+                  !isActive &&
+                  savedProposalCount > 1;
                 return (
                   <Fragment key={proposal.key}>
                     <TR className={isActive ? "bg-[var(--color-tint-sage)]/35" : undefined}>
@@ -291,6 +331,18 @@ export function VersionsTab({
                               hint="activateProposal"
                             >
                               Зробити активною
+                            </Button>
+                          ) : null}
+                          {canDelete ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={pending}
+                              onClick={() => removeProposal(proposal)}
+                              hint="deleteProposal"
+                            >
+                              <IconTrash size={14} />
+                              Видалити
                             </Button>
                           ) : null}
                           {proposal.isComplete &&
