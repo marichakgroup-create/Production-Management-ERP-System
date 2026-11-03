@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CellStack,
@@ -34,6 +35,7 @@ import {
   OrderDeleteIconButton,
   OrderDuplicateIconButton,
 } from "@/components/orders/OrderRowActions";
+import { OrderTitleControl } from "@/components/orders/OrderTitleControl";
 import { bulkCancelOrdersAction } from "@/server/domains/orders/actions";
 
 export type OrdersTableRow = {
@@ -233,12 +235,29 @@ export function OrdersTable({
                       </button>
                     </TD>
                     <TD>
-                      <CellStack
-                        title={<span className="tabular">{order.number}</span>}
-                        subtitle={order.clientName}
-                        href={`/orders/${order.id}`}
-                        maxWidth="200px"
-                      />
+                      <div className="min-w-0 max-w-[240px]">
+                        <div className="flex min-w-0 items-center gap-0.5">
+                          <Link
+                            href={`/orders/${order.id}`}
+                            className="min-w-0 truncate font-medium text-[var(--color-text-primary)] hover:text-[var(--color-primary-700)] hover:underline"
+                          >
+                            {order.title?.trim() || "Без назви"}
+                          </Link>
+                          <OrderTitleControl
+                            orderId={order.id}
+                            orderNumber={order.number}
+                            title={order.title}
+                            canEdit={canManage && !archived}
+                            hideName
+                          />
+                        </div>
+                        <p className="mt-0.5 truncate text-[12px] tabular text-[var(--color-text-tertiary)]">
+                          {order.number}
+                        </p>
+                        <p className="truncate text-[12px] text-[var(--color-text-quiet)]">
+                          {order.clientName}
+                        </p>
+                      </div>
                     </TD>
                     <TD title={summary.title}>
                       <CellStack

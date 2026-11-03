@@ -35,6 +35,9 @@ function detailFromPayload(action: string, payload: unknown): string | null {
   if (action === "created" && typeof data.number === "string") {
     return data.number;
   }
+  if (action === "updated" && typeof data.title === "string") {
+    return data.title;
+  }
   if (action === "handed_to_production" && typeof data.itemCount === "number") {
     return `${data.itemCount} поз.`;
   }

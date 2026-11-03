@@ -10,9 +10,11 @@ import type { OwnerDecision } from "@/server/domains/overview/dashboard";
 export function OwnerDecisions({
   decisions,
   openCount,
+  showAmount = true,
 }: {
   decisions: OwnerDecision[];
   openCount?: number;
+  showAmount?: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = decisions.find((row) => row.id === openId) ?? null;
@@ -100,12 +102,14 @@ export function OwnerDecisions({
       >
         {open ? (
           <div className="space-y-3">
-            <p className="text-[14px] text-[var(--color-text-primary)]">
-              Сума продажу:{" "}
-              <span className="font-semibold tabular">
-                {open.amount > 0 ? formatMoneyShort(open.amount) : "—"}
-              </span>
-            </p>
+            {showAmount ? (
+              <p className="text-[14px] text-[var(--color-text-primary)]">
+                Сума продажу:{" "}
+                <span className="font-semibold tabular">
+                  {open.amount > 0 ? formatMoneyShort(open.amount) : "—"}
+                </span>
+              </p>
+            ) : null}
             <ul className="space-y-2">
               {open.issues.map((issue) => (
                 <li

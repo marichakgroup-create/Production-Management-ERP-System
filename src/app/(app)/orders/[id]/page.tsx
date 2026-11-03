@@ -66,6 +66,7 @@ import {
 } from "@/server/auth/access";
 import { SubmitForCalculationButton } from "@/components/orders/SubmitForCalculationButton";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
+import { OrderTitleControl } from "@/components/orders/OrderTitleControl";
 import { corridorFor, corridorHref, itemNeed } from "@/lib/order-corridor";
 import { orderArtworkReady } from "@/lib/order-files";
 import {
@@ -902,22 +903,35 @@ export default async function OrderDetailPage({
   return (
     <OrderUnsavedProvider>
     <div className="space-y-4">
-      <Breadcrumbs items={[{ label: "Замовлення", href: "/orders" }, { label: order.number }]} />
+      <Breadcrumbs
+        items={[
+          { label: "Замовлення", href: "/orders" },
+          { label: order.title?.trim() || item?.nameUk || order.number },
+        ]}
+      />
 
       <OrderWorkspaceShell
         header={
           <OrderWorkspaceHeader
-            title={order.number}
+            title={
+              <OrderTitleControl
+                orderId={order.id}
+                orderNumber={order.number}
+                title={order.title?.trim() || item?.nameUk || ""}
+                canEdit={
+                  accessHas(access, "manageOrders") &&
+                  order.status !== "CLOSED" &&
+                  order.status !== "CANCELLED"
+                }
+              />
+            }
             badge={<OrderStatusBadge status={order.status} dot />}
             subtitle={
               <>
+                <span className="tabular text-[var(--color-text-tertiary)]">{order.number}</span>
                 {!hasItems ? (
                   <span className="text-[var(--color-text-tertiary)]">Немає позицій</span>
-                ) : order.title && order.title !== item?.nameUk ? (
-                  <span>{order.title}</span>
-                ) : (
-                  <span>{item?.nameUk}</span>
-                )}
+                ) : null}
                 {workingItems.length > 1 ? (
                   <span className="text-[var(--color-text-tertiary)]">
                     {" "}

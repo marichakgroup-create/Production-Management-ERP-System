@@ -56,6 +56,7 @@ import {
   updateOrderClientParty,
   updateOrderCompany,
   updateOrderDeadlineAndPayment,
+  updateOrderTitle,
 } from "@/server/domains/orders/service";
 import {
   buildCalcFromOrderItem,
@@ -1448,6 +1449,29 @@ export async function updateOrderCompanyAction(formData: FormData) {
   }
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/orders");
+  return { ok: true as const };
+}
+
+export async function updateOrderTitleAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) throw new Error("UNAUTHORIZED");
+  await assertSessionPermission("manageOrders");
+
+  const orderId = String(formData.get("orderId") ?? "");
+  const title = String(formData.get("title") ?? "");
+  if (!orderId) return { ok: false as const, error: "VALIDATION" as const };
+  try {
+    await updateOrderTitle(orderId, title, session.user.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ERROR";
+    if (message === "ORDER_LOCKED") return { ok: false as const, error: "ORDER_LOCKED" as const };
+    if (message === "ORDER_NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" as const };
+    if (message === "TITLE_REQUIRED") return { ok: false as const, error: "VALIDATION" as const };
+    throw error;
+  }
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/orders");
+  revalidatePath("/overview");
   return { ok: true as const };
 }
 

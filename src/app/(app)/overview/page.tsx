@@ -13,19 +13,27 @@ import {
   TR,
 } from "@/components/ui/Table";
 import { Hint } from "@/components/ui/Hint";
-import { IconClose, IconOrders, IconPlus } from "@/components/ui/Icons";
+import {
+  IconAlert,
+  IconCheckCircle,
+  IconClose,
+  IconGrid,
+  IconOrders,
+  IconPlus,
+  IconPricing,
+} from "@/components/ui/Icons";
 import { cn, formatDateUk, formatMoneyShort } from "@/lib/utils";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import {
   AttentionPanel,
   DashboardHeader,
-  DashboardKpiStrip,
   MoneyPanel,
   PortfolioFunnel,
   QualityPanel,
 } from "@/components/overview/OwnerDashboard";
 import { DashboardToolbar } from "@/components/overview/DashboardToolbar";
-import { ViewTabs } from "@/components/ui/Tabs";
+import { SegmentedTabs } from "@/components/ui/Tabs";
+import { OrderStageBoard } from "@/components/overview/OrderStageBoard";
 import { canViewOrderCosts, getCurrentUserAccess } from "@/server/auth/access";
 import {
   PORTFOLIO_STAGES,
@@ -102,6 +110,7 @@ function PortfolioOrdersTable({
   view,
   orders,
   showAmounts,
+  page,
 }: {
   focus: FocusView;
   range: DashboardRange;
@@ -109,6 +118,7 @@ function PortfolioOrdersTable({
   view: DashboardView;
   orders: Awaited<ReturnType<typeof getOwnerDashboard>>["tableOrders"];
   showAmounts: boolean;
+  page: number;
 }) {
   const stageKeys = new Set(PORTFOLIO_FOCUS_KEYS as readonly string[]);
   const tableOrders = orders.filter((order) => {
@@ -130,6 +140,20 @@ function PortfolioOrdersTable({
     return (daysLeft(a.deadline) ?? 9999) - (daysLeft(b.deadline) ?? 9999);
   });
 
+  const pageSize = 50;
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage = Math.min(Math.max(page, 1), pageCount);
+  const pageRows = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageHref = (next: number) => {
+    const params = new URLSearchParams();
+    if (range !== "month") params.set("range", range);
+    if (managerId) params.set("manager", managerId);
+    if (view !== "attention") params.set("view", view);
+    if (focus !== "all") params.set("focus", focus);
+    if (next > 1) params.set("page", String(next));
+    const query = params.toString();
+    return `${query ? `/overview?${query}` : "/overview"}#orders`;
+  };
   const resetHref = dashboardQuery({ range, managerId, view, focus: "all" });
 
   return (
@@ -213,7 +237,7 @@ function PortfolioOrdersTable({
               }
             />
           ) : (
-            sorted.slice(0, 12).map((order) => {
+            pageRows.map((order) => {
               const href = `/orders/${order.id}`;
               const days = daysLeft(order.deadline);
 
@@ -225,8 +249,8 @@ function PortfolioOrdersTable({
                   <TD>
                     <CellStack
                       href={href}
-                      title={order.number}
-                      subtitle={`${order.clientName} · ${order.productName}${order.extraItems > 0 ? ` +${order.extraItems}` : ""}`}
+                      title={order.title?.trim() || order.productName}
+                      subtitle={`${order.number} · ${order.clientName}`}
                       maxWidth="220px"
                     />
                   </TD>
@@ -277,20 +301,45 @@ function PortfolioOrdersTable({
           )}
         </TBody>
       </Table>
+      {pageCount > 1 ? (
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--color-divider)] px-4 py-3">
+          <span className="type-caption tabular">
+            {safePage} / {pageCount}
+          </span>
+          <div className="flex items-center gap-2">
+            {safePage > 1 ? (
+              <Link href={pageHref(safePage - 1)} className="btn-secondary !h-8">
+                Назад
+              </Link>
+            ) : null}
+            {safePage < pageCount ? (
+              <Link href={pageHref(safePage + 1)} className="btn-secondary !h-8">
+                Далі
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </TableCard>
   );
+}
+
+function parsePage(raw: string | undefined) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
 }
 
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ focus?: string; range?: string; manager?: string; view?: string }>;
+  searchParams: Promise<{ focus?: string; range?: string; manager?: string; view?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const focus = parseFocus(params.focus);
   const range = parseRange(params.range);
   const managerId = params.manager || null;
   const view = parseDashboardView(params.view);
+  const page = parsePage(params.page);
   const access = await getCurrentUserAccess();
   const showAmounts = canViewOrderCosts(access);
 
@@ -309,6 +358,36 @@ export default async function OverviewPage({
     );
   }
 
+  const visible = showAmounts
+    ? data
+    : {
+        ...data,
+        kpis: {
+          ...data.kpis,
+          portfolio: 0,
+          cost: 0,
+          profit: 0,
+          profitShare: null,
+          avgMargin: null,
+          atRisk: 0,
+        },
+        pricing: { ...data.pricing, minimumMarginPercent: 0 },
+        stages: data.stages.map((stage) => ({ ...stage, amount: 0, cost: 0, profit: 0, share: 0 })),
+        decisions: data.decisions.map((row) => ({
+          ...row,
+          amount: 0,
+          context: row.context.replace(/ · (?:[\d\s\u00a0]+ ₴|без суми)$/, ""),
+        })),
+        tableOrders: data.tableOrders.map((row) => ({
+          ...row,
+          amount: 0,
+          cost: 0,
+          profit: 0,
+          margin: null,
+        })),
+      };
+  const dashboardView = !showAmounts && view === "money" ? "attention" : view;
+
   const attentionCount =
     data.decisions.length + data.readiness.filter((row) => row.percent < 100).length;
   const activeOrderCount = data.kpis.orderCount;
@@ -323,27 +402,53 @@ export default async function OverviewPage({
       focus: nextView === "portfolio" ? focus : "all",
     });
 
+  const stageOrders = visible.tableOrders
+    .filter((order) => order.status !== "CLOSED" && order.status !== "CANCELLED")
+    .map((order) => ({
+      id: order.id,
+      number: order.number,
+      status: order.status,
+      deadline: order.deadline,
+      clientName: order.clientName,
+      managerName: order.managerName,
+      title: order.title,
+      productName: order.productName,
+      products: order.products,
+      amount: order.amount,
+      overdue: order.overdue,
+    }));
+
   return (
-    <div className="space-y-6">
+    <div
+      className={
+        dashboardView === "stages"
+          ? "flex h-[calc(100dvh-6rem)] min-h-[24rem] flex-col gap-3"
+          : "space-y-5"
+      }
+    >
       <DashboardHeader>
-        <DashboardToolbar
-          range={range}
-          managerId={managerId}
-          focus={focus}
-          view={view}
-          managers={data.managers}
-        />
+        <Link href="/orders/new" className="btn-primary h-8 shrink-0 px-3 text-[13px]">
+          <IconPlus size={15} />
+          Нове замовлення
+        </Link>
       </DashboardHeader>
 
-      <DashboardKpiStrip data={data} focus={focus} view={view} />
-
-      <ViewTabs
-        active={view}
+      <SegmentedTabs
+        className="shrink-0"
+        active={dashboardView}
         items={[
+          {
+            key: "stages",
+            label: "Замовлення за етапами",
+            href: tabHref("stages"),
+            icon: <IconGrid size={15} />,
+            count: activeOrderCount,
+          },
           {
             key: "attention",
             label: "Увага",
             href: tabHref("attention"),
+            icon: <IconAlert size={15} />,
             count: attentionCount,
             attention: attentionCount > 0,
           },
@@ -351,36 +456,68 @@ export default async function OverviewPage({
             key: "portfolio",
             label: "Портфель",
             href: tabHref("portfolio"),
+            icon: <IconOrders size={15} />,
             count: activeOrderCount,
           },
-          {
-            key: "money",
-            label: "Фінанси",
-            href: tabHref("money"),
-            count: moneyBadge,
-          },
+          ...(showAmounts
+            ? [
+                {
+                  key: "money" as const,
+                  label: "Фінанси",
+                  href: tabHref("money"),
+                  icon: <IconPricing size={15} />,
+                  count: moneyBadge,
+                },
+              ]
+            : []),
           {
             key: "quality",
             label: "Якість",
             href: tabHref("quality"),
+            icon: <IconCheckCircle size={15} />,
             count: qualityRiskCount > 0 ? qualityRiskCount : undefined,
           },
         ]}
       />
 
-      {view === "attention" ? <AttentionPanel data={data} /> : null}
-      {view === "money" ? <MoneyPanel data={data} /> : null}
-      {view === "quality" ? <QualityPanel data={data} /> : null}
-      {view === "portfolio" ? (
+      {dashboardView === "stages" ? (
+        <OrderStageBoard showAmounts={showAmounts} orders={stageOrders} fill />
+      ) : null}
+      {dashboardView === "attention" ? (
+        <AttentionPanel data={visible} showMoney={showAmounts} />
+      ) : null}
+      {dashboardView === "money" ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="type-subsection">Валовий результат</h2>
+              <p className="type-caption mt-0.5">
+                Виручка, собівартість і прибуток за калькуляцією поточного портфеля
+              </p>
+            </div>
+            <DashboardToolbar
+              range={range}
+              managerId={managerId}
+              focus={focus}
+              view={dashboardView}
+              managers={visible.managers}
+            />
+          </div>
+          <MoneyPanel data={visible} />
+        </div>
+      ) : null}
+      {dashboardView === "quality" ? <QualityPanel data={visible} /> : null}
+      {dashboardView === "portfolio" ? (
         <div className="space-y-5">
-          <PortfolioFunnel data={data} focus={focus} />
+          <PortfolioFunnel data={visible} focus={focus} showMoney={showAmounts} />
           <PortfolioOrdersTable
             focus={focus}
             range={range}
             managerId={managerId}
-            view={view}
-            orders={data.tableOrders}
+            view={dashboardView}
+            orders={visible.tableOrders}
             showAmounts={showAmounts}
+            page={page}
           />
         </div>
       ) : null}

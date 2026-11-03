@@ -4184,6 +4184,30 @@ export async function updateOrderDeadlineAndPayment(
   });
 }
 
+export async function updateOrderTitle(orderId: string, title: string, userId?: string | null) {
+  await assertOrderScheduleEditable(orderId);
+  const next = title.trim().replace(/\s+/g, " ").slice(0, 120);
+  if (!next) throw new Error("TITLE_REQUIRED");
+  const current = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { title: true },
+  });
+  if (!current) throw new Error("ORDER_NOT_FOUND");
+  if ((current.title ?? "").trim() === next) return current;
+  const updated = await prisma.order.update({
+    where: { id: orderId },
+    data: { title: next },
+  });
+  await recordActivity({
+    entityType: "order",
+    entityId: orderId,
+    action: "updated",
+    userId,
+    payload: { title: next, previousTitle: current.title },
+  });
+  return updated;
+}
+
 export async function updateOrderComment(orderId: string, comment: string | null) {
   await assertOrderEditableById(orderId);
   const html = sanitizeRichHtml(comment);

@@ -28,7 +28,7 @@ export function SegmentedTabs({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-1",
+        "inline-flex max-w-full flex-wrap items-center gap-1 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-1",
         className,
       )}
     >
@@ -38,6 +38,14 @@ export function SegmentedTabs({
           <>
             {item.icon}
             <span>{item.label}</span>
+            {item.attention ? (
+              <span
+                className="size-1.5 shrink-0 rounded-full bg-[var(--color-warning-text)] ring-[3px] ring-[var(--color-warning-text)]/25"
+                aria-label="Потрібна дія"
+                title="Потрібна дія"
+                role="status"
+              />
+            ) : null}
             {typeof item.count === "number" ? (
               <span
                 className={cn(
@@ -56,8 +64,8 @@ export function SegmentedTabs({
         const classes = cn(
           "inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[13px] font-semibold transition-colors",
           isActive
-            ? "on-primary bg-[var(--color-primary-500)] shadow-[0_1px_2px_rgba(18,31,24,0.12)]"
-            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text-primary)]",
+            ? "on-primary bg-[var(--color-primary-600)] shadow-[0_1px_2px_rgba(12,90,58,0.28)]"
+            : "text-[var(--color-text-primary)] hover:bg-[var(--color-surface)]",
           item.disabled && "cursor-not-allowed opacity-45",
         );
 

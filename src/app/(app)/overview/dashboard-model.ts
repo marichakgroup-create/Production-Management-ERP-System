@@ -4,10 +4,11 @@ export type OverviewOrder = Awaited<ReturnType<typeof listOrders>>[number];
 
 export type DashboardRange = "week" | "month" | "quarter";
 
-/** Owner dashboard lens — always-on KPI + one of these tabs. */
-export type DashboardView = "attention" | "portfolio" | "money" | "quality";
+/** Owner dashboard lens. Stages is the default board. */
+export type DashboardView = "stages" | "attention" | "portfolio" | "money" | "quality";
 
 export const DASHBOARD_VIEWS: DashboardView[] = [
+  "stages",
   "attention",
   "portfolio",
   "money",
@@ -15,8 +16,16 @@ export const DASHBOARD_VIEWS: DashboardView[] = [
 ];
 
 export function parseDashboardView(raw: string | undefined): DashboardView {
-  if (raw === "portfolio" || raw === "money" || raw === "quality") return raw;
-  return "attention";
+  if (
+    raw === "stages" ||
+    raw === "attention" ||
+    raw === "portfolio" ||
+    raw === "money" ||
+    raw === "quality"
+  ) {
+    return raw;
+  }
+  return "stages";
 }
 
 export const ACTIVE_STATUSES = [
@@ -44,7 +53,7 @@ export function dashboardQuery(input: {
   const params = new URLSearchParams();
   if (input.range !== "month") params.set("range", input.range);
   if (input.managerId) params.set("manager", input.managerId);
-  if (input.view && input.view !== "attention") params.set("view", input.view);
+  if (input.view && input.view !== "stages") params.set("view", input.view);
   if (input.focus && input.focus !== "all") params.set("focus", input.focus);
   const query = params.toString();
   return query ? `/overview?${query}` : "/overview";

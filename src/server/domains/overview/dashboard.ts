@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db/client";
 import { PORTFOLIO_STAGES, dashboardQuery, daysLeft, isDueSoon, isOverdue, type DashboardRange } from "@/app/(app)/overview/dashboard-model";
 
@@ -35,6 +36,8 @@ export type OwnerStage = {
   label: string;
   count: number;
   amount: number;
+  cost: number;
+  profit: number;
   avgDays: number | null;
   delayed: boolean;
   delayLabel: string | null;
@@ -74,6 +77,7 @@ export type OwnerDashboardData = {
   kpis: {
     portfolio: number;
     orderCount: number;
+    cost: number;
     profit: number;
     profitShare: number | null;
     avgMargin: number | null;
@@ -94,7 +98,11 @@ export type OwnerDashboardData = {
     managerName: string;
     productName: string;
     extraItems: number;
+    title: string | null;
+    products: Array<{ name: string; qty: number }>;
     amount: number;
+    cost: number;
+    profit: number;
     margin: number | null;
     overdue: boolean;
     dueSoon: boolean;
@@ -115,6 +123,26 @@ function num(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function parseProductLines(value: unknown): Array<{ name: string; qty: number }> {
+  const raw = typeof value === "string" ? safeJson(value) : value;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const name = "name" in row && typeof row.name === "string" ? row.name.trim() : "";
+    const qty = "qty" in row ? Number(row.qty) : 0;
+    if (!name) return [];
+    return [{ name, qty: Number.isFinite(qty) ? qty : 0 }];
+  });
+}
+
+function safeJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return [];
+  }
+}
+
 function ordersWord(n: number) {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -131,34 +159,16 @@ export async function getOwnerDashboard(input: {
   const managerId = input.managerId || null;
   const since = rangeStart(range);
 
-  const [pricingRow, users, products, materials, operations, activity, orders] = await Promise.all([
-    prisma.pricingSettings.findFirst(),
+  const managerSql = managerId
+    ? Prisma.sql`AND o."managerId" = ${managerId}`
+    : Prisma.empty;
+
+  const [pricingRow, users, activity, orderRows, incompleteTemplates, noNormCatalog] = await Promise.all([
+    prisma.pricingSettings.findFirst({ select: { minimumMarginPercent: true } }),
     prisma.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true, role: true },
       orderBy: { name: "asc" },
-    }),
-    prisma.product.findMany({
-      where: { status: "ACTIVE" },
-      select: {
-        id: true,
-        nameUk: true,
-        _count: { select: { materials: true, operations: true, decorations: true } },
-      },
-    }),
-    prisma.material.findMany({
-      where: { status: "ACTIVE" },
-      select: { id: true, purchasePrice: true, updatedAt: true },
-    }),
-    prisma.operation.findMany({
-      select: {
-        id: true,
-        calculationMethod: true,
-        baseRate: true,
-        shiftCost: true,
-        standardOutputPerShift: true,
-        updatedAt: true,
-      },
     }),
     prisma.activityEvent.findMany({
       where: {
@@ -179,57 +189,214 @@ export async function getOwnerDashboard(input: {
       take: 80,
       include: { user: { select: { name: true } } },
     }),
-    prisma.order.findMany({
-      where: {
-        status: { not: "CANCELLED" },
-        ...(managerId ? { managerId } : {}),
-      },
-      include: {
-        client: { select: { companyName: true } },
-        manager: { select: { id: true, name: true } },
-        files: { select: { id: true } },
-        items: {
-          include: {
-            sizes: { select: { quantity: true } },
-            materials: { select: { materialId: true, purchasePrice: true } },
-            operations: {
-              select: {
-                operationId: true,
-                calculationMethod: true,
-                unitRate: true,
-                shiftCost: true,
-                standardOutput: true,
-              },
-            },
-            decorations: { select: { id: true, nameSnapshot: true } },
-            specification: { select: { id: true } },
-            versions: {
-              orderBy: [{ isApproved: "desc" }, { versionNumber: "desc" }],
-              take: 1,
-              select: {
-                createdAt: true,
-                isApproved: true,
-                totalSellingValue: true,
-                totalCost: true,
-                profitAmount: true,
-                marginPercent: true,
-                sellingPricePerUnit: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
+    prisma.$queryRaw<Array<{
+      id: string;
+      number: string;
+      status: string;
+      title: string | null;
+      deadline: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+      clientName: string;
+      managerId: string;
+      managerName: string;
+      amount: unknown;
+      cost: unknown;
+      profit: unknown;
+      itemCount: number;
+      firstItemName: string | null;
+      products: unknown;
+      composed: boolean;
+      hasQty: boolean;
+      hasVersion: boolean;
+      hasApproved: boolean;
+      needsDecorationFile: boolean;
+      stale: boolean;
+      noNorm: boolean;
+    }>>`
+      WITH latest AS (
+        SELECT DISTINCT ON (v."orderItemId")
+          v."orderItemId",
+          v."isApproved",
+          v."totalSellingValue",
+          v."totalCost",
+          v."profitAmount",
+          v."createdAt"
+        FROM calculation_versions v
+        ORDER BY v."orderItemId", v."isApproved" DESC, v."versionNumber" DESC
+      )
+      SELECT
+        o.id,
+        o.number,
+        o.status::text AS status,
+        o.title,
+        o.deadline,
+        o."createdAt",
+        o."updatedAt",
+        c."companyName" AS "clientName",
+        u.id AS "managerId",
+        u.name AS "managerName",
+        COALESCE(SUM(latest."totalSellingValue"), 0) AS amount,
+        COALESCE(SUM(latest."totalCost"), 0) AS cost,
+        COALESCE(SUM(
+          CASE
+            WHEN latest."orderItemId" IS NULL THEN 0
+            WHEN latest."profitAmount" IS NOT NULL THEN latest."profitAmount"
+            ELSE latest."totalSellingValue" - latest."totalCost"
+          END
+        ), 0) AS profit,
+        (SELECT count(*)::int FROM order_items i2 WHERE i2."orderId" = o.id) AS "itemCount",
+        (
+          SELECT i2."nameUk" FROM order_items i2
+          WHERE i2."orderId" = o.id
+          ORDER BY i2."createdAt" ASC
+          LIMIT 1
+        ) AS "firstItemName",
+        (
+          SELECT COALESCE(
+            json_agg(
+              json_build_object('name', i2."nameUk", 'qty', i2."totalQuantity")
+              ORDER BY i2."createdAt"
+            ),
+            '[]'::json
+          )
+          FROM order_items i2
+          WHERE i2."orderId" = o.id
+        ) AS products,
+        EXISTS (
+          SELECT 1 FROM order_items i2
+          WHERE i2."orderId" = o.id
+            AND EXISTS (SELECT 1 FROM order_item_materials m WHERE m."orderItemId" = i2.id)
+            AND EXISTS (SELECT 1 FROM order_item_operations op WHERE op."orderItemId" = i2.id)
+        ) AS composed,
+        COALESCE((
+          SELECT BOOL_AND(qty > 0) FROM (
+            SELECT COALESCE(SUM(s.quantity), 0) AS qty
+            FROM order_items i2
+            LEFT JOIN order_item_sizes s ON s."orderItemId" = i2.id
+            WHERE i2."orderId" = o.id
+            GROUP BY i2.id
+          ) qty_rows
+        ), true) AS "hasQty",
+        EXISTS (
+          SELECT 1 FROM order_items i2
+          JOIN latest l ON l."orderItemId" = i2.id
+          WHERE i2."orderId" = o.id
+        ) AS "hasVersion",
+        (
+          (SELECT count(*) FROM order_items i2 WHERE i2."orderId" = o.id) > 0
+          AND COALESCE((
+            SELECT BOOL_AND(COALESCE(l."isApproved", false))
+            FROM order_items i2
+            LEFT JOIN latest l ON l."orderItemId" = i2.id
+            WHERE i2."orderId" = o.id
+          ), false)
+        ) AS "hasApproved",
+        (
+          EXISTS (
+            SELECT 1 FROM order_item_decorations d
+            JOIN order_items i2 ON i2.id = d."orderItemId"
+            WHERE i2."orderId" = o.id
+              AND btrim(d."nameSnapshot") <> 'Додаткові витрати'
+          )
+          AND NOT EXISTS (SELECT 1 FROM file_assets f WHERE f."orderId" = o.id)
+        ) AS "needsDecorationFile",
+        (
+          EXISTS (
+            SELECT 1
+            FROM order_items i2
+            JOIN latest l ON l."orderItemId" = i2.id
+            JOIN order_item_materials m ON m."orderItemId" = i2.id
+            JOIN materials mat ON mat.id = m."materialId"
+            WHERE i2."orderId" = o.id
+              AND mat."updatedAt" > l."createdAt"
+              AND abs(mat."purchasePrice" - m."purchasePrice") > 0.0001
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM order_items i2
+            JOIN latest l ON l."orderItemId" = i2.id
+            JOIN order_item_operations op ON op."orderItemId" = i2.id
+            JOIN operations cat ON cat.id = op."operationId"
+            WHERE i2."orderId" = o.id
+              AND cat."updatedAt" > l."createdAt"
+          )
+        ) AS stale,
+        EXISTS (
+          SELECT 1 FROM order_item_operations op
+          JOIN order_items i2 ON i2.id = op."orderItemId"
+          WHERE i2."orderId" = o.id
+            AND (
+              (op."calculationMethod"::text = 'SHIFT_OUTPUT'
+                AND NOT (COALESCE(op."standardOutput", 0) > 0 AND COALESCE(op."shiftCost", 0) >= 0))
+              OR (op."calculationMethod"::text = 'UNIT_RATE'
+                AND NOT (COALESCE(op."unitRate", 0) > 0))
+            )
+        ) AS "noNorm"
+      FROM orders o
+      JOIN clients c ON c.id = o."clientId"
+      JOIN users u ON u.id = o."managerId"
+      LEFT JOIN order_items i ON i."orderId" = o.id
+      LEFT JOIN latest ON latest."orderItemId" = i.id
+      WHERE o.status::text <> 'CANCELLED'
+      ${managerSql}
+      GROUP BY o.id, c.id, u.id
+      ORDER BY o."createdAt" DESC
+    `,
+    prisma.$queryRaw<Array<{ n: number }>>`
+      SELECT count(*)::int AS n
+      FROM products p
+      WHERE p.status::text = 'ACTIVE'
+        AND (
+          NOT EXISTS (SELECT 1 FROM product_materials pm WHERE pm."productId" = p.id)
+          OR NOT EXISTS (SELECT 1 FROM product_operations po WHERE po."productId" = p.id)
+        )
+    `,
+    prisma.$queryRaw<Array<{ n: number }>>`
+      SELECT count(*)::int AS n
+      FROM operations op
+      WHERE (
+        op."calculationMethod"::text = 'SHIFT_OUTPUT'
+        AND NOT (COALESCE(op."standardOutputPerShift", 0) > 0)
+      ) OR (
+        op."calculationMethod"::text = 'UNIT_RATE'
+        AND NOT (COALESCE(op."baseRate", 0) > 0)
+      )
+    `,
   ]);
+
+  const orders = orderRows.map((row) => ({
+    id: row.id,
+    number: row.number,
+    status: row.status,
+    title: row.title,
+    deadline: row.deadline,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    client: { companyName: row.clientName },
+    manager: { id: row.managerId, name: row.managerName },
+    amount: num(row.amount),
+    cost: num(row.cost),
+    profit: num(row.profit),
+    itemCount: Number(row.itemCount) || 0,
+    firstItemName: row.firstItemName,
+    products: row.products,
+    composed: Boolean(row.composed),
+    hasQty: Boolean(row.hasQty),
+    hasVersion: Boolean(row.hasVersion),
+    hasApproved: Boolean(row.hasApproved),
+    needsDecorationFile: Boolean(row.needsDecorationFile),
+    stale: Boolean(row.stale),
+    noNorm: Boolean(row.noNorm),
+    items: Array.from({ length: Number(row.itemCount) || 0 }, (_, index) => ({
+      nameUk: index === 0 ? row.firstItemName || "" : "",
+    })),
+  }));
 
   const pricing = {
     targetRatePercent: 0,
     minimumMarginPercent: Number(pricingRow?.minimumMarginPercent ?? 15),
   };
-
-  const materialById = new Map(materials.map((row) => [row.id, row]));
-  const operationById = new Map(operations.map((row) => [row.id, row]));
 
   const lastStageAt = new Map<string, Date>();
   for (const event of activity) {
@@ -241,70 +408,20 @@ export async function getOwnerDashboard(input: {
   }
 
   type Row = (typeof orders)[number];
-  const amountOf = (order: Row) =>
-    order.items.reduce((sum, item) => sum + num(item.versions[0]?.totalSellingValue), 0);
-  const costOf = (order: Row) =>
-    order.items.reduce((sum, item) => sum + num(item.versions[0]?.totalCost), 0);
-  const profitOf = (order: Row) =>
-    order.items.reduce((sum, item) => {
-      const version = item.versions[0];
-      if (!version) return sum;
-      if (version.profitAmount != null) return sum + num(version.profitAmount);
-      return sum + (num(version.totalSellingValue) - num(version.totalCost));
-    }, 0);
+  const amountOf = (order: Row) => order.amount;
+  const profitOf = (order: Row) => order.profit;
   const marginOf = (order: Row) => {
-    const selling = amountOf(order);
-    const profit = profitOf(order);
-    if (selling <= 0) return null;
-    return (profit / selling) * 100;
+    if (order.amount <= 0) return null;
+    return (order.profit / order.amount) * 100;
   };
-  const composed = (order: Row) =>
-    order.items.some((item) => item.materials.length > 0 && item.operations.length > 0);
-  const hasQty = (order: Row) =>
-    order.items.every((item) => item.sizes.reduce((sum, size) => sum + size.quantity, 0) > 0);
-  const hasVersion = (order: Row) => order.items.some((item) => item.versions[0] != null);
-  const hasApproved = (order: Row) =>
-    order.items.length > 0 &&
-    order.items.every((item) => item.versions[0]?.isApproved);
-  const needsDecorationFile = (order: Row) =>
-    order.items.some((item) =>
-      item.decorations.some(
-        (row) => String(row.nameSnapshot ?? "").trim() !== "Додаткові витрати",
-      ),
-    ) && order.files.length === 0;
-
-  const staleOf = (order: Row) => {
-    if (["HANDED_TO_PRODUCTION", "CLOSED"].includes(order.status)) return false;
-    return order.items.some((item) => {
-      const version = item.versions[0];
-      if (!version) return false;
-      const pricedAfter = item.materials.some((row) => {
-        if (!row.materialId) return false;
-        const catalog = materialById.get(row.materialId);
-        if (!catalog) return false;
-        if (catalog.updatedAt <= version.createdAt) return false;
-        return Math.abs(num(catalog.purchasePrice) - num(row.purchasePrice)) > 0.0001;
-      });
-      const opsAfter = item.operations.some((row) => {
-        if (!row.operationId) return false;
-        const catalog = operationById.get(row.operationId);
-        if (!catalog) return false;
-        return catalog.updatedAt > version.createdAt;
-      });
-      return pricedAfter || opsAfter;
-    });
-  };
-
-  const noNormOf = (order: Row) =>
-    order.items.some((item) =>
-      item.operations.some((row) => {
-        if (row.calculationMethod === "SHIFT_OUTPUT") {
-          return !(num(row.standardOutput) > 0 && num(row.shiftCost) >= 0);
-        }
-        if (row.calculationMethod === "UNIT_RATE") return !(num(row.unitRate) > 0);
-        return false;
-      }),
-    );
+  const composed = (order: Row) => order.composed;
+  const hasQty = (order: Row) => order.hasQty;
+  const hasVersion = (order: Row) => order.hasVersion;
+  const hasApproved = (order: Row) => order.hasApproved;
+  const needsDecorationFile = (order: Row) => order.needsDecorationFile;
+  const staleOf = (order: Row) =>
+    !["HANDED_TO_PRODUCTION", "CLOSED"].includes(order.status) && order.stale;
+  const noNormOf = (order: Row) => order.noNorm;
 
   const readinessMissing = (order: Row) => {
     const missing: string[] = [];
@@ -327,6 +444,7 @@ export async function getOwnerDashboard(input: {
   );
 
   const portfolio = active.reduce((sum, order) => sum + amountOf(order), 0);
+  const cost = active.reduce((sum, order) => sum + order.cost, 0);
   const profit = active.reduce((sum, order) => sum + profitOf(order), 0);
   const avgMargin = portfolio > 0 ? (profit / portfolio) * 100 : null;
 
@@ -357,6 +475,8 @@ export async function getOwnerDashboard(input: {
           )
         : active.filter((order) => (stage.statuses as readonly string[]).includes(order.status));
     const amount = rows.reduce((sum, order) => sum + amountOf(order), 0);
+    const stageCost = rows.reduce((sum, order) => sum + order.cost, 0);
+    const stageProfit = rows.reduce((sum, order) => sum + order.profit, 0);
     const durations = rows.map((order) => {
       const from = lastStageAt.get(order.id) ?? order.createdAt;
       return Math.max(0, (stageNow(stage.key) - from.getTime()) / 86_400_000);
@@ -373,6 +493,8 @@ export async function getOwnerDashboard(input: {
       label: stage.label,
       count: rows.length,
       amount,
+      cost: stageCost,
+      profit: stageProfit,
       avgDays,
       delayed,
       delayLabel: delayed ? "затримка" : null,
@@ -501,17 +623,9 @@ export async function getOwnerDashboard(input: {
   });
 
   const staleCount = active.filter(staleOf).length;
-  const noNormCatalog = operations.filter((row) => {
-    if (row.calculationMethod === "SHIFT_OUTPUT") {
-      return !(num(row.standardOutputPerShift) > 0);
-    }
-    if (row.calculationMethod === "UNIT_RATE") return !(num(row.baseRate) > 0);
-    return false;
-  }).length;
   const noNormOrders = active.filter(noNormOf).length;
-  const incompleteTemplates = products.filter(
-    (product) => product._count.materials === 0 || product._count.operations === 0,
-  ).length;
+  const catalogNoNorm = Number(noNormCatalog[0]?.n ?? 0);
+  const incompleteCount = Number(incompleteTemplates[0]?.n ?? 0);
 
   const risks: CalcRiskGroup[] = [
     {
@@ -524,14 +638,14 @@ export async function getOwnerDashboard(input: {
     {
       key: "noNorm",
       label: "Операції без норми",
-      count: noNormCatalog + noNormOrders,
+      count: catalogNoNorm + noNormOrders,
       hint: "Немає ставки або виробітку — собівартість неповна",
       href: "/settings/operations",
     },
     {
       key: "incomplete",
       label: "Неповні еталони",
-      count: incompleteTemplates,
+      count: incompleteCount,
       hint: "У виробі немає матеріалів або операцій",
       href: "/products",
     },
@@ -619,7 +733,11 @@ export async function getOwnerDashboard(input: {
       managerName: order.manager.name,
       productName: first?.nameUk || order.title || "—",
       extraItems: Math.max(order.items.length - 1, 0),
+      title: order.title,
+      products: parseProductLines(order.products),
       amount: amountOf(order),
+      cost: order.cost,
+      profit: order.profit,
       margin: marginOf(order),
       overdue: isOverdue(order),
       dueSoon: isDueSoon(order),
@@ -640,6 +758,7 @@ export async function getOwnerDashboard(input: {
     kpis: {
       portfolio,
       orderCount: active.length,
+      cost,
       profit,
       profitShare: portfolio > 0 ? profit / portfolio : null,
       avgMargin,
