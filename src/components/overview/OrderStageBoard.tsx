@@ -1,15 +1,208 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Button } from "@/components/ui/Button";
-import { IconChevronDown } from "@/components/ui/Icons";
-import { Select } from "@/components/ui/Select";
+import { IconChevronDown, IconChevronLeft, IconChevronRight } from "@/components/ui/Icons";
 import { orderPipeline, orderStatusLabel } from "@/lib/order-status";
 import { cn, formatDateUk, formatMoneyShort } from "@/lib/utils";
 
-const dateFieldClass =
-  "h-7 w-[8.6rem] border-0 bg-transparent px-1 text-[12.5px] text-[var(--color-text-primary)] outline-none focus:ring-0 focus-visible:outline-none!";
+const filterType =
+  "bg-transparent text-[13px]! font-medium! leading-none outline-none focus-visible:outline-none!";
+
+const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
+const MONTHS = [
+  "січень",
+  "лютий",
+  "березень",
+  "квітень",
+  "травень",
+  "червень",
+  "липень",
+  "серпень",
+  "вересень",
+  "жовтень",
+  "листопад",
+  "грудень",
+];
+
+function filterDateLabel(value: string, empty: string) {
+  if (!value) return empty;
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return empty;
+  return `${day}.${month}.${year}`;
+}
+
+function isoFromDate(date: Date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function dateFromIso(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function monthCells(cursor: Date) {
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const startPad = (new Date(year, month, 1).getDay() + 6) % 7;
+  const days = new Date(year, month + 1, 0).getDate();
+  const cells: Array<{ iso: string; day: number; inMonth: boolean }> = [];
+  for (let index = 0; index < startPad; index += 1) {
+    const date = new Date(year, month, 1 - (startPad - index));
+    cells.push({ iso: isoFromDate(date), day: date.getDate(), inMonth: false });
+  }
+  for (let day = 1; day <= days; day += 1) {
+    cells.push({ iso: isoFromDate(new Date(year, month, day)), day, inMonth: true });
+  }
+  while (cells.length % 7 !== 0) {
+    const previous = dateFromIso(cells[cells.length - 1].iso);
+    const date = new Date(previous ?? new Date());
+    date.setDate(date.getDate() + 1);
+    cells.push({ iso: isoFromDate(date), day: date.getDate(), inMonth: false });
+  }
+  return cells;
+}
+
+function DeadlineField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  min?: string;
+  max?: string;
+  onChange: (next: string) => void;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [cursor, setCursor] = useState(() => dateFromIso(value) ?? new Date());
+
+  useEffect(() => {
+    if (!open) return;
+    setCursor(dateFromIso(value) ?? new Date());
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, value]);
+
+  const rect = open ? buttonRef.current?.getBoundingClientRect() : null;
+  const today = isoFromDate(new Date());
+  const cells = monthCells(cursor);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={label === "від" ? "Дедлайн від" : "Дедлайн до"}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(
+          "inline-flex h-8 w-[12.5rem] items-center justify-between gap-3 rounded-[8px] border bg-[var(--color-surface)] px-2.5 text-[13px]! font-medium!",
+          open
+            ? "border-[var(--color-primary-500)] ring-2 ring-[var(--color-focus-ring)]"
+            : "border-[var(--color-border)]",
+        )}
+      >
+        <span className="text-[var(--color-text-secondary)]">{label}</span>
+        <span className={value ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-disabled)]"}>
+          {filterDateLabel(value, "дд.мм.рррр")}
+        </span>
+      </button>
+      {open && rect
+        ? createPortal(
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-label={label === "від" ? "Дедлайн від" : "Дедлайн до"}
+              className="fixed z-[80] w-[17.5rem] rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[0_12px_32px_rgba(15,23,32,0.12)]"
+              style={{ top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 288) }}
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  aria-label="Попередній місяць"
+                  className="flex size-7 items-center justify-center rounded-[6px] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-subtle)]"
+                  onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
+                >
+                  <IconChevronLeft size={15} />
+                </button>
+                <p className="text-[13px] font-medium capitalize text-[var(--color-text-primary)]">
+                  {MONTHS[cursor.getMonth()]} {cursor.getFullYear()}
+                </p>
+                <button
+                  type="button"
+                  aria-label="Наступний місяць"
+                  className="flex size-7 items-center justify-center rounded-[6px] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-subtle)]"
+                  onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
+                >
+                  <IconChevronRight size={15} />
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-0.5">
+                {WEEKDAYS.map((day) => (
+                  <span
+                    key={day}
+                    className="py-1 text-center text-[11px] font-medium text-[var(--color-text-tertiary)]"
+                  >
+                    {day}
+                  </span>
+                ))}
+                {cells.map((cell) => {
+                  const disabled = Boolean((min && cell.iso < min) || (max && cell.iso > max));
+                  const selected = cell.iso === value;
+                  return (
+                    <button
+                      key={cell.iso}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        onChange(cell.iso);
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "h-8 rounded-[6px] text-[13px] font-medium tabular",
+                        selected && "bg-[var(--color-primary-600)] text-[var(--color-on-primary)]",
+                        !selected &&
+                          cell.inMonth &&
+                          "text-[var(--color-text-primary)] hover:bg-[var(--color-surface-subtle)]",
+                        !selected && !cell.inMonth && "text-[var(--color-text-disabled)]",
+                        !selected && cell.iso === today && "ring-1 ring-[var(--color-primary-300)]",
+                        disabled && "pointer-events-none opacity-30",
+                      )}
+                    >
+                      {cell.day}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
 
 function deadlineKey(deadline: string | null) {
   if (!deadline) return null;
@@ -240,53 +433,43 @@ export function OrderStageBoard({
     >
       <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div className="w-[11.5rem] shrink-0">
-            <Select
-              size="sm"
+          <label className="relative inline-flex h-8 items-center">
+            <select
               aria-label="Замовник"
               value={client}
               onChange={(event) => setClient(event.target.value)}
-              options={[
-                { value: "", label: "Усі замовники" },
-                ...clients.map((name) => ({ value: name, label: name })),
-              ]}
-            />
-          </div>
-          <label className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] pl-2 pr-1">
-            <span className="text-[12px] text-[var(--color-text-tertiary)]">від</span>
-            <input
-              type="date"
-              aria-label="Дедлайн від"
-              value={from}
-              max={to || undefined}
-              onChange={(event) => setFrom(event.target.value)}
-              className={dateFieldClass}
-            />
-          </label>
-          <label className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] pl-2 pr-1">
-            <span className="text-[12px] text-[var(--color-text-tertiary)]">до</span>
-            <input
-              type="date"
-              aria-label="Дедлайн до"
-              value={to}
-              min={from || undefined}
-              onChange={(event) => setTo(event.target.value)}
-              className={dateFieldClass}
+              className={cn(
+                filterType,
+                "h-8 appearance-none rounded-[8px] border border-[var(--color-border)] bg-[var(--color-surface)] py-0 pr-7 pl-2.5 focus:border-[var(--color-primary-500)] focus:ring-2 focus:ring-[var(--color-focus-ring)]",
+                client ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]",
+              )}
+            >
+              <option value="">Усі замовники</option>
+              {clients.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <IconChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2 text-[var(--color-text-tertiary)]"
             />
           </label>
-          <Button
+          <DeadlineField label="від" value={from} max={to || undefined} onChange={setFrom} />
+          <DeadlineField label="до" value={to} min={from || undefined} onChange={setTo} />
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
             disabled={!filtering}
             onClick={() => {
               setClient("");
               setFrom("");
               setTo("");
             }}
+            className="h-8 rounded-[8px] px-2.5 text-[13px]! font-medium! text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text-primary)] disabled:pointer-events-none disabled:text-[var(--color-text-disabled)]"
           >
             Скинути
-          </Button>
+          </button>
         </div>
         <Link
           href="/orders"
