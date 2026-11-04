@@ -24,6 +24,7 @@ import { removeOrderItemAction } from "@/server/domains/orders/actions";
 import { AddOrderItemPanel, type AddableProduct } from "@/components/orders/AddOrderItemPanel";
 import { ProductThumb } from "@/components/orders/ProductCatalogPanel";
 import { useOrderUnsavedOptional } from "@/components/orders/OrderUnsavedContext";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 
 export type OrderItemRow = {
   id: string;
@@ -66,6 +67,7 @@ export function OrderItemsTable({
   showPrices?: boolean;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const unsaved = useOrderUnsavedOptional();
   const [pending, startTransition] = useTransition();
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
@@ -79,8 +81,14 @@ export function OrderItemsTable({
     router.push(href);
   }
 
-  function remove(row: OrderItemRow) {
-    if (!window.confirm(`Прибрати «${row.nameUk}» із цього замовлення?`)) return;
+  async function remove(row: OrderItemRow) {
+    const ok = await dialog.ask({
+      title: `Прибрати «${row.nameUk}»?`,
+      message: "Позицію буде видалено з цього замовлення.",
+      confirmLabel: "Прибрати",
+      danger: true,
+    });
+    if (!ok) return;
     const formData = new FormData();
     formData.set("orderId", orderId);
     formData.set("orderItemId", row.id);
@@ -90,11 +98,13 @@ export function OrderItemsTable({
       const result = await removeOrderItemAction(formData);
       if (!result.ok) {
         setBusyItemId(null);
-        window.alert(
-          result.error === "EMPTY_ORDER_NOT_ALLOWED"
-            ? "Порожнє замовлення можна лишати лише на Чернетці або Розрахунку."
-            : "Не вдалося прибрати позицію.",
-        );
+        await dialog.notice({
+          title: "Не вдалося прибрати",
+          message:
+            result.error === "EMPTY_ORDER_NOT_ALLOWED"
+              ? "Порожнє замовлення можна лишати лише на Чернетці або Розрахунку."
+              : "Не вдалося прибрати позицію.",
+        });
         return;
       }
       if (fallback) {
@@ -108,6 +118,7 @@ export function OrderItemsTable({
 
   return (
     <TableCard>
+      {dialog.view}
       <TableToolbar
         left={<p className="type-subsection">Позиції замовлення</p>}
         right={

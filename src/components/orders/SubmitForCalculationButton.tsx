@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 import { submitOrderForCalculationAction } from "@/server/domains/orders/actions";
 
 export function SubmitForCalculationButton({
@@ -18,19 +19,19 @@ export function SubmitForCalculationButton({
   asAdmin?: boolean;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
 
-  function submit() {
+  async function submit() {
     if (disabled) return;
-    if (
-      !window.confirm(
-        asAdmin
-          ? "Перевести замовлення в статус «Розрахунок» і продовжити калькуляцію?"
-          : "Передати замовлення адміністратору на розрахунок? Після цього комплектацію зможе змінювати лише адмін.",
-      )
-    ) {
-      return;
-    }
+    const ok = await dialog.ask({
+      title: asAdmin ? "Перевести на розрахунок?" : "Передати на розрахунок?",
+      message: asAdmin
+        ? "Замовлення перейде в статус «Розрахунок», і можна буде продовжити калькуляцію."
+        : "Замовлення піде адміністратору на розрахунок. Після цього комплектацію зможе змінювати лише адмін.",
+      confirmLabel: asAdmin ? "До розрахунку" : "Передати",
+    });
+    if (!ok) return;
     const formData = new FormData();
     formData.set("orderId", orderId);
     startTransition(async () => {
@@ -43,7 +44,10 @@ export function SubmitForCalculationButton({
           NOT_FOUND: "Замовлення не знайдено.",
           VALIDATION: "Некоректний запит.",
         };
-        window.alert(messages[result.error] ?? "Не вдалося передати на розрахунок.");
+        await dialog.notice({
+          title: "Не вдалося передати",
+          message: messages[result.error] ?? "Не вдалося передати на розрахунок.",
+        });
         return;
       }
       router.refresh();
@@ -51,19 +55,22 @@ export function SubmitForCalculationButton({
   }
 
   return (
-    <Button
-      type="button"
-      onClick={submit}
-      disabled={disabled || pending}
-      title={disabled ? disabledReason : undefined}
-    >
-      {pending
-        ? asAdmin
-          ? "Перехід…"
-          : "Передача…"
-        : asAdmin
-          ? "До розрахунку"
-          : "На розрахунок адміну"}
-    </Button>
+    <>
+      {dialog.view}
+      <Button
+        type="button"
+        onClick={submit}
+        disabled={disabled || pending}
+        title={disabled ? disabledReason : undefined}
+      >
+        {pending
+          ? asAdmin
+            ? "Перехід…"
+            : "Передача…"
+          : asAdmin
+            ? "До розрахунку"
+            : "На розрахунок адміну"}
+      </Button>
+    </>
   );
 }

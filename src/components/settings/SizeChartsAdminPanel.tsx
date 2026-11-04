@@ -6,6 +6,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Overlay";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 import { SoftBusy } from "@/components/ui/SoftBusy";
 import {
   Table,
@@ -70,6 +71,7 @@ export function SizeChartsAdminPanel({
   variants: SizeChartVariantRow[];
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [variants, setVariants] = useState(initialVariants);
   const [selectedId, setSelectedId] = useState(initialVariants[0]?.id ?? "");
@@ -180,7 +182,7 @@ export function SizeChartsAdminPanel({
     });
   }
 
-  function archiveVariant(row: SizeChartVariantRow) {
+  async function archiveVariant(row: SizeChartVariantRow) {
     setError(null);
     setMessage(null);
     if (row.productCount > 0) {
@@ -189,7 +191,13 @@ export function SizeChartsAdminPanel({
       );
       return;
     }
-    if (!window.confirm(`Видалити сітку «${row.nameUk}» з довідника?`)) return;
+    const ok = await dialog.ask({
+      title: `Видалити сітку «${row.nameUk}»?`,
+      message: "Варіант зникне з довідника розмірів.",
+      confirmLabel: "Видалити",
+      danger: true,
+    });
+    if (!ok) return;
     const formData = new FormData();
     formData.set("id", row.id);
     startTransition(async () => {
@@ -219,6 +227,7 @@ export function SizeChartsAdminPanel({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(14rem,17rem)_minmax(0,1fr)] lg:items-start">
+      {dialog.view}
       <TableCard className="overflow-visible">
         <TableToolbar
           left={<span className="type-label">Варіанти сітки</span>}

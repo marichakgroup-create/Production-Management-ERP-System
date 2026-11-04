@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Banner } from "@/components/ui/Banner";
 import { Modal } from "@/components/ui/Overlay";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 import { StatusBadge } from "@/components/ui/Page";
 import {
   Table,
@@ -79,6 +80,7 @@ export function VersionsTab({
   paymentMethod?: string | null;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [approveTarget, setApproveTarget] = useState<OrderProposalGroup | null>(null);
   const [expanded, setExpanded] = useState<string | null>(proposals[0]?.key ?? null);
@@ -116,15 +118,15 @@ export function VersionsTab({
     });
   }
 
-  function activate(proposal: OrderProposalGroup) {
+  async function activate(proposal: OrderProposalGroup) {
     if (proposal.revision == null) return;
-    if (
-      !window.confirm(
-        `Зробити активною пропозицію v${proposal.revision}? Склад замовлення підставиться з цієї пропозиції, статус стане «Погодження».`,
-      )
-    ) {
-      return;
-    }
+    const ok = await dialog.ask({
+      title: `Зробити активною v${proposal.revision}?`,
+      message:
+        "Склад замовлення підставиться з цієї пропозиції, статус стане «Погодження».",
+      confirmLabel: "Зробити активною",
+    });
+    if (!ok) return;
     setError(null);
     const formData = new FormData();
     formData.set("orderId", orderId);
@@ -143,15 +145,15 @@ export function VersionsTab({
     });
   }
 
-  function removeProposal(proposal: OrderProposalGroup) {
+  async function removeProposal(proposal: OrderProposalGroup) {
     if (proposal.revision == null) return;
-    if (
-      !window.confirm(
-        `Видалити пропозицію v${proposal.revision}? Активна пропозиція залишиться.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await dialog.ask({
+      title: `Видалити пропозицію v${proposal.revision}?`,
+      message: "Активна пропозиція залишиться.",
+      confirmLabel: "Видалити",
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     const formData = new FormData();
     formData.set("orderId", orderId);
@@ -178,6 +180,7 @@ export function VersionsTab({
 
   return (
     <div className="space-y-4">
+      {dialog.view}
       {error ? <Banner tone="danger">{error}</Banner> : null}
 
       {itemCount > 1 ? (

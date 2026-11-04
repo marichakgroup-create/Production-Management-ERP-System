@@ -1,9 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Button } from "@/components/ui/Button";
+import { IconChevronDown } from "@/components/ui/Icons";
+import { Select } from "@/components/ui/Select";
 import { orderPipeline, orderStatusLabel } from "@/lib/order-status";
 import { cn, formatDateUk, formatMoneyShort } from "@/lib/utils";
+
+const dateFieldClass =
+  "h-7 w-[8.6rem] border-0 bg-transparent px-1 text-[12.5px] text-[var(--color-text-primary)] outline-none focus:ring-0 focus-visible:outline-none!";
+
+function deadlineKey(deadline: string | null) {
+  if (!deadline) return null;
+  const date = new Date(deadline);
+  if (Number.isNaN(date.getTime())) return null;
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * One hue, three stops: fill, mark, ink.
+ * Ink on fill is at least 7:1. The mark is a non-text swatch, at least 4.5:1.
+ */
+const stageLook: Record<string, { fill: string; mark: string; ink: string }> = {
+  DRAFT: { fill: "#F4F6F8", mark: "#5C6B7C", ink: "#243140" },
+  CALCULATION: { fill: "#EAF2FB", mark: "#2C6AAD", ink: "#143E6E" },
+  PENDING_APPROVAL: { fill: "#FBF4E6", mark: "#8F6114", ink: "#6B4708" },
+  APPROVED: { fill: "#E8F6EE", mark: "#1C7A4C", ink: "#0A4A30" },
+  HANDED_TO_PRODUCTION: { fill: "#E7F5F6", mark: "#157984", ink: "#0A4C54" },
+};
 
 export type StageBoardOrder = {
   id: string;
@@ -86,32 +113,61 @@ function OrderMiniCard({
         </p>
       ) : null}
       {products.length > 0 ? (
-        <div className="mt-1.5 border-t border-[var(--color-divider)] pt-1.5">
+        <div className="mt-1.5">
           {collapseProducts ? (
             <button
               type="button"
-              className="text-[12px] font-medium text-[var(--color-primary-700)] hover:underline"
               aria-expanded={open}
               onClick={() => setOpen((value) => !value)}
+              className="flex w-full items-center gap-1 rounded-[7px] px-1 py-0.5 text-left hover:bg-[var(--color-surface-subtle)]"
             >
-              {open ? "Згорнути вироби" : `Вироби · ${products.length}`}
+              <IconChevronDown
+                size={13}
+                className={cn(
+                  "shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200",
+                  open && "rotate-180",
+                )}
+              />
+              <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-text-secondary)]">
+                {open ? "Вироби" : products[0]?.name}
+              </span>
+              <span className="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-1.5 text-[11px] tabular leading-4 text-[var(--color-text-tertiary)]">
+                {products.length}
+              </span>
             </button>
           ) : null}
-          {!collapseProducts || open ? (
-            <ul className={cn("space-y-0.5", collapseProducts && "mt-1")}>
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows] duration-200 ease-out",
+              !collapseProducts || open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+            )}
+          >
+            <ul
+              className={cn(
+                "overflow-hidden",
+                collapseProducts && open && "mt-0.5 rounded-[7px] bg-[var(--color-surface-subtle)] px-1.5 py-1",
+              )}
+            >
               {products.map((product, index) => (
                 <li
                   key={`${index}-${product.name}`}
-                  className="truncate text-[12px] text-[var(--color-text-secondary)]"
+                  className={cn(
+                    "flex items-baseline gap-2 py-px",
+                    collapseProducts ? "pl-0.5" : "pl-[2px]",
+                  )}
                 >
-                  {product.name}
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--color-text-secondary)]">
+                    {product.name}
+                  </span>
                   {product.qty > 0 ? (
-                    <span className="text-[var(--color-text-tertiary)]"> · {product.qty} шт</span>
+                    <span className="shrink-0 text-[11px] tabular text-[var(--color-text-tertiary)]">
+                      {product.qty} шт
+                    </span>
                   ) : null}
                 </li>
               ))}
             </ul>
-          ) : null}
+          </div>
         </div>
       ) : null}
     </article>
@@ -128,28 +184,113 @@ export function OrderStageBoard({
   /** Stretch columns to the remaining window and scroll inside them. */
   fill?: boolean;
 }) {
-  const columns = orderPipeline.map((status) => ({
-    status,
-    label: orderStatusLabel[status] ?? status,
-    orders: orders
+  const [client, setClient] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const filtering = Boolean(client || from || to);
+
+  const clients = useMemo(
+    () =>
+      [...new Set(orders.map((order) => order.clientName).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b, "uk"),
+      ),
+    [orders],
+  );
+
+  const visibleOrders = useMemo(
+    () =>
+      orders.filter((order) => {
+        if (client && order.clientName !== client) return false;
+        if (!from && !to) return true;
+        const key = deadlineKey(order.deadline);
+        if (!key) return false;
+        if (from && key < from) return false;
+        if (to && key > to) return false;
+        return true;
+      }),
+    [orders, client, from, to],
+  );
+
+  const columns = orderPipeline.map((status) => {
+    const columnOrders = visibleOrders
       .filter((order) => order.status === status)
       .sort((a, b) => {
         if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
         const aDays = daysLeft(a.deadline) ?? 9999;
         const bDays = daysLeft(b.deadline) ?? 9999;
         return aDays - bDays;
-      }),
-  }));
+      });
+    return {
+      status,
+      label:
+        status === "PENDING_APPROVAL"
+          ? "Погодження"
+          : (orderStatusLabel[status] ?? status),
+      look: stageLook[status] ?? stageLook.DRAFT,
+      amount: columnOrders.reduce((sum, order) => sum + order.amount, 0),
+      overdue: columnOrders.filter((order) => order.overdue).length,
+      orders: columnOrders,
+    };
+  });
 
   return (
     <section
       aria-label="Замовлення за етапами"
       className={cn(fill && "flex min-h-0 flex-1 flex-col")}
     >
-      <div className="mb-2 flex shrink-0 items-baseline justify-end gap-3">
+      <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="w-[11.5rem] shrink-0">
+            <Select
+              size="sm"
+              aria-label="Замовник"
+              value={client}
+              onChange={(event) => setClient(event.target.value)}
+              options={[
+                { value: "", label: "Усі замовники" },
+                ...clients.map((name) => ({ value: name, label: name })),
+              ]}
+            />
+          </div>
+          <label className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] pl-2 pr-1">
+            <span className="text-[12px] text-[var(--color-text-tertiary)]">від</span>
+            <input
+              type="date"
+              aria-label="Дедлайн від"
+              value={from}
+              max={to || undefined}
+              onChange={(event) => setFrom(event.target.value)}
+              className={dateFieldClass}
+            />
+          </label>
+          <label className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] pl-2 pr-1">
+            <span className="text-[12px] text-[var(--color-text-tertiary)]">до</span>
+            <input
+              type="date"
+              aria-label="Дедлайн до"
+              value={to}
+              min={from || undefined}
+              onChange={(event) => setTo(event.target.value)}
+              className={dateFieldClass}
+            />
+          </label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!filtering}
+            onClick={() => {
+              setClient("");
+              setFrom("");
+              setTo("");
+            }}
+          >
+            Скинути
+          </Button>
+        </div>
         <Link
           href="/orders"
-          className="type-caption text-[var(--color-text-quiet)] hover:text-[var(--color-primary-700)]"
+          className="type-caption shrink-0 text-[var(--color-text-quiet)] hover:text-[var(--color-primary-700)]"
         >
           Усі замовлення
         </Link>
@@ -159,19 +300,51 @@ export function OrderStageBoard({
           className={cn("grid min-w-[980px] gap-3", fill && "h-full")}
           style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
         >
-          {columns.map((column) => (
+          {columns.map((column) => {
+            return (
             <div
               key={column.status}
               className={cn(
-                "flex min-h-[12rem] flex-col rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]",
+                "flex min-h-[12rem] flex-col overflow-hidden rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]",
                 fill && "h-full min-h-0",
               )}
             >
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--color-divider)] px-2.5 py-2">
-                <h3 className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">
+              <div
+                className="flex shrink-0 items-center gap-2 px-2.5 py-2"
+                style={{ background: column.look.fill }}
+              >
+                <span
+                  aria-hidden
+                  className="h-3.5 w-[3px] shrink-0 rounded-full"
+                  style={{ background: column.look.mark }}
+                />
+                <h3
+                  className="min-w-0 flex-1 truncate text-[13px] font-medium leading-4 tracking-[-0.011em]"
+                  style={{ color: column.look.ink }}
+                >
                   {column.label}
                 </h3>
-                <span className="type-caption tabular">{column.orders.length}</span>
+                {showAmounts && column.amount > 0 ? (
+                  <span
+                    className="shrink-0 text-[12px] font-medium tabular leading-4"
+                    style={{ color: column.look.ink }}
+                  >
+                    {formatMoneyShort(column.amount)}
+                  </span>
+                ) : null}
+                <span
+                  className="shrink-0 text-[12px] font-medium tabular leading-4"
+                  style={{ color: column.look.ink }}
+                >
+                  {column.orders.length}
+                </span>
+                {column.overdue > 0 ? (
+                  <span
+                    aria-label={`${column.overdue} прострочено`}
+                    title={`${column.overdue} прострочено`}
+                    className="size-1.5 shrink-0 rounded-full bg-[var(--color-danger-text)]"
+                  />
+                ) : null}
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5">
                 {column.orders.length === 0 ? (
@@ -183,7 +356,8 @@ export function OrderStageBoard({
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

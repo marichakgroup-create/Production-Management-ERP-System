@@ -9,6 +9,7 @@ import { updateOrderCommentAction } from "@/server/domains/orders/actions";
 import { cn } from "@/lib/utils";
 import { richTextIsEmpty, sanitizeRichHtml } from "@/lib/rich-text";
 import { useOrderUnsavedWorkspaceDirty } from "@/components/orders/OrderUnsavedContext";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 
 function previewText(html: string | null | undefined): string {
   const plain = sanitizeRichHtml(html)
@@ -29,6 +30,7 @@ export function OrderCommentBlock({
   locked?: boolean;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const panelId = useId();
   const editorRef = useRef<MiniRichTextHandle>(null);
   const [open, setOpen] = useState(false);
@@ -75,13 +77,20 @@ export function OrderCommentBlock({
     setOpen((prev) => !prev);
   }
 
-  function remove() {
-    if (!window.confirm("Видалити коментар до замовлення?")) return;
+  async function remove() {
+    const ok = await dialog.ask({
+      title: "Видалити коментар?",
+      message: "Коментар до замовлення зникне з картки.",
+      confirmLabel: "Видалити",
+      danger: true,
+    });
+    if (!ok) return;
     commit("");
   }
 
   return (
     <div className="min-w-0">
+      {dialog.view}
       <div className="flex items-center gap-2">
         <button
           type="button"

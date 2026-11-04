@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 import { Banner } from "@/components/ui/Banner";
 import { StatusBadge } from "@/components/ui/Page";
 import { IconDecoration, IconDownload, IconEdit, IconPlus, IconTrash } from "@/components/ui/Icons";
@@ -170,6 +171,7 @@ export function OrderAttachments({
   locked?: boolean;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("focus") !== "artwork") return;
     return focusArtwork();
@@ -277,8 +279,14 @@ export function OrderAttachments({
     });
   }
 
-  function remove(fileId: string) {
-    if (!window.confirm("Прибрати цей файл?")) return;
+  async function remove(fileId: string) {
+    const ok = await dialog.ask({
+      title: "Прибрати файл?",
+      message: "Файл зникне із замовлення.",
+      confirmLabel: "Прибрати",
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     const formData = new FormData();
     formData.set("orderId", orderId);
@@ -343,6 +351,7 @@ export function OrderAttachments({
 
   return (
     <div className="space-y-4">
+      {dialog.view}
       {error ? <Banner tone="danger">{error}</Banner> : null}
 
       <input
@@ -752,6 +761,7 @@ function DecorationCommentField({
   locked: boolean;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const editorRef = useRef<MiniRichTextHandle>(null);
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -773,8 +783,14 @@ function DecorationCommentField({
     commit(editorRef.current?.getHtml() ?? "");
   }
 
-  function remove() {
-    if (!window.confirm("Видалити коментар до нанесення?")) return;
+  async function remove() {
+    const ok = await dialog.ask({
+      title: "Видалити коментар?",
+      message: "Коментар до нанесення зникне.",
+      confirmLabel: "Видалити",
+      danger: true,
+    });
+    if (!ok) return;
     commit("");
   }
 
@@ -808,6 +824,7 @@ function DecorationCommentField({
   if (!editing) {
     return (
       <div className="mt-2">
+        {dialog.view}
         <div className="mb-1 flex items-center justify-between gap-2">
           <p className="type-caption">Коментар</p>
           <div className="flex items-center gap-0.5">

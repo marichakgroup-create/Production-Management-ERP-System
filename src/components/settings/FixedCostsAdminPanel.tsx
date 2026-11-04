@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 import { Input } from "@/components/ui/Input";
 import { FormGroup } from "@/components/ui/Field";
 import { IconArchive, IconTrash } from "@/components/ui/Icons";
@@ -156,6 +157,7 @@ export function FixedCostsAdminPanel({
   metrics: FixedCostMetrics | null;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
@@ -190,6 +192,7 @@ export function FixedCostsAdminPanel({
 
   return (
     <div className="space-y-4">
+      {dialog.view}
       {error ? <Banner tone="danger">{error}</Banner> : null}
 
       <div className="grid gap-2 rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3.5 py-3 sm:grid-cols-4">
@@ -316,8 +319,14 @@ export function FixedCostsAdminPanel({
                       "Не вдалося змінити статус статті.",
                     );
                   }}
-                  onDelete={() => {
-                    if (!window.confirm(`Видалити «${row.nameUk}»?`)) return;
+                  onDelete={async () => {
+                    const ok = await dialog.ask({
+                      title: `Видалити «${row.nameUk}»?`,
+                      message: "Статтю витрат буде прибрано.",
+                      confirmLabel: "Видалити",
+                      danger: true,
+                    });
+                    if (!ok) return;
                     const formData = new FormData();
                     formData.set("id", row.id);
                     run(

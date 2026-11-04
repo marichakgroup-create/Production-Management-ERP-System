@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 import { Banner } from "@/components/ui/Banner";
 import { Input } from "@/components/ui/Input";
 import { Checkbox, FormGroup, Textarea } from "@/components/ui/Field";
@@ -44,6 +45,7 @@ export function CompanySettingsManager({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [selectedId, setSelectedId] = useState<string>(
     companies.find((row) => row.isDefault)?.id ?? companies[0]?.id ?? "new",
@@ -101,17 +103,25 @@ export function CompanySettingsManager({
     });
   }
 
-  function remove() {
+  async function remove() {
     if (!selected) return;
     if (companies.length <= 1) {
       setError("Має лишитися хоча б одна компанія.");
       return;
     }
-    if (!window.confirm(`Видалити «${selected.legalName}»?`)) return;
+    const name = selected.legalName;
+    const companyId = selected.id;
+    const ok = await dialog.ask({
+      title: `Видалити «${name}»?`,
+      message: "Компанію буде прибрано з довідника.",
+      confirmLabel: "Видалити",
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     setMessage(null);
     const formData = new FormData();
-    formData.set("id", selected.id);
+    formData.set("id", companyId);
     startTransition(async () => {
       const result = await deleteCompanySettingsAction(formData);
       if (!result.ok) {
@@ -122,13 +132,14 @@ export function CompanySettingsManager({
         );
         return;
       }
-      setSelectedId(companies.find((row) => row.id !== selected.id)?.id ?? "new");
+      setSelectedId(companies.find((row) => row.id !== companyId)?.id ?? "new");
       router.refresh();
     });
   }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+      {dialog.view}
       <aside className="rounded-[var(--radius-surface)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="type-group-label">Компанії</p>

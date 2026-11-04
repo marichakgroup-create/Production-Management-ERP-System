@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { useAppDialog } from "@/components/ui/ConfirmDialog";
 import { IconPlus } from "@/components/ui/Icons";
 import { startNewProposalAction } from "@/server/domains/orders/actions";
 
@@ -16,17 +17,18 @@ export function StartNewProposalButton({
   label?: string;
 }) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function submit() {
-    if (
-      !window.confirm(
-        "Створити нову пропозицію? Замовлення повернеться на етап Розрахунок — можна змінити склад і знову зберегти пропозицію для погодження.",
-      )
-    ) {
-      return;
-    }
+  async function submit() {
+    const ok = await dialog.ask({
+      title: "Нова пропозиція?",
+      message:
+        "Замовлення повернеться на етап «Розрахунок». Можна змінити склад і знову зберегти пропозицію для погодження.",
+      confirmLabel: "Створити",
+    });
+    if (!ok) return;
     setError(null);
     const formData = new FormData();
     formData.set("orderId", orderId);
@@ -43,6 +45,7 @@ export function StartNewProposalButton({
 
   return (
     <div className="flex flex-col items-end gap-1">
+      {dialog.view}
       <Button
         variant={accent ? "primary" : "secondary"}
         size="sm"
