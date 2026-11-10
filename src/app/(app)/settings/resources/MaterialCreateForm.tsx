@@ -1751,16 +1751,16 @@ export function MaterialCreatePanel({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [wizardMeta, setWizardMeta] = useState<MaterialWizardMeta | null>(null);
-  const [dirty, setDirty] = useState(false);
 
   const closePanel = useCallback(() => {
     setOpen(false);
     setWizardMeta(null);
-    setDirty(false);
   }, []);
 
   const { leaveOpen, requestClose, stay, discard } = useUnsavedCloseGuard({
-    dirty: open && dirty,
+    // Always confirm: backdrop / Escape used to drop a new material with no prompt
+    // when fingerprint tracking missed uncontrolled fields.
+    dirty: open,
     pending,
     onDiscard: closePanel,
   });
@@ -1787,7 +1787,6 @@ export function MaterialCreatePanel({
         onClick={() => {
           setWizardMeta(null);
           setError(null);
-          setDirty(false);
           setOpen(true);
         }}
       >
@@ -1850,13 +1849,14 @@ export function MaterialCreatePanel({
             suppliers={suppliers}
             wizard
             onWizardMeta={setWizardMeta}
-            onDirtyChange={setDirty}
           />
         </form>
       </SidePanel>
       <UnsavedChangesDialog
         open={leaveOpen}
         pending={pending}
+        title="Закрити створення матеріалу?"
+        description="Матеріал ще не збережено. Якщо закрити панель, введені дані зникнуть."
         onStay={stay}
         onDiscard={discard}
       />
@@ -1887,24 +1887,23 @@ export function MaterialEditPanel({
   const [loaded, setLoaded] = useState<MaterialFormDefaults | null>(null);
   const [globals, setGlobals] = useState(fabricGlobals);
   const [tab, setTab] = useState<"main" | "suppliers">("main");
-  const [dirty, setDirty] = useState(false);
 
   const closePanel = useCallback(() => {
     setOpen(false);
     setLoaded(null);
-    setDirty(false);
   }, []);
 
   const { leaveOpen, requestClose, stay, discard } = useUnsavedCloseGuard({
-    dirty: open && dirty,
-    pending: pending || loading,
+    // Always confirm: click outside the panel was discarding edits when dirty
+    // tracking did not see the change (suppliers tab, uncontrolled inputs).
+    dirty: open,
+    pending,
     onDiscard: closePanel,
   });
 
   async function openEditor() {
     setOpen(true);
     setError(null);
-    setDirty(false);
     setLoading(true);
     setLoaded(null);
     setTab("main");
@@ -2021,7 +2020,6 @@ export function MaterialEditPanel({
                   fabricGlobals={globals}
                   suppliers={suppliers}
                   managePricingSeparately
-                  onDirtyChange={setDirty}
                 />
               </div>
 
@@ -2064,7 +2062,9 @@ export function MaterialEditPanel({
       </SidePanel>
       <UnsavedChangesDialog
         open={leaveOpen}
-        pending={pending || loading}
+        pending={pending}
+        title="Закрити редагування матеріалу?"
+        description="Зміни ще не збережено. Якщо закрити панель, вони зникнуть."
         onStay={stay}
         onDiscard={discard}
       />
